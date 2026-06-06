@@ -1,0 +1,15 @@
+# Environment variables
+.env
+.env*.local
+
+# Common ignores
+node_modules
+.next/
+.DS_Store
+.plan/
+
+# Local data
+data/
+plan/
+# Auto-generated
+next-env.d.ts

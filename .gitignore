@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+.next/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Environment
+.env
+.env*.local
+
+# Local runtime data
+.dev-logs/
+.lg-data/
+.novel-guide/
+.playwright-mcp/
+data/
+plan/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db

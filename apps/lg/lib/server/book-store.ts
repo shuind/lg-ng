@@ -1,0 +1,329 @@
+import fs from "fs/promises"
+import path from "path"
+import type { Book, BookTreeNode, OutlineFile } from "@/lib/types"
+import { markDirty } from "@/lib/server/dirty-index"
+import { appendLedgerEntry } from "@/lib/server/ledger"
+import { getBookDir, getBooksRoot } from "@/lib/server/paths"
+
+function slugify(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9一-鿿]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 60)
+}
+
+async function ensureDir(dir: string) {
+  await fs.mkdir(dir, { recursive: true })
+}
+
+async function dirExists(dir: string) {
+  try {
+    const stat = await fs.stat(dir)
+    return stat.isDirectory()
+  } catch {
+    return false
+  }
+}
+
+async function fileExists(filePath: string) {
+  try {
+    await fs.stat(filePath)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export async function listBooks(): Promise<Book[]> {
+  const booksRoot = getBooksRoot()
+  if (!(await dirExists(booksRoot))) return []
+
+  const entries = await fs.readdir(booksRoot, { withFileTypes: true })
+  const books: Book[] = []
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue
+    const bookJsonPath = path.join(booksRoot, entry.name, "book.json")
+    if (!(await fileExists(bookJsonPath))) continue
+
+    try {
+      const raw = await fs.readFile(bookJsonPath, "utf-8")
+      const meta = JSON.parse(raw)
+      books.push({
+        id: meta.id ?? entry.name,
+        title: meta.title ?? entry.name,
+        createdAt: meta.createdAt ?? "",
+        updatedAt: meta.updatedAt ?? "",
+        rootPath: entry.name,
+      })
+    } catch {
+      // skip broken book.json
+    }
+  }
+
+  return books.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+}
+
+export async function getBook(bookId: string): Promise<Book | null> {
+  const bookDir = getBookDir(bookId)
+  const bookJsonPath = path.join(bookDir, "book.json")
+  if (!(await fileExists(bookJsonPath))) return null
+
+  try {
+    const raw = await fs.readFile(bookJsonPath, "utf-8")
+    const meta = JSON.parse(raw)
+    return {
+      id: meta.id ?? bookId,
+      title: meta.title ?? bookId,
+      createdAt: meta.createdAt ?? "",
+      updatedAt: meta.updatedAt ?? "",
+      rootPath: bookId,
+    }
+  } catch {
+    return null
+  }
+}
+
+export async function createBook(title: string): Promise<Book> {
+  const now = new Date().toISOString()
+  const id = `${slugify(title)}-${Date.now().toString(36)}`
+  const bookDir = getBookDir(id)
+
+  // original directories
+  await ensureDir(path.join(bookDir, "人物设定"))
+  await ensureDir(path.join(bookDir, "世界观"))
+  await ensureDir(path.join(bookDir, "卷纲"))
+  await ensureDir(path.join(bookDir, "章节大纲"))
+  await ensureDir(path.join(bookDir, "章节正文"))
+  await ensureDir(path.join(bookDir, "skills"))
+  // new system directories
+  await ensureDir(path.join(bookDir, "剧情管理"))
+  await ensureDir(path.join(bookDir, "状态追踪"))
+  await ensureDir(path.join(bookDir, "读者体验"))
+  await ensureDir(path.join(bookDir, "写作约束"))
+  await ensureDir(path.join(bookDir, "章节摘要"))
+  await ensureDir(path.join(bookDir, "检查报告"))
+
+  const bookMeta = {
+    id,
+    title,
+    createdAt: now,
+    updatedAt: now,
+  }
+  await fs.writeFile(path.join(bookDir, "book.json"), JSON.stringify(bookMeta, null, 2), "utf-8")
+  await fs.writeFile(path.join(bookDir, "创作指南.md"), `# 创作指南\n\n（请在此写下你的写作偏好与风格要求）\n`, "utf-8")
+  await fs.writeFile(path.join(bookDir, "关系图谱.json"), "{}\n", "utf-8")
+  await fs.writeFile(path.join(bookDir, "ledger.jsonl"), "", "utf-8")
+  await fs.writeFile(path.join(bookDir, "messages.jsonl"), "", "utf-8")
+
+  // system files — 剧情管理
+  await fs.writeFile(path.join(bookDir, "剧情管理", "主线.md"), `# 主线\n\n记录主线剧情走向和核心矛盾。\n`, "utf-8")
+  await fs.writeFile(path.join(bookDir, "剧情管理", "支线.md"), `# 支线\n\n记录各支线剧情及其与主线的关联。\n`, "utf-8")
+  await fs.writeFile(path.join(bookDir, "剧情管理", "伏笔清单.md"), `# 伏笔清单\n\n记录所有已埋设和待回收的伏笔。\n`, "utf-8")
+  await fs.writeFile(path.join(bookDir, "剧情管理", "关键事件.md"), `# 关键事件\n\n记录推动剧情的关键事件节点。\n`, "utf-8")
+
+  // 状态追踪
+  await fs.writeFile(path.join(bookDir, "状态追踪", "时间线.md"), `# 时间线\n\n按故事内时间记录重大事件。\n`, "utf-8")
+  await fs.writeFile(path.join(bookDir, "状态追踪", "角色位置.md"), `# 角色位置\n\n追踪各角色在不同章节中的当前位置。\n`, "utf-8")
+  await fs.writeFile(path.join(bookDir, "状态追踪", "当前冲突.md"), `# 当前冲突\n\n记录当前章节中未解决的冲突和矛盾。\n`, "utf-8")
+  await fs.writeFile(path.join(bookDir, "状态追踪", "章节状态.md"), `# 章节状态\n\n记录各章节的写作状态和待办事项。\n`, "utf-8")
+
+  // 读者体验
+  await fs.writeFile(path.join(bookDir, "读者体验", "信息差.md"), `# 信息差\n\n追踪读者与角色之间的信息差。哪些信息读者已知但角色不知，反之亦然。\n`, "utf-8")
+  await fs.writeFile(path.join(bookDir, "读者体验", "情绪账户.md"), `# 情绪账户\n\n记录对读者的情绪承诺：哪些期待已被种下，哪些还需要兑现。\n`, "utf-8")
+  await fs.writeFile(path.join(bookDir, "读者体验", "爽点债务.md"), `# 爽点债务\n\n记录已承诺但尚未交付的爽点：复仇、逆袭、揭秘等。\n`, "utf-8")
+
+  // 写作约束
+  await fs.writeFile(path.join(bookDir, "写作约束", "禁止项.md"), `# 禁止项\n\n记录写作中应避免的套路、表达和模式。\n`, "utf-8")
+  await fs.writeFile(path.join(bookDir, "写作约束", "类型规则.md"), `# 类型规则\n\n记录本作品类型（武侠/玄幻/言情等）的写作规范。\n`, "utf-8")
+  await fs.writeFile(path.join(bookDir, "写作约束", "质量约束.md"), `# 质量约束\n\n记录写作质量要求：词汇、节奏、描写比例等。\n`, "utf-8")
+
+  return {
+    id,
+    title,
+    createdAt: now,
+    updatedAt: now,
+    rootPath: id,
+  }
+}
+
+export async function updateBookTitle(bookId: string, newTitle: string): Promise<Book | null> {
+  const bookDir = getBookDir(bookId)
+  const bookJsonPath = path.join(bookDir, "book.json")
+  if (!(await fileExists(bookJsonPath))) return null
+
+  try {
+    const raw = await fs.readFile(bookJsonPath, "utf-8")
+    const meta = JSON.parse(raw)
+    meta.title = newTitle
+    meta.updatedAt = new Date().toISOString()
+    await fs.writeFile(bookJsonPath, JSON.stringify(meta, null, 2), "utf-8")
+    return {
+      id: meta.id ?? bookId,
+      title: meta.title,
+      createdAt: meta.createdAt ?? "",
+      updatedAt: meta.updatedAt,
+      rootPath: bookId,
+    }
+  } catch {
+    return null
+  }
+}
+
+export async function touchBookUpdatedAt(bookId: string): Promise<string> {
+  const updatedAt = new Date().toISOString()
+  const bookJsonPath = path.join(getBookDir(bookId), "book.json")
+  try {
+    const raw = await fs.readFile(bookJsonPath, "utf-8")
+    const meta = JSON.parse(raw)
+    meta.updatedAt = updatedAt
+    await fs.writeFile(bookJsonPath, JSON.stringify(meta, null, 2), "utf-8")
+  } catch {
+    // best effort only
+  }
+  return updatedAt
+}
+
+export async function getBookTree(bookId: string): Promise<BookTreeNode[]> {
+  const bookDir = getBookDir(bookId)
+  if (!(await dirExists(bookDir))) return []
+
+  async function walk(dir: string, relativePath: string): Promise<BookTreeNode[]> {
+    const entries = await fs.readdir(dir, { withFileTypes: true })
+    const nodes: BookTreeNode[] = []
+
+    for (const entry of entries) {
+      if (entry.name === "book.json") continue
+      const absPath = path.join(dir, entry.name)
+      const relPath = relativePath ? `${relativePath}/${entry.name}` : entry.name
+
+      if (entry.isDirectory()) {
+        const children = await walk(absPath, relPath)
+        nodes.push({
+          id: relPath,
+          name: entry.name,
+          path: relPath,
+          type: "directory",
+          children,
+        })
+      } else {
+        const stat = await fs.stat(absPath)
+        nodes.push({
+          id: relPath,
+          name: entry.name,
+          path: relPath,
+          type: "file",
+          updatedAt: stat.mtime.toISOString(),
+        })
+      }
+    }
+
+    return nodes.sort((a, b) => {
+      if (a.type !== b.type) return a.type === "directory" ? -1 : 1
+      return a.name.localeCompare(b.name)
+    })
+  }
+
+  return walk(bookDir, "")
+}
+
+export async function listOutlineFiles(bookId: string): Promise<OutlineFile[]> {
+  const tree = await getBookTree(bookId)
+  const outlines: OutlineFile[] = []
+
+  function visit(nodes: BookTreeNode[]) {
+    for (const node of nodes) {
+      if (node.type === "directory") {
+        visit(node.children ?? [])
+        continue
+      }
+      const isVolume = node.path.startsWith("卷纲/") || node.path.includes("/卷纲/")
+      const isChapter = node.path.startsWith("章节大纲/") || node.path.includes("/章节大纲/") || node.path.includes("章纲")
+      if (!isVolume && !isChapter) continue
+      outlines.push({
+        id: node.path,
+        bookId,
+        title: node.name.replace(/\.md$/i, ""),
+        level: isVolume ? "volume" : "chapter",
+        path: node.path,
+        updatedAt: node.updatedAt ?? "",
+      })
+    }
+  }
+
+  visit(tree)
+  return outlines.sort((a, b) => {
+    if (a.level !== b.level) return a.level === "volume" ? -1 : 1
+    return a.path.localeCompare(b.path, "zh-CN")
+  })
+}
+
+export async function readBookFile(bookId: string, filePath: string): Promise<string | null> {
+  const bookDir = getBookDir(bookId)
+  const absPath = path.join(bookDir, filePath)
+  // security: prevent path traversal
+  const resolved = path.resolve(absPath)
+  if (!resolved.startsWith(bookDir)) return null
+
+  try {
+    return await fs.readFile(resolved, "utf-8")
+  } catch {
+    return null
+  }
+}
+
+export async function getBookFileMtime(bookId: string, filePath: string): Promise<string> {
+  const bookDir = getBookDir(bookId)
+  const absPath = path.join(bookDir, filePath)
+  const resolved = path.resolve(absPath)
+  if (!resolved.startsWith(bookDir)) return new Date().toISOString()
+
+  try {
+    const stat = await fs.stat(resolved)
+    return stat.mtime.toISOString()
+  } catch {
+    return new Date().toISOString()
+  }
+}
+
+export async function writeBookFile(bookId: string, filePath: string, content: string): Promise<boolean> {
+  const bookDir = getBookDir(bookId)
+  const absPath = path.join(bookDir, filePath)
+  const resolved = path.resolve(absPath)
+  if (!resolved.startsWith(bookDir)) return false
+
+  // read before snapshot (skip for ledger itself to avoid noise)
+  const isLedgerFile = filePath === "ledger.jsonl"
+  let beforeSnapshot: string | undefined
+  if (!isLedgerFile) {
+    try {
+      beforeSnapshot = await fs.readFile(resolved, "utf-8")
+    } catch {
+      // file may not exist yet
+    }
+  }
+
+  await ensureDir(path.dirname(resolved))
+  await fs.writeFile(resolved, content, "utf-8")
+
+  // mark dirty
+  await markDirty(bookId, filePath).catch(() => {})
+
+  // update book updatedAt
+  await touchBookUpdatedAt(bookId)
+
+  // append ledger entry (skip for ledger.jsonl to avoid recursion)
+  if (!isLedgerFile) {
+    await appendLedgerEntry(bookId, {
+      actor: "user",
+      action: "write_file",
+      targetPath: filePath,
+      beforeSnapshot,
+      afterSnapshot: content,
+      summary: `手动保存 ${filePath}`,
+    }).catch(() => {})
+  }
+
+  return true
+}
