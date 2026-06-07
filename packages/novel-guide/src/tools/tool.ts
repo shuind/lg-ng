@@ -11,6 +11,7 @@ export type PermissionDecision =
       allowed: false;
       reason: string;
       confirmationRequired?: boolean;
+      forceConfirmation?: boolean;
       cacheKey?: string;
     };
 
@@ -32,11 +33,21 @@ export interface FileChange {
   afterContent?: string;
 }
 
+export interface FileProposal {
+  path: string;
+  beforeExists?: boolean;
+  beforeContent: string;
+  afterContent: string;
+  summary?: string;
+  source?: "chat" | "draft" | "workflow";
+}
+
 export interface ToolResult {
   ok: boolean;
   content: string;
   metadata?: Record<string, unknown> & {
     fileChanges?: FileChange[];
+    proposals?: FileProposal[];
   };
 }
 
@@ -73,7 +84,7 @@ export async function runTool(
 ): Promise<ToolResult> {
   const decision = await tool.requiresPermission(input, context);
   if (!decision.allowed) {
-    if (context.permissionMode !== "confirm") {
+    if (context.permissionMode !== "confirm" && !decision.forceConfirmation) {
       return await executeTool(tool, input, context);
     }
     if (!decision.confirmationRequired || !context.askConfirmation) {

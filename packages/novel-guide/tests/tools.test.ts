@@ -2,8 +2,10 @@ import { mkdtemp, readFile, writeFile, mkdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { EditFileTool, ReadFileTool, WriteFileTool } from "../src/tools/files.js";
-import { GrepTool } from "../src/tools/search.js";
+import { EditFileTool, ProposeFileChangeTool, ReadFileTool, WriteFileTool } from "../src/tools/files.js";
+import { GrepTool, SearchCanonTool } from "../src/tools/search.js";
+import { ShellTool } from "../src/tools/shell.js";
+import { getTools } from "../src/tools/registry.js";
 import { runTool } from "../src/tools/tool.js";
 
 async function tempDir(): Promise<string> {
@@ -108,5 +110,69 @@ describe("workspace tools", () => {
     const result = await runTool(ReadFileTool, { path: "missing.md" }, { cwd });
     expect(result.ok).toBe(false);
     expect(result.content).toContain("read_file failed");
+  });
+
+  it("searches canon by alias with paragraph anchors", async () => {
+    const cwd = await tempDir();
+    await mkdir(path.join(cwd, "canon", "characters"), { recursive: true });
+    await writeFile(
+      path.join(cwd, "canon", "characters", "gu-shen.md"),
+      [
+        "# 顾慎",
+        "aliases: 老顾、顾郎",
+        "",
+        "顾慎当前境界是筑基后期。",
+        "",
+        "他曾远远窥见欺天大阵。",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = await runTool(SearchCanonTool, { query: "老顾境界", limit: 3 }, { cwd });
+    expect(result.ok).toBe(true);
+    expect(result.content).toContain("canon/characters/gu-shen.md");
+    expect(result.content).toContain("\"line\"");
+  });
+
+  it("requires confirmation for dangerous shell commands even in bypass mode", async () => {
+    const cwd = await tempDir();
+    const result = await runTool(ShellTool, { command: "git reset --hard" }, { cwd });
+    expect(result.ok).toBe(false);
+    expect(result.content).toContain("Permission denied");
+  });
+
+  it("proposes file changes without mutating files", async () => {
+    const cwd = await tempDir();
+    await mkdir(path.join(cwd, "drafts"), { recursive: true });
+    const target = path.join(cwd, "drafts", "ch03.md");
+    await writeFile(target, "old", "utf8");
+
+    const result = await runTool(
+      ProposeFileChangeTool,
+      { path: "drafts/ch03.md", after_content: "new", summary: "revise opening", source: "workflow" },
+      { cwd },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.metadata?.proposals).toEqual([{
+      path: "drafts/ch03.md",
+      beforeExists: true,
+      beforeContent: "old",
+      afterContent: "new",
+      summary: "revise opening",
+      source: "workflow",
+    }]);
+    await expect(readFile(target, "utf8")).resolves.toBe("old");
+  });
+
+  it("proposal mode exposes read tools and propose_file_change only", () => {
+    const names = getTools({ proposalOnly: true }).map((tool) => tool.name);
+    expect(names).toContain("read_file");
+    expect(names).toContain("grep");
+    expect(names).toContain("run_agent");
+    expect(names).toContain("propose_file_change");
+    expect(names).not.toContain("write_file");
+    expect(names).not.toContain("edit_file");
+    expect(names).not.toContain("shell");
   });
 });

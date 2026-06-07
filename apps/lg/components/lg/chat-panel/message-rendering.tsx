@@ -17,6 +17,11 @@ interface ChatTranscriptProps {
   onForkThread: (turnId: string) => void
   onEditLatest: (content: string) => void
   registerUserMessage: (turnId: string, element: HTMLDivElement | null) => void
+  rollingBackLedgerEntryId: string | null
+  applyingProposalId: string | null
+  onRollbackLedgerEntry: (entryId: string) => Promise<void>
+  onApplyProposal: (proposalId: string, hunkIds?: string[]) => Promise<string | undefined>
+  onDiscardProposal: (proposalId: string) => Promise<void>
 }
 
 export const ChatTranscript = memo(function ChatTranscript({
@@ -30,7 +35,23 @@ export const ChatTranscript = memo(function ChatTranscript({
   onForkThread,
   onEditLatest,
   registerUserMessage,
+  rollingBackLedgerEntryId,
+  applyingProposalId,
+  onRollbackLedgerEntry,
+  onApplyProposal,
+  onDiscardProposal,
 }: ChatTranscriptProps) {
+  const streamingTurnId = runningTurn?.id ?? null
+  const liveAssistant = streamingTurnId
+    ? messages.find((message) => message.role === "assistant" && message.turnId === streamingTurnId)
+    : undefined
+  const hasLiveOutput = Boolean(
+    liveAssistant && (
+      liveAssistant.content.trim() ||
+      (liveAssistant.events ?? []).length > 0
+    ),
+  )
+
   return (
     <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto scrollbar-thin px-8 pb-4">
       <div className="mx-auto flex max-w-2xl flex-col gap-8">
@@ -40,15 +61,21 @@ export const ChatTranscript = memo(function ChatTranscript({
             key={message.id}
             message={message}
             selected={message.turnId === selectedTurnId}
+            streaming={message.role === "assistant" && message.turnId === streamingTurnId}
             isLatestUser={message.role === "user" && message.turnId === latestUserTurnId}
             highlightedUser={message.role === "user" && message.turnId === highlightedUserTurnId}
             registerUserMessage={registerUserMessage}
             onSelectTurn={onSelectTurn}
             onForkThread={onForkThread}
             onEditLatest={onEditLatest}
+            rollingBackLedgerEntryId={rollingBackLedgerEntryId}
+            applyingProposalId={applyingProposalId}
+            onRollbackLedgerEntry={onRollbackLedgerEntry}
+            onApplyProposal={onApplyProposal}
+            onDiscardProposal={onDiscardProposal}
           />
         ))}
-        {runningTurn && <IntentAnalyzer turn={runningTurn} />}
+        {runningTurn && !hasLiveOutput && <IntentAnalyzer />}
       </div>
     </div>
   )

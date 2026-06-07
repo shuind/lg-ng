@@ -100,15 +100,50 @@ describe("query loop", () => {
 
     expect(events.map((event) => event.type)).toEqual([
       "model_start",
+      "usage_update",
       "tool_call",
       "tool_result",
       "model_start",
+      "usage_update",
       "tool_call",
       "tool_result",
       "model_start",
+      "assistant_delta",
+      "usage_update",
       "assistant_message",
       "done",
     ]);
+  });
+
+  it("emits token deltas from streaming model chunks", async () => {
+    async function* chunks() {
+      yield { choices: [{ delta: { content: "归" } }] };
+      yield { choices: [{ delta: { content: "档" } }] };
+      yield { choices: [], usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 } };
+    }
+    const client = {
+      chat: {
+        completions: {
+          create: async () => chunks(),
+        },
+      },
+    } as unknown as OpenAI;
+    const deltas: string[] = [];
+    let finalText = "";
+    for await (const event of queryEvents({
+      client,
+      model: "mock",
+      messages: [{ role: "user", content: "write" }],
+      tools,
+      toolContext: { cwd: process.cwd() },
+      maxLoops: 5,
+    })) {
+      if (event.type === "assistant_delta") deltas.push(event.text);
+      if (event.type === "done") finalText = event.result.text;
+    }
+
+    expect(deltas).toEqual(["归", "档"]);
+    expect(finalText).toBe("归档");
   });
 
   it("aborts before calling the model", async () => {

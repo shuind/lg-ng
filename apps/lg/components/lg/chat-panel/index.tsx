@@ -22,6 +22,8 @@ interface ChatPanelProps {
   settingCards: SettingCard[]
   responseConstraints: ResponseConstraint[]
   activeResponseConstraintIds: string[]
+  rollingBackLedgerEntryId: string | null
+  applyingProposalId: string | null
   onSelectTurn: (turnId: string) => void
   onSend: (text: string, citations: ChatCitation[], options: ChatSendOptions) => Promise<void>
   onReview: () => Promise<void>
@@ -37,6 +39,9 @@ interface ChatPanelProps {
   onRenameThread: (threadId: string, title: string) => void
   onSetThreadStatus: (threadId: string, status: Thread["status"]) => void
   onForkThread: (turnId: string) => void
+  onRollbackLedgerEntry: (entryId: string) => Promise<void>
+  onApplyProposal: (proposalId: string, hunkIds?: string[]) => Promise<string | undefined>
+  onDiscardProposal: (proposalId: string) => Promise<void>
 }
 
 export function ChatPanel({
@@ -52,6 +57,8 @@ export function ChatPanel({
   settingCards,
   responseConstraints,
   activeResponseConstraintIds,
+  rollingBackLedgerEntryId,
+  applyingProposalId,
   onSelectTurn,
   onSend,
   onReview,
@@ -67,6 +74,9 @@ export function ChatPanel({
   onRenameThread,
   onSetThreadStatus,
   onForkThread,
+  onRollbackLedgerEntry,
+  onApplyProposal,
+  onDiscardProposal,
 }: ChatPanelProps) {
   const composerRef = useRef<ChatComposerHandle>(null)
   const runningTurn = useMemo(() => turns.find((turn) => turn.status === "running"), [turns])
@@ -117,6 +127,11 @@ export function ChatPanel({
         onForkThread={onForkThread}
         onEditLatest={handleEditLatest}
         registerUserMessage={registerUserMessage}
+        rollingBackLedgerEntryId={rollingBackLedgerEntryId}
+        applyingProposalId={applyingProposalId}
+        onRollbackLedgerEntry={onRollbackLedgerEntry}
+        onApplyProposal={onApplyProposal}
+        onDiscardProposal={onDiscardProposal}
       />
 
       <ChatComposer

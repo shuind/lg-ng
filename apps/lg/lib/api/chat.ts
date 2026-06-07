@@ -1,11 +1,13 @@
 import { type Message, type SettingCard, type Thread, type Turn, mockMessages, mockSettingCards, mockThreads } from "../mock-data"
-import type { ResponseConstraint } from "../types"
+import type { ResponseConstraint, WorkflowAction } from "../types"
 import { delay, fallbackResponseConstraints, normalizeResponseConstraintStore, type ResponseConstraintStorePayload } from "./common"
 
 export type SendMessageOptions = {
   constraintIds?: string[]
   temporaryConstraints?: string[]
   skillIds?: string[]
+  readonlyOnly?: boolean
+  workflowAction?: WorkflowAction
 }
 
 export type SendMessageStreamHandlers = {
@@ -13,6 +15,7 @@ export type SendMessageStreamHandlers = {
   onTurn?: (payload: { thread: Thread; turn: Turn; userMessage: Message }) => void
   onAgentEvent?: (event: NonNullable<Message["events"]>[number]) => void
   onAssistantDelta?: (payload: { text: string }) => void
+  onReasoningDelta?: (payload: { text: string; loop?: number }) => void
   onAssistantMessage?: (message: Message) => void
   onDone?: (payload: {
     thread: Thread
@@ -62,6 +65,8 @@ export async function sendMessage(
         constraintIds: options.constraintIds,
         temporaryConstraints: options.temporaryConstraints,
         skillIds: options.skillIds,
+        readonlyOnly: options.readonlyOnly,
+        workflowAction: options.workflowAction,
       }),
     })
     const data = await res.json()
@@ -162,6 +167,8 @@ export async function sendMessageStream(
       constraintIds: options.constraintIds,
       temporaryConstraints: options.temporaryConstraints,
       skillIds: options.skillIds,
+      readonlyOnly: options.readonlyOnly,
+      workflowAction: options.workflowAction,
     }),
   })
   if (!res.ok) {
@@ -238,6 +245,9 @@ function dispatchSseEvent(raw: string, handlers: SendMessageStreamHandlers): voi
       break
     case "assistant_delta":
       handlers.onAssistantDelta?.(payload)
+      break
+    case "reasoning_delta":
+      handlers.onReasoningDelta?.(payload)
       break
     case "assistant_message":
       handlers.onAssistantMessage?.(payload)

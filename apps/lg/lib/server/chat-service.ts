@@ -2,6 +2,7 @@ import path from "node:path"
 import { touchBookUpdatedAt } from "@/lib/server/book-store"
 import { markDirty } from "@/lib/server/dirty-index"
 import { appendLedgerEntry } from "@/lib/server/ledger"
+import { createProposals, summarizeProposals } from "@/lib/server/proposal-service"
 import { updateIndexedFile } from "@/lib/server/book-index"
 import { withBookMutationQueue } from "@/lib/server/book-mutation-queue"
 import { runNovelGuideAgent, runNovelGuideAgentStream } from "@/lib/server/novel-guide-agent"
@@ -18,8 +19,8 @@ import {
   listThreadMessages,
   updateTurn,
 } from "@/lib/server/thread-store"
-import type { AppliedResponseConstraint, SettingCard } from "@/lib/types"
-import type { FileChange } from "novel-guide"
+import type { AppliedResponseConstraint, ChatChangeEntry, LedgerEntry, SettingCard, WorkflowAction } from "@/lib/types"
+import type { FileChange, FileProposal } from "novel-guide"
 
 type TrackedFileChange = FileChange & { path: string }
 type SseController = ReadableStreamDefaultController<Uint8Array>
@@ -107,8 +108,14 @@ async function sendThreadMessageUnlocked(bookId: string, body: unknown): Promise
       responseConstraints,
       skills: selectedSkills,
       threadId: thread.id,
+      readonlyOnly: input.readonlyOnly,
+      workflowAction: input.workflowAction,
     })
-    const changedPaths = await recordAgentFileChanges(bookId, result.fileChanges)
+    const changeRecord = await recordAgentFileChanges(bookId, result.fileChanges)
+    const changedPaths = changeRecord.paths
+    const changeSet = buildMessageChangeSet(changeRecord.entries)
+    const proposals = await recordAgentProposals(bookId, result.proposals)
+    const proposalSet = proposals.length > 0 ? { proposals: summarizeProposals(proposals) } : undefined
 
     const events = [
       createAgentEvent(turn.id, { type: "observe", text: "已开始处理。" }),
@@ -120,10 +127,13 @@ async function sendThreadMessageUnlocked(bookId: string, body: unknown): Promise
         type: "done",
         text: changedPaths.length > 0
           ? `已写入 ${changedPaths.length} 个项目文件。`
+          : proposals.length > 0
+            ? `已生成 ${proposals.length} 个待采纳 proposal。`
           : result.toolTrace.length > 0
             ? "已读取项目资料并生成回复。"
             : "处理完成。",
         paths: changedPaths.length > 0 ? changedPaths : undefined,
+        ledgerEntryIds: changeRecord.entries.map((entry) => entry.id),
       }),
     ]
 
@@ -149,6 +159,8 @@ async function sendThreadMessageUnlocked(bookId: string, body: unknown): Promise
       content: assistantContent,
       brief,
       events,
+      changeSet,
+      proposalSet,
     })
     await appendThreadMessages(bookId, [assistantMessage])
     const completedTurn = await updateTurn(bookId, turn.id, {
@@ -210,7 +222,7 @@ export function createThreadMessageStream(
       ).catch((err) => {
         emitSse(controller, "error", { message: err instanceof Error ? err.message : "处理失败" })
       }).finally(() => {
-        controller.close()
+        closeSse(controller)
       })
     },
     cancel() {
@@ -277,6 +289,8 @@ async function streamThreadMessageUnlocked(
       skills: selectedSkills,
       threadId: thread.id,
       signal,
+      readonlyOnly: input.readonlyOnly,
+      workflowAction: input.workflowAction,
     })) {
       if (streamEvent.type === "done") {
         finalResult = streamEvent.result
@@ -286,7 +300,24 @@ async function streamThreadMessageUnlocked(
       if (streamEvent.event.type !== "query_event") continue
       const engineEvent = streamEvent.event.event
       if (engineEvent.type === "model_start") {
-        const event = createAgentEvent(turn.id, { type: "observe", text: `模型轮次 ${engineEvent.loop + 1}。` })
+        const event = createAgentEvent(turn.id, { type: "observe", text: `模型轮次 ${engineEvent.loop + 1}/${engineEvent.maxLoops}。` })
+        events.push(event)
+        emitSse(controller, "agent_event", event)
+      } else if (engineEvent.type === "assistant_delta") {
+        emitSse(controller, "assistant_delta", { text: engineEvent.accumulatedText, delta: engineEvent.text })
+      } else if (engineEvent.type === "reasoning_delta") {
+        const event = createAgentEvent(turn.id, {
+          type: "reasoning",
+          text: engineEvent.text,
+        })
+        events.push(event)
+        emitSse(controller, "reasoning_delta", { text: engineEvent.text, loop: engineEvent.loop })
+      } else if (engineEvent.type === "usage_update") {
+        const event = createAgentEvent(turn.id, {
+          type: "observe",
+          text: `Token usage: ${engineEvent.totalUsage.totalTokens}`,
+          usage: engineEvent.totalUsage,
+        })
         events.push(event)
         emitSse(controller, "agent_event", event)
       } else if (engineEvent.type === "tool_call") {
@@ -298,10 +329,15 @@ async function streamThreadMessageUnlocked(
         })
         events.push(event)
         emitSse(controller, "agent_event", event)
-      } else if (engineEvent.type === "assistant_message") {
-        emitSse(controller, "assistant_delta", { text: engineEvent.text })
-      } else if (engineEvent.type === "tool_result" && !engineEvent.ok) {
-        const event = createAgentEvent(turn.id, { type: "error", message: `${engineEvent.name}: ${engineEvent.content}` })
+      } else if (engineEvent.type === "tool_result") {
+        const event = createAgentEvent(turn.id, {
+          type: engineEvent.ok ? "observe" : "error",
+          name: engineEvent.name,
+          text: engineEvent.ok ? `${engineEvent.name} 完成` : undefined,
+          message: engineEvent.ok ? undefined : `${engineEvent.name}: ${engineEvent.content}`,
+          resultPreview: engineEvent.resultPreview,
+          durationMs: engineEvent.durationMs,
+        })
         events.push(event)
         emitSse(controller, "agent_event", event)
       } else if (engineEvent.type === "error") {
@@ -312,7 +348,11 @@ async function streamThreadMessageUnlocked(
     }
 
     if (!finalResult) throw new Error("处理结束但没有返回结果")
-    const changedPaths = await recordAgentFileChanges(bookId, finalResult.fileChanges)
+    const changeRecord = await recordAgentFileChanges(bookId, finalResult.fileChanges)
+    const changedPaths = changeRecord.paths
+    const changeSet = buildMessageChangeSet(changeRecord.entries)
+    const proposals = await recordAgentProposals(bookId, finalResult.proposals)
+    const proposalSet = proposals.length > 0 ? { proposals: summarizeProposals(proposals) } : undefined
     for (const failure of finalResult.failedTools) {
       const event = createAgentEvent(turn.id, { type: "error", message: failure })
       events.push(event)
@@ -322,10 +362,13 @@ async function streamThreadMessageUnlocked(
       type: "done",
       text: changedPaths.length > 0
         ? `已写入 ${changedPaths.length} 个项目文件。`
+        : proposals.length > 0
+          ? `已生成 ${proposals.length} 个待采纳 proposal。`
         : finalResult.toolTrace.length > 0
           ? "已读取项目资料并生成回复。"
           : "处理完成。",
       paths: changedPaths.length > 0 ? changedPaths : undefined,
+      ledgerEntryIds: changeRecord.entries.map((entry) => entry.id),
     })
     events.push(doneEvent)
     emitSse(controller, "agent_event", doneEvent)
@@ -351,6 +394,8 @@ async function streamThreadMessageUnlocked(
       content: assistantContent,
       brief,
       events,
+      changeSet,
+      proposalSet,
     })
     await appendThreadMessages(bookId, [assistantMessage])
     const completedTurn = await updateTurn(bookId, turn.id, {
@@ -407,7 +452,20 @@ async function streamThreadMessageUnlocked(
 }
 
 function emitSse(controller: SseController, event: string, data: unknown): void {
-  controller.enqueue(new TextEncoder().encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`))
+  try {
+    controller.enqueue(new TextEncoder().encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`))
+  } catch {
+    // The client may have cancelled the stream; cancellation is handled by the
+    // request AbortSignal and should not surface as an unhandled rejection.
+  }
+}
+
+function closeSse(controller: SseController): void {
+  try {
+    controller.close()
+  } catch {
+    // Already closed by client cancellation.
+  }
 }
 
 function isAbortError(error: unknown): boolean {
@@ -421,6 +479,8 @@ function normalizeSendMessageInput(body: unknown): {
   constraintIds: string[] | undefined
   skillIds: string[]
   temporaryConstraints: AppliedResponseConstraint[]
+  readonlyOnly: boolean
+  workflowAction?: WorkflowAction
 } {
   const raw = body && typeof body === "object" ? body as Record<string, unknown> : {}
   const content = raw.content
@@ -439,6 +499,8 @@ function normalizeSendMessageInput(body: unknown): {
     constraintIds: parseConstraintIds(raw.constraintIds),
     skillIds: parseSkillIds(raw.skillIds),
     temporaryConstraints: parseTemporaryConstraints(raw.temporaryConstraints),
+    readonlyOnly: raw.readonlyOnly === true,
+    workflowAction: parseWorkflowAction(raw.workflowAction),
   }
 }
 
@@ -496,13 +558,27 @@ function summarizeChangedPaths(paths: string[]): string {
   return `已修改：${visible.map((item) => `\`${item}\``).join("、")}${suffix}`
 }
 
-async function recordAgentFileChanges(bookId: string, changes: FileChange[]): Promise<string[]> {
-  const trackedChanges = collectTrackedFileChanges(bookId, changes)
-  if (trackedChanges.length === 0) return []
+function buildMessageChangeSet(entries: LedgerEntry[]) {
+  if (entries.length === 0) return undefined
+  return {
+    entries: entries.map((entry): ChatChangeEntry => ({
+      id: entry.id,
+      targetPath: entry.targetPath,
+      summary: entry.summary,
+      diffPatch: entry.diffPatch && entry.diffPatch.length <= 60000 ? entry.diffPatch : undefined,
+      rollbackable: Boolean(entry.targetPath && entry.afterHash),
+    })),
+  }
+}
 
+async function recordAgentFileChanges(bookId: string, changes: FileChange[]): Promise<{ paths: string[]; entries: LedgerEntry[] }> {
+  const trackedChanges = collectTrackedFileChanges(bookId, changes)
+  if (trackedChanges.length === 0) return { paths: [], entries: [] }
+
+  const entries: LedgerEntry[] = []
   for (const change of trackedChanges) {
     const action = change.operation === "edit" ? "edit_file" : "write_file"
-    await appendLedgerEntry(bookId, {
+    const entry = await appendLedgerEntry(bookId, {
       actor: "agent",
       action,
       targetPath: change.path,
@@ -510,6 +586,7 @@ async function recordAgentFileChanges(bookId: string, changes: FileChange[]): Pr
       afterSnapshot: change.afterContent ?? "",
       summary: `AI ${change.operation === "edit" ? "编辑" : "写入"} ${change.path}`,
     })
+    entries.push(entry)
     await markDirty(bookId, change.path).catch(() => {})
   }
 
@@ -519,7 +596,18 @@ async function recordAgentFileChanges(bookId: string, changes: FileChange[]): Pr
       updateIndexedFile(bookId, change.path, change.afterContent).catch(() => {}),
     ),
   )
-  return trackedChanges.map((change) => change.path)
+  return { paths: trackedChanges.map((change) => change.path), entries }
+}
+
+async function recordAgentProposals(bookId: string, proposals: FileProposal[]) {
+  if (proposals.length === 0) return []
+  return createProposals(bookId, proposals.map((proposal) => ({
+    targetPath: proposal.path,
+    baseContent: proposal.beforeContent ?? "",
+    afterContent: proposal.afterContent,
+    summary: proposal.summary,
+    source: proposal.source ?? "chat",
+  })))
 }
 
 function parseReferences(value: unknown): SettingCard[] {
@@ -589,4 +677,19 @@ function parseTemporaryConstraints(value: unknown): AppliedResponseConstraint[] 
       source: "temporary" as const,
     }]
   })
+}
+
+function parseWorkflowAction(value: unknown): WorkflowAction | undefined {
+  if (typeof value !== "string") return undefined
+  if (
+    value === "continue" ||
+    value === "revise" ||
+    value === "plant" ||
+    value === "resolve" ||
+    value === "diagnose" ||
+    value === "plan"
+  ) {
+    return value
+  }
+  return undefined
 }

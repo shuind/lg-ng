@@ -40,6 +40,9 @@ Permissions:
 - If a tool fails, use the failure text as evidence and choose a next step.
 - Never claim a write/update/review is complete if any required tool failed.
   Report partial completion and list failed tools.
+- For broad book-wide reading, continuity checks, canon conflicts, pacing
+  checks, or voice/style checks, prefer delegating to the appropriate subagent
+  with \`run_agent\` so the main conversation stays focused.
 `;
 
 export const NOVEL_PROFILE_PROMPT = `# Novel Workspace Profile
@@ -56,6 +59,9 @@ When the current workspace contains \`NOVEL.md\` with frontmatter
 - "review", "检查", and "看看有没有问题" default to continuity, canon conflict,
   character motivation, plot causality, timeline, foreshadowing, rhythm, point
   of view, and prose style, not code review.
+- After materially editing chapter prose or canon, consider running a readonly
+  checker subagent and disclose any remaining issues before claiming the turn is
+  finished.
 - Pasted external material is candidate material by default. Analyze first.
   Do not write it to disk unless the user explicitly asks to record/archive it.
 - For canon writes, state target files, canon/candidate status, impact on

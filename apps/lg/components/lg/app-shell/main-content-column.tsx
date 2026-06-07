@@ -20,6 +20,8 @@ type MainContentColumnProps = Pick<
   | "chatCitations"
   | "responseConstraints"
   | "activeResponseConstraintIds"
+  | "rollingBackLedgerEntryId"
+  | "applyingProposalId"
   | "onSelectTurn"
   | "onSend"
   | "onReview"
@@ -35,6 +37,10 @@ type MainContentColumnProps = Pick<
   | "onRenameThread"
   | "onSetThreadStatus"
   | "onForkThread"
+  | "onRollbackLedgerEntry"
+  | "onApplyProposal"
+  | "onDiscardProposal"
+  | "onProposalApplied"
 >
 
 export function MainContentColumn({
@@ -52,6 +58,8 @@ export function MainContentColumn({
   chatCitations,
   responseConstraints,
   activeResponseConstraintIds,
+  rollingBackLedgerEntryId,
+  applyingProposalId,
   onSelectTurn,
   onSend,
   onReview,
@@ -67,6 +75,10 @@ export function MainContentColumn({
   onRenameThread,
   onSetThreadStatus,
   onForkThread,
+  onRollbackLedgerEntry,
+  onApplyProposal,
+  onDiscardProposal,
+  onProposalApplied,
 }: MainContentColumnProps) {
   return (
     <div className="relative min-h-0 min-w-0">
@@ -84,6 +96,8 @@ export function MainContentColumn({
           settingCards={cards}
           responseConstraints={responseConstraints}
           activeResponseConstraintIds={activeResponseConstraintIds}
+          rollingBackLedgerEntryId={rollingBackLedgerEntryId}
+          applyingProposalId={applyingProposalId}
           onSelectTurn={onSelectTurn}
           onSend={onSend}
           onReview={onReview}
@@ -99,9 +113,12 @@ export function MainContentColumn({
           onRenameThread={onRenameThread}
           onSetThreadStatus={onSetThreadStatus}
           onForkThread={onForkThread}
+          onRollbackLedgerEntry={onRollbackLedgerEntry}
+          onApplyProposal={onApplyProposal}
+          onDiscardProposal={onDiscardProposal}
         />
       ) : activeChapterId ? (
-        <WritingDesk bookId={activeBookId} chapterId={activeChapterId} />
+        <WritingDesk bookId={activeBookId} chapterId={activeChapterId} onProposalApplied={onProposalApplied} />
       ) : null}
     </div>
   )

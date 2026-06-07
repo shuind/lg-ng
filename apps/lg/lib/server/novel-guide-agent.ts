@@ -3,13 +3,14 @@ import {
   createOpenAICompatibleClient,
   type EngineStreamEvent,
   type FileChange,
+  type FileProposal,
   getOpenAICompatibleConfig,
   initNovelWorkspace,
   loadSession,
 } from "novel-guide"
 import { getBook } from "@/lib/server/book-store"
 import { getBookDir } from "@/lib/server/paths"
-import type { AppliedResponseConstraint, SettingCard, SkillSummary } from "@/lib/types"
+import type { AppliedResponseConstraint, SettingCard, SkillSummary, WorkflowAction } from "@/lib/types"
 
 export interface NovelGuideAgentResult {
   reply: string
@@ -23,6 +24,7 @@ export interface NovelGuideAgentResult {
   }
   workspacePath: string
   fileChanges: FileChange[]
+  proposals: FileProposal[]
 }
 
 export interface NovelGuideReviewResult {
@@ -79,6 +81,23 @@ function formatSkillSummaries(skills: SkillSummary[]): string {
   ].join("\n")
 }
 
+function formatWorkflowAction(action?: WorkflowAction): string {
+  if (!action) return ""
+  const instructions: Record<WorkflowAction, string> = {
+    continue: "Workflow action /续写: use propose_file_change to create a reviewable continuation proposal for the target draft/chapter. Do not write target files directly.",
+    revise: "Workflow action /改稿: use propose_file_change to create a concrete diff proposal. Prefer minimal edits and do not write target files directly.",
+    plant: "Workflow action /铺垫: plant an open foreshadowing hook and maintain NOVEL.md's 当前 open 伏笔 when writing is requested.",
+    resolve: "Workflow action /收线: inspect open foreshadowing hooks, choose the referenced hook, and check the payoff is self-consistent before writing.",
+    diagnose: "Workflow action /卡点诊断: read context and provide multiple next directions. This is readonly unless the user explicitly asks to write.",
+    plan: "Workflow action /计划: produce a chapter/action plan first. Do not write files in this turn unless the user explicitly asks to execute the plan.",
+  }
+  return `Selected workflow:\n${instructions[action]}`
+}
+
+function isProposalWorkflow(action?: WorkflowAction): boolean {
+  return action === "continue" || action === "revise"
+}
+
 function buildPrompt(input: {
   bookId: string
   bookTitle: string
@@ -86,9 +105,11 @@ function buildPrompt(input: {
   references: SettingCard[]
   responseConstraints: AppliedResponseConstraint[]
   skills: SkillSummary[]
+  workflowAction?: WorkflowAction
 }): string {
   return [
     `LG book: ${input.bookTitle} (${input.bookId})`,
+    formatWorkflowAction(input.workflowAction),
     formatResponseConstraints(input.responseConstraints),
     formatSkillSummaries(input.skills),
     "User request:",
@@ -111,6 +132,8 @@ export async function runNovelGuideAgent(input: {
   skills?: SkillSummary[]
   threadId: string
   signal?: AbortSignal
+  readonlyOnly?: boolean
+  workflowAction?: WorkflowAction
 }): Promise<NovelGuideAgentResult> {
   const config = getOpenAICompatibleConfig()
   if (!config) {
@@ -120,8 +143,9 @@ export async function runNovelGuideAgent(input: {
       toolTrace: [],
       failedTools: ["model_config: missing API key"],
       usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-      workspacePath: getBookDir(input.bookId),
-      fileChanges: [],
+          workspacePath: getBookDir(input.bookId),
+          fileChanges: [],
+          proposals: [],
     }
   }
 
@@ -140,6 +164,8 @@ export async function runNovelGuideAgent(input: {
     initialCompaction: session?.compaction,
     appendSystemPrompt: LG_LEGACY_PROMPT,
     permissionMode: "bypass",
+    readonlyOnly: input.readonlyOnly,
+    proposalOnly: isProposalWorkflow(input.workflowAction) && !input.readonlyOnly,
   })
 
   const result = await engine.submitMessage(buildPrompt({
@@ -149,6 +175,7 @@ export async function runNovelGuideAgent(input: {
     references: input.references ?? [],
     responseConstraints: input.responseConstraints ?? [],
     skills: input.skills ?? [],
+    workflowAction: input.workflowAction,
   }), { signal: input.signal })
 
   return {
@@ -159,6 +186,7 @@ export async function runNovelGuideAgent(input: {
     usage: result.usage,
     workspacePath,
     fileChanges: result.fileChanges,
+    proposals: result.proposals,
   }
 }
 
@@ -170,6 +198,8 @@ export async function* runNovelGuideAgentStream(input: {
   skills?: SkillSummary[]
   threadId: string
   signal?: AbortSignal
+  readonlyOnly?: boolean
+  workflowAction?: WorkflowAction
 }): AsyncGenerator<NovelGuideAgentStreamEvent> {
   const config = getOpenAICompatibleConfig()
   if (!config) {
@@ -183,6 +213,7 @@ export async function* runNovelGuideAgentStream(input: {
         usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
         workspacePath: getBookDir(input.bookId),
         fileChanges: [],
+        proposals: [],
       },
     }
     return
@@ -203,6 +234,8 @@ export async function* runNovelGuideAgentStream(input: {
     initialCompaction: session?.compaction,
     appendSystemPrompt: LG_LEGACY_PROMPT,
     permissionMode: "bypass",
+    readonlyOnly: input.readonlyOnly,
+    proposalOnly: isProposalWorkflow(input.workflowAction) && !input.readonlyOnly,
   })
 
   for await (const event of engine.submitMessageEvents(buildPrompt({
@@ -212,6 +245,7 @@ export async function* runNovelGuideAgentStream(input: {
     references: input.references ?? [],
     responseConstraints: input.responseConstraints ?? [],
     skills: input.skills ?? [],
+    workflowAction: input.workflowAction,
   }), { signal: input.signal })) {
     if (event.type !== "done") {
       yield { type: "engine_event", event }
@@ -227,6 +261,7 @@ export async function* runNovelGuideAgentStream(input: {
         usage: event.result.usage,
         workspacePath,
         fileChanges: event.result.fileChanges,
+        proposals: event.result.proposals,
       },
     }
   }
@@ -261,35 +296,65 @@ export async function runNovelGuideReview(input: {
     sessionId: input.threadId,
     appendSystemPrompt: LG_LEGACY_PROMPT,
     permissionMode: "bypass",
-    maxLoops: 5,
+    maxLoops: 32,
   })
 
   const scope = input.scope?.trim() || "全书当前项目"
-  const result = await engine.runSubAgent({
-    agent: "continuity-checker",
-    readonly: true,
-    prompt: [
-      `Book: ${bookTitle} (${input.bookId})`,
-      `Review scope: ${scope}`,
-      "",
-      "Run a read-only novel health check. Focus on:",
-      "- overdue or unresolved foreshadowing",
-      "- timeline ordering problems",
-      "- impossible character locations",
-      "- relationship graph inconsistencies",
-      "- POV boundary issues",
-      "",
-      "Return Markdown with these sections: 摘要, 高风险问题, 证据, 建议下一步.",
-      "Do not modify files.",
-    ].join("\n"),
-  })
+  const checkers = [
+    { agent: "continuity-checker", label: "连续性" },
+    { agent: "canon-conflict", label: "设定冲突" },
+    { agent: "pacing-checker", label: "节奏" },
+    { agent: "voice-checker", label: "文风" },
+  ]
+  const results = await Promise.all(checkers.map(async (checker) => {
+    try {
+      const result = await engine.runSubAgent({
+        agent: checker.agent,
+        readonly: true,
+        prompt: [
+          `Book: ${bookTitle} (${input.bookId})`,
+          `Review scope: ${scope}`,
+          "",
+          "Run a read-only novel health check for your specialty.",
+          "Return the required JSON-in-markdown schema. Include evidence paths and line numbers when possible.",
+          "Do not modify files.",
+        ].join("\n"),
+      })
+      return { checker, result }
+    } catch (error) {
+      return {
+        checker,
+        result: {
+          text: "",
+          sessionId: input.threadId,
+          messages: [],
+          toolTrace: [],
+          failedTools: [`${checker.agent}: ${error instanceof Error ? error.message : "failed"}`],
+          fileChanges: [],
+          usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        },
+      }
+    }
+  }))
+  const reply = results
+    .map(({ checker, result }) => `## ${checker.label} (${checker.agent})\n\n${result.text.trim() || "未返回报告。"}`)
+    .join("\n\n")
+  const toolTrace = results.flatMap(({ checker, result }) =>
+    result.toolTrace.length > 0 ? result.toolTrace : [`run_agent: ${checker.agent}`],
+  )
+  const failedTools = results.flatMap(({ result }) => result.failedTools)
+  const usage = results.reduce((sum, { result }) => ({
+    promptTokens: sum.promptTokens + result.usage.promptTokens,
+    completionTokens: sum.completionTokens + result.usage.completionTokens,
+    totalTokens: sum.totalTokens + result.usage.totalTokens,
+  }), { promptTokens: 0, completionTokens: 0, totalTokens: 0 })
 
   return {
-    reply: result.text,
-    sessionId: result.sessionId,
-    toolTrace: result.toolTrace,
-    failedTools: result.failedTools,
-    usage: result.usage,
+    reply,
+    sessionId: input.threadId,
+    toolTrace,
+    failedTools,
+    usage,
     workspacePath,
   }
 }

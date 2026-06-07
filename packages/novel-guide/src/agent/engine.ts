@@ -3,21 +3,26 @@
 // turns; submitMessage builds context, invokes query(), accumulates usage, and
 // writes session state.
 
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import type OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import fg from "fast-glob";
 import { createChatCompletion } from "../model/deepseek.js";
 import { buildEffectiveSystemPrompt } from "../prompts/systemPrompt.js";
 import { getTools } from "../tools/registry.js";
-import type { FileChange, ToolContext, Tools } from "../tools/tool.js";
+import type { FileChange, FileProposal, ToolContext, Tools } from "../tools/tool.js";
 import { queryEvents, type QueryEvent, type QueryResult } from "./query.js";
 import { createSessionId, saveSession, type SessionCompactionState, type SessionState } from "./session.js";
 import { findAgent, loadAgentsDir } from "../agents/loadAgentsDir.js";
 import { loadSkillsDir } from "../skills/loadSkillsDir.js";
 
 const COMPACTION_PREFIX = "NG_COMPACTION_MEMO:";
-const DEFAULT_CONTEXT_BUDGET_TOKENS = 24000;
+const DEFAULT_CONTEXT_BUDGET_TOKENS = 64000;
 const DEFAULT_COMPACTION_TRIGGER_RATIO = 0.8;
 const DEFAULT_RECENT_MESSAGE_COUNT = 16;
+const DEFAULT_MAX_LOOPS = 32;
+const DEFAULT_SUBAGENT_MAX_LOOPS = 10;
 
 export interface EngineConfig {
   cwd: string;
@@ -31,6 +36,7 @@ export interface EngineConfig {
   permissionMode?: "bypass" | "confirm";
   maxLoops?: number;
   readonlyOnly?: boolean;
+  proposalOnly?: boolean;
   contextBudgetTokens?: number;
   compactionTriggerRatio?: number;
   recentMessageCount?: number;
@@ -42,6 +48,7 @@ export interface EngineTurnResult {
   toolTrace: string[];
   failedTools: string[];
   fileChanges: FileChange[];
+  proposals: FileProposal[];
   usage: {
     promptTokens: number;
     completionTokens: number;
@@ -76,13 +83,14 @@ export class AgentEngine {
     this.sessionId = config.sessionId ?? createSessionId();
     this.messages = config.initialMessages ?? [];
     this.compaction = config.initialCompaction;
-    this.tools = getTools({ readonlyOnly: config.readonlyOnly });
+    this.tools = getTools({ readonlyOnly: config.readonlyOnly, proposalOnly: config.proposalOnly });
   }
 
   private async buildUserContext(): Promise<string> {
-    const [skills, agents] = await Promise.all([
+    const [skills, agents, memoryCard] = await Promise.all([
       loadSkillsDir(this.config.cwd),
       loadAgentsDir(this.config.cwd),
+      buildProjectMemoryCard(this.config.cwd),
     ]);
     const skillSummary = skills
       .filter((skill) => !skill.disableModelInvocation)
@@ -93,6 +101,7 @@ export class AgentEngine {
       .join("\n");
     return [
       `Workspace: ${this.config.cwd}`,
+      memoryCard,
       skillSummary ? `Available skills:\n${skillSummary}` : "Available skills: none",
       agentSummary ? `Available agents:\n${agentSummary}` : "Available agents: none",
     ].join("\n\n");
@@ -122,7 +131,7 @@ export class AgentEngine {
       model: this.config.model,
       askConfirmation: this.config.askConfirmation,
       permissionMode: this.config.permissionMode,
-      maxLoops: Math.min(this.config.maxLoops ?? 8, 5),
+      maxLoops: Math.min(this.config.maxLoops ?? DEFAULT_MAX_LOOPS, DEFAULT_SUBAGENT_MAX_LOOPS),
       readonlyOnly: input.readonly !== false,
       appendSystemPrompt: `You are running as subagent: ${agent.name}. Return a structured report. Do not modify files unless explicitly allowed.`,
     });
@@ -148,6 +157,7 @@ export class AgentEngine {
       toolTrace: [],
       failedTools: ["engine: Query ended without a final result."],
       fileChanges: [],
+      proposals: [],
       usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
       sessionId: this.sessionId,
     };
@@ -165,6 +175,7 @@ export class AgentEngine {
         toolTrace: [],
         failedTools: [],
         fileChanges: [],
+        proposals: [],
         usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
         sessionId: this.sessionId,
       } };
@@ -190,7 +201,7 @@ export class AgentEngine {
       messages: turnMessages,
       tools: this.tools,
       toolContext: this.createToolContext(new Map(), options.signal),
-      maxLoops: this.config.maxLoops ?? 8,
+      maxLoops: this.config.maxLoops ?? DEFAULT_MAX_LOOPS,
       signal: options.signal,
     })) {
       if (event.type === "done") result = event.result;
@@ -205,6 +216,7 @@ export class AgentEngine {
         toolTrace: [],
         failedTools: ["engine: Query ended without a final result."],
         fileChanges: [],
+        proposals: [],
       };
     }
     this.messages = result.messages;
@@ -226,6 +238,7 @@ export class AgentEngine {
       toolTrace: result.toolTrace,
       failedTools: result.failedTools,
       fileChanges: result.fileChanges,
+      proposals: result.proposals,
       usage: result.usage,
       sessionId: this.sessionId,
     } };
@@ -306,6 +319,78 @@ export class AgentEngine {
     }
     return null;
   }
+}
+
+async function buildProjectMemoryCard(cwd: string): Promise<string> {
+  const novel = await readWorkspaceFile(cwd, "NOVEL.md");
+  if (!novel) return "Project memory: no NOVEL.md found.";
+
+  const sections = [
+    extractMarkdownSection(novel, "核心实体清单", 1200),
+    extractMarkdownSection(novel, "当前 open 伏笔", 1200),
+    extractMarkdownSection(novel, "待确认问题", 800),
+  ].filter(Boolean);
+  const canonFacts = await summarizeCanonFacts(cwd);
+  const body = [
+    "Project long-term memory (derived from files, not an LLM summary):",
+    sections.length > 0 ? sections.join("\n\n") : "NOVEL.md has no populated long-term-memory sections yet.",
+    canonFacts,
+  ].filter(Boolean);
+  return body.join("\n\n");
+}
+
+async function readWorkspaceFile(cwd: string, relativePath: string): Promise<string | null> {
+  try {
+    return await readFile(path.join(cwd, relativePath), "utf8");
+  } catch {
+    return null;
+  }
+}
+
+function extractMarkdownSection(markdown: string, heading: string, maxChars: number): string {
+  const lines = markdown.split(/\r?\n/);
+  const start = lines.findIndex((line) => line.trim() === `## ${heading}`);
+  if (start < 0) return "";
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index++) {
+    if (/^##\s+/.test(lines[index])) {
+      end = index;
+      break;
+    }
+  }
+  const content = lines.slice(start + 1, end).join("\n").trim();
+  if (!content) return "";
+  return `## ${heading}\n${content.slice(0, maxChars)}`;
+}
+
+async function summarizeCanonFacts(cwd: string): Promise<string> {
+  const files = await fg(["canon/**/*.md"], {
+    cwd,
+    onlyFiles: true,
+    dot: false,
+    ignore: ["**/.gitkeep"],
+  }).catch(() => []);
+  if (files.length === 0) return "";
+
+  const lines: string[] = [];
+  for (const file of files.slice(0, 40)) {
+    const raw = await readWorkspaceFile(cwd, file);
+    if (!raw) continue;
+    const title = raw.match(/^#\s+(.+)$/m)?.[1]?.trim() || file.replace(/^.*\//, "").replace(/\.md$/i, "");
+    const aliases = extractAliases(raw);
+    lines.push(`- ${title}${aliases.length ? ` (aliases: ${aliases.join(", ")})` : ""} -> ${file}`);
+  }
+  return lines.length ? `Canon index:\n${lines.join("\n")}` : "";
+}
+
+function extractAliases(content: string): string[] {
+  const aliases: string[] = [];
+  for (const line of content.split(/\r?\n/)) {
+    const match = line.match(/^\s*(?:aliases?|别名|又名|\*\*(?:aliases?|别名|又名)\*\*)\s*[:：]?\s*(.+)$/i);
+    if (!match?.[1]) continue;
+    aliases.push(...match[1].split(/[、,，;；|/]/).map((item) => item.trim()).filter(Boolean));
+  }
+  return [...new Set(aliases)].slice(0, 8);
 }
 
 function estimateMessagesTokens(messages: ChatCompletionMessageParam[]): number {

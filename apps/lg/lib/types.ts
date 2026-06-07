@@ -184,7 +184,64 @@ export interface IntentBrief {
   toolTrace?: string[]
 }
 
-export type AgentEventType = "observe" | "retrieve" | "plan" | "tool_call" | "done" | "error"
+export type WorkflowAction = "continue" | "revise" | "plant" | "resolve" | "diagnose" | "plan"
+
+export interface ChatChangeEntry {
+  id: string
+  targetPath: string
+  summary: string
+  diffPatch?: string
+  rollbackable: boolean
+}
+
+export interface MessageChangeSet {
+  entries: ChatChangeEntry[]
+}
+
+export type ProposalStatus = "pending" | "applied" | "partially_applied" | "discarded"
+export type ProposalSource = "chat" | "draft" | "workflow"
+
+export interface ProposalHunk {
+  id: string
+  baseStartLine: number
+  baseLineCount: number
+  replacementText: string
+  preview: string
+}
+
+export interface ChangeProposal {
+  id: string
+  bookId: string
+  targetPath: string
+  source: ProposalSource
+  status: ProposalStatus
+  summary: string
+  baseHash: string
+  baseContent: string
+  afterContent: string
+  diffPatch: string
+  hunks: ProposalHunk[]
+  appliedHunkIds?: string[]
+  ledgerEntryId?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ProposalSummary {
+  id: string
+  targetPath: string
+  source: ProposalSource
+  status: ProposalStatus
+  summary: string
+  diffPatch: string
+  hunks: ProposalHunk[]
+}
+
+export interface MessageProposalSet {
+  proposals: ProposalSummary[]
+}
+
+export type AgentEventType = "observe" | "retrieve" | "plan" | "reasoning" | "tool_call" | "done" | "error"
 
 export interface AgentEvent {
   id: string
@@ -195,6 +252,15 @@ export interface AgentEvent {
   steps?: string[]
   name?: string
   argsPreview?: string
+  resultPreview?: string
+  usage?: {
+    promptTokens: number
+    completionTokens: number
+    totalTokens: number
+  }
+  durationMs?: number
+  ledgerEntryIds?: string[]
+  subagent?: string
   message?: string
   createdAt: string
 }
@@ -242,6 +308,8 @@ export interface Message {
   constraints?: AppliedResponseConstraint[]
   brief?: IntentBrief
   events?: AgentEvent[]
+  changeSet?: MessageChangeSet
+  proposalSet?: MessageProposalSet
 }
 
 export interface SettingCard {

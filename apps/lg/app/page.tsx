@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { AppShell, type AppMode } from "@/components/lg/app-shell"
 import type { ChatCitation, ChatSendOptions } from "@/components/lg/chat-panel"
 import { useWorkbenchOverlay } from "@/hooks/use-workbench-overlay"
@@ -11,6 +11,8 @@ import {
   listSettingCards,
   listLedgerEntries,
   rollbackLedgerEntry,
+  applyProposal,
+  discardProposal,
   sendMessageStream,
   runBookReview,
   createThread,
@@ -27,7 +29,7 @@ import {
 } from "@/lib/api"
 import type { Book, Chapter, Message, SettingCard, Thread, Turn, OutlineFile } from "@/lib/mock-data"
 import type { ThreadBundle } from "@/lib/api"
-import type { LedgerEntry, ResponseConstraint } from "@/lib/types"
+import type { LedgerEntry, ProposalSummary, ResponseConstraint } from "@/lib/types"
 import { buildAppliedConstraints, findLatestSelectableTurnId, upsertById } from "./page-utils"
 
 export default function Page() {
@@ -42,6 +44,7 @@ export default function Page() {
   const [cards, setCards] = useState<SettingCard[]>([])
   const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([])
   const [rollingBackLedgerEntryId, setRollingBackLedgerEntryId] = useState<string | null>(null)
+  const [applyingProposalId, setApplyingProposalId] = useState<string | null>(null)
   const [reviewing, setReviewing] = useState(false)
   const [activeBookId, setActiveBookId] = useState<string>("")
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null)
@@ -241,8 +244,12 @@ export default function Page() {
     applyResponseConstraintStore(store)
   }
 
-  function handleOpenWorkbench(bookId: string, path?: string) {
+  const handleOpenWorkbench = useCallback((bookId: string, path?: string) => {
     workbench.open(bookId, path)
+  }, [workbench.open])
+
+  function upsertProposal(current: ProposalSummary, next: ProposalSummary): ProposalSummary {
+    return current.id === next.id ? { ...current, ...next } : current
   }
 
   async function handleRollbackLedgerEntry(entryId: string) {
@@ -266,6 +273,63 @@ export default function Page() {
     }
   }
 
+  async function refreshBookDerivedData() {
+    if (!activeBookId) return
+    const [ledgerResponse, freshCards, freshChapters] = await Promise.all([
+      listLedgerEntries(activeBookId, { limit: 24 }).catch(() => ({ entries: [] })),
+      listSettingCards(activeBookId).catch(() => cards),
+      listChapters(activeBookId).catch(() => chapters),
+    ])
+    setLedgerEntries(ledgerResponse.entries)
+    setCards(freshCards)
+    setChapters(freshChapters)
+  }
+
+  function updateProposalInMessages(proposalId: string, patch: Parameters<typeof upsertProposal>[1]) {
+    setMessages((current) => current.map((message) => {
+      if (!message.proposalSet?.proposals.some((proposal) => proposal.id === proposalId)) return message
+      return {
+        ...message,
+        proposalSet: {
+          proposals: message.proposalSet.proposals.map((proposal) =>
+            proposal.id === proposalId ? upsertProposal(proposal, patch) : proposal,
+          ),
+        },
+      }
+    }))
+  }
+
+  async function handleApplyProposal(proposalId: string, hunkIds?: string[]): Promise<string | undefined> {
+    if (!activeBookId || applyingProposalId) return undefined
+    setApplyingProposalId(proposalId)
+    try {
+      const result = await applyProposal(activeBookId, proposalId, hunkIds)
+      updateProposalInMessages(proposalId, result.proposal)
+      await refreshBookDerivedData()
+      return result.updatedContent
+    } catch (err) {
+      console.error("[handleApplyProposal] 采纳失败:", err)
+      alert(err instanceof Error ? err.message : "采纳失败，请稍后重试")
+      return undefined
+    } finally {
+      setApplyingProposalId(null)
+    }
+  }
+
+  async function handleDiscardProposal(proposalId: string) {
+    if (!activeBookId || applyingProposalId) return
+    setApplyingProposalId(proposalId)
+    try {
+      const proposal = await discardProposal(activeBookId, proposalId)
+      updateProposalInMessages(proposalId, proposal)
+    } catch (err) {
+      console.error("[handleDiscardProposal] 丢弃失败:", err)
+      alert(err instanceof Error ? err.message : "丢弃失败，请稍后重试")
+    } finally {
+      setApplyingProposalId(null)
+    }
+  }
+
   async function handleReview() {
     if (!activeBookId || !activeThreadId || reviewing) return
     const targetThread = threads.find((thread) => thread.id === activeThreadId)
@@ -278,7 +342,7 @@ export default function Page() {
       threadId: activeThreadId,
       turnId: optimisticTurnId,
       role: "user",
-      content: "体检：连续性检查（全书）",
+      content: "体检：增量连续性 / 设定冲突 / 节奏 / 文风（dirty-index）",
       version: 1,
       createdAt: ts,
     }
@@ -385,6 +449,7 @@ export default function Page() {
     let latestTurn = optimisticTurn
     let serverTurnId = optimisticTurnId
     let assistantPlaceholderId = `msg-local-running-${optimisticTurnId}`
+    const reasoningSegments = new Map<number, { eventId: string; text: string }>()
     const ensureAssistantPlaceholder = (turnId: string, targetThreadId: string) => {
       assistantPlaceholderId = `msg-local-running-${turnId}`
       setMessages((current) => {
@@ -401,12 +466,36 @@ export default function Page() {
         }]
       })
     }
+    const appendReasoningDelta = (delta: string, loop = 0) => {
+      if (!delta) return
+      const segment = reasoningSegments.get(loop) ?? {
+        eventId: `event-local-reasoning-${serverTurnId}-${loop}`,
+        text: "",
+      }
+      segment.text += delta
+      reasoningSegments.set(loop, segment)
+      const event = {
+        id: segment.eventId,
+        turnId: serverTurnId,
+        type: "reasoning" as const,
+        text: segment.text,
+        createdAt: new Date().toISOString(),
+      }
+      ensureAssistantPlaceholder(serverTurnId, threadId)
+      setMessages((current) => current.map((message) => {
+        if (message.id !== assistantPlaceholderId) return message
+        const events = (message.events ?? []).filter((item) => item.id !== segment.eventId)
+        return { ...message, events: [...events, event] }
+      }))
+    }
 
     try {
       await sendMessageStream(activeBookId, text, threadId, citations, {
         constraintIds: options.constraintIds ?? threadConstraintIds[threadId] ?? [],
         temporaryConstraints: options.temporaryConstraints ?? [],
         skillIds: options.skillIds ?? [],
+        readonlyOnly: options.readonlyOnly,
+        workflowAction: options.workflowAction,
       }, {
         signal: options.signal,
         onTurn(payload) {
@@ -436,6 +525,9 @@ export default function Page() {
             if (message.id !== assistantPlaceholderId) return message
             return { ...message, content: payload.text }
           }))
+        },
+        onReasoningDelta(payload) {
+          appendReasoningDelta(payload.text, payload.loop)
         },
         onAssistantMessage(message) {
           setMessages((current) => [
@@ -514,6 +606,26 @@ export default function Page() {
     }
   }
 
+  const handleToggleCollapsed = useCallback(() => {
+    setCollapsed((current) => !current)
+  }, [])
+
+  const handleSelectBook = useCallback((id: string) => {
+    setActiveBookId(id)
+    setMode("chat")
+    setActiveChapterId(null)
+  }, [])
+
+  const handleSelectChapter = useCallback((id: string) => {
+    setActiveChapterId(id)
+    setMode("writing")
+  }, [])
+
+  const handleBackToChat = useCallback(() => {
+    setMode("chat")
+    setActiveChapterId(null)
+  }, [])
+
   const activeBook = books.find((b) => b.id === activeBookId)
   const activeResponseConstraintIds = activeThreadId ? threadConstraintIds[activeThreadId] ?? [] : []
 
@@ -528,6 +640,7 @@ export default function Page() {
       cards={cards}
       ledgerEntries={ledgerEntries}
       rollingBackLedgerEntryId={rollingBackLedgerEntryId}
+      applyingProposalId={applyingProposalId}
       activeBookId={activeBookId}
       activeBookTitle={activeBook?.title ?? ""}
       activeChapterId={activeChapterId}
@@ -541,24 +654,17 @@ export default function Page() {
       activeResponseConstraintIds={activeResponseConstraintIds}
       workbenchBook={workbench.book ?? null}
       workbenchInitialPath={workbench.initialPath}
-      onToggleCollapsed={() => setCollapsed((current) => !current)}
-      onSelectBook={(id) => {
-        setActiveBookId(id)
-        setMode("chat")
-        setActiveChapterId(null)
-      }}
-      onSelectChapter={(id) => {
-        setActiveChapterId(id)
-        setMode("writing")
-      }}
-      onBackToChat={() => {
-        setMode("chat")
-        setActiveChapterId(null)
-      }}
+      onToggleCollapsed={handleToggleCollapsed}
+      onSelectBook={handleSelectBook}
+      onSelectChapter={handleSelectChapter}
+      onBackToChat={handleBackToChat}
       onNewBook={handleNewBook}
       onNewChapter={handleNewChapter}
       onOpenWorkbench={handleOpenWorkbench}
       onRollbackLedgerEntry={handleRollbackLedgerEntry}
+      onApplyProposal={handleApplyProposal}
+      onDiscardProposal={handleDiscardProposal}
+      onProposalApplied={refreshBookDerivedData}
       onRenameBook={handleRenameBook}
       onSelectTurn={setSelectedTurnId}
       onSend={handleSend}

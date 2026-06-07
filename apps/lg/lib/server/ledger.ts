@@ -330,7 +330,7 @@ function tryReversePatch(entry: LedgerEntry, currentContent: string): string | n
 export async function appendLedgerEntry(
   bookId: string,
   entry: LedgerAppendInput,
-): Promise<void> {
+): Promise<LedgerEntry> {
   const state = await readOrRebuildLedgerState(bookId)
   const normalizedEntry: Omit<LedgerEntry, "id" | "bookId" | "timestamp"> = { ...entry }
 
@@ -379,6 +379,7 @@ export async function appendLedgerEntry(
   await fs.appendFile(ledgerPath(bookId), JSON.stringify(record) + "\n", "utf-8")
   applyEntryToLedgerState(state, record)
   await writeLedgerState(bookId, state)
+  return record
 }
 
 export async function listLedgerEntries(

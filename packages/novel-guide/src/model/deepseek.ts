@@ -1,5 +1,11 @@
 import OpenAI from "openai";
-import type { ChatCompletion, ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources/chat/completions";
+import type {
+  ChatCompletion,
+  ChatCompletionChunk,
+  ChatCompletionMessageParam,
+  ChatCompletionMessageToolCall,
+  ChatCompletionTool,
+} from "openai/resources/chat/completions";
 
 export type ModelMessage = ChatCompletionMessageParam;
 export type ModelTool = ChatCompletionTool;
@@ -24,6 +30,13 @@ export interface ModelResponse {
   message: ChatCompletion["choices"][number]["message"];
   usage: ModelUsage;
 }
+
+export type ModelStreamEvent =
+  | { type: "assistant_delta"; text: string }
+  | { type: "reasoning_delta"; text: string }
+  | { type: "tool_calls_final"; toolCalls: ChatCompletionMessageToolCall[] }
+  | { type: "usage"; usage: ModelUsage }
+  | { type: "done"; message: ChatCompletion["choices"][number]["message"]; usage: ModelUsage };
 
 export function getDeepSeekConfig(): DeepSeekConfig | null {
   const apiKey = process.env.DEEPSEEK_API_KEY;
@@ -103,4 +116,167 @@ export async function createChatCompletion(input: {
       totalTokens: usage?.total_tokens ?? 0,
     },
   };
+}
+
+type StreamToolCallPart = {
+  id?: string;
+  type?: string;
+  function?: {
+    name?: string;
+    arguments?: string;
+  };
+};
+
+function normalizeUsage(usage: ChatCompletion["usage"] | ChatCompletionChunk["usage"] | null | undefined): ModelUsage {
+  return {
+    promptTokens: usage?.prompt_tokens ?? 0,
+    completionTokens: usage?.completion_tokens ?? 0,
+    totalTokens: usage?.total_tokens ?? 0,
+  };
+}
+
+function isAsyncIterable(value: unknown): value is AsyncIterable<ChatCompletionChunk> {
+  return Boolean(value && typeof value === "object" && Symbol.asyncIterator in value);
+}
+
+function getReasoningDelta(delta: unknown): string {
+  if (!delta || typeof delta !== "object") return "";
+  const record = delta as Record<string, unknown>;
+  const reasoning = record.reasoning_content ?? record.reasoning ?? record.reasoning_delta;
+  return typeof reasoning === "string" ? reasoning : "";
+}
+
+function mergeToolCallDelta(
+  current: Map<number, StreamToolCallPart>,
+  index: number,
+  delta: StreamToolCallPart,
+): void {
+  const existing = current.get(index) ?? {};
+  const nextFunction = {
+    ...existing.function,
+    ...delta.function,
+    arguments: `${existing.function?.arguments ?? ""}${delta.function?.arguments ?? ""}`,
+  };
+  current.set(index, {
+    ...existing,
+    ...delta,
+    function: nextFunction,
+  });
+}
+
+function finalizeToolCalls(parts: Map<number, StreamToolCallPart>): ChatCompletionMessageToolCall[] {
+  return [...parts.entries()]
+    .sort(([a], [b]) => a - b)
+    .flatMap(([, part], index): ChatCompletionMessageToolCall[] => {
+      const name = part.function?.name;
+      if (!name) return [];
+      return [{
+        id: part.id ?? `tool-call-${index}`,
+        type: "function",
+        function: {
+          name,
+          arguments: part.function?.arguments ?? "",
+        },
+      } as ChatCompletionMessageToolCall];
+    });
+}
+
+export async function* createChatCompletionStream(input: {
+  client: OpenAI;
+  model: string;
+  messages: ModelMessage[];
+  tools?: ModelTool[];
+  temperature?: number;
+  maxTokens?: number;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}): AsyncGenerator<ModelStreamEvent> {
+  const response = await createStreamingResponse(input);
+
+  if (!isAsyncIterable(response)) {
+    const completion = response as ChatCompletion;
+    const message = completion.choices[0]?.message ?? { role: "assistant", content: "", refusal: null };
+    const usage = normalizeUsage(completion.usage);
+    const content = typeof message.content === "string" ? message.content : "";
+    if (content) yield { type: "assistant_delta", text: content };
+    if (message.tool_calls?.length) yield { type: "tool_calls_final", toolCalls: message.tool_calls };
+    yield { type: "usage", usage };
+    yield { type: "done", message, usage };
+    return;
+  }
+
+  let content = "";
+  let usage: ModelUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+  const toolCallParts = new Map<number, StreamToolCallPart>();
+
+  for await (const chunk of response) {
+    if (chunk.usage) {
+      usage = normalizeUsage(chunk.usage);
+      yield { type: "usage", usage };
+    }
+
+    for (const choice of chunk.choices ?? []) {
+      const delta = choice.delta;
+      const text = typeof delta?.content === "string" ? delta.content : "";
+      if (text) {
+        content += text;
+        yield { type: "assistant_delta", text };
+      }
+
+      const reasoning = getReasoningDelta(delta);
+      if (reasoning) yield { type: "reasoning_delta", text: reasoning };
+
+      for (const toolCall of delta?.tool_calls ?? []) {
+        if (typeof toolCall.index !== "number") continue;
+        mergeToolCallDelta(toolCallParts, toolCall.index, toolCall as StreamToolCallPart);
+      }
+    }
+  }
+
+  const toolCalls = finalizeToolCalls(toolCallParts);
+  if (toolCalls.length > 0) yield { type: "tool_calls_final", toolCalls };
+  const message: ChatCompletion["choices"][number]["message"] = {
+    role: "assistant",
+    content,
+    refusal: null,
+    ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+  };
+  yield { type: "done", message, usage };
+}
+
+async function createStreamingResponse(input: {
+  client: OpenAI;
+  model: string;
+  messages: ModelMessage[];
+  tools?: ModelTool[];
+  temperature?: number;
+  maxTokens?: number;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}) {
+  const requestOptions = {
+    ...(input.timeoutMs ? { timeout: input.timeoutMs } : {}),
+    ...(input.signal ? { signal: input.signal } : {}),
+  };
+  const base = {
+    model: input.model,
+    messages: input.messages,
+    tools: input.tools,
+    tool_choice: input.tools?.length ? "auto" as const : undefined,
+    temperature: input.temperature ?? 0.2,
+    max_tokens: input.maxTokens ?? 4096,
+    stream: true as const,
+  };
+  try {
+    return await input.client.chat.completions.create({
+      ...base,
+      stream_options: { include_usage: true },
+    }, requestOptions);
+  } catch (error) {
+    const message = error instanceof Error ? error.message.toLowerCase() : "";
+    if (!message.includes("stream_options") && !message.includes("include_usage") && !message.includes("unrecognized")) {
+      throw error;
+    }
+    return await input.client.chat.completions.create(base, requestOptions);
+  }
 }

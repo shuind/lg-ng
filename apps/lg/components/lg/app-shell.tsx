@@ -6,6 +6,7 @@ import { MainContentColumn } from "./app-shell/main-content-column"
 import { RightSidebarColumn } from "./app-shell/right-sidebar-column"
 import type { AppMode, AppShellProps } from "./app-shell/types"
 import { WorkbenchOverlay } from "./app-shell/workbench-overlay"
+import { WorkbenchOpenProvider } from "./workbench-open-context"
 
 export type { AppMode }
 
@@ -18,24 +19,25 @@ export function AppShell(props: AppShellProps) {
     <main className="ambient-window relative h-screen w-screen overflow-hidden">
       <AppBackground />
 
-      <div className={`relative z-10 grid h-full min-h-0 ${gridCols} transition-[grid-template-columns] duration-300`}>
-        <LeftSidebarColumn
-          books={props.books}
-          chapters={props.chapters}
-          outlines={props.outlines}
-          activeBookId={props.activeBookId}
-          activeChapterId={props.activeChapterId}
-          mode={props.mode}
-          collapsed={props.collapsed}
-          onToggleCollapsed={props.onToggleCollapsed}
-          onSelectBook={props.onSelectBook}
-          onSelectChapter={props.onSelectChapter}
-          onBackToChat={props.onBackToChat}
-          onNewBook={props.onNewBook}
-          onNewChapter={props.onNewChapter}
-          onOpenWorkbench={props.onOpenWorkbench}
-          onRenameBook={props.onRenameBook}
-        />
+      <WorkbenchOpenProvider activeBookId={props.activeBookId} onOpenWorkbench={props.onOpenWorkbench}>
+        <div className={`relative z-10 grid h-full min-h-0 ${gridCols} transition-[grid-template-columns] duration-300`}>
+          <LeftSidebarColumn
+            books={props.books}
+            chapters={props.chapters}
+            outlines={props.outlines}
+            activeBookId={props.activeBookId}
+            activeChapterId={props.activeChapterId}
+            mode={props.mode}
+            collapsed={props.collapsed}
+            onToggleCollapsed={props.onToggleCollapsed}
+            onSelectBook={props.onSelectBook}
+            onSelectChapter={props.onSelectChapter}
+            onBackToChat={props.onBackToChat}
+            onNewBook={props.onNewBook}
+            onNewChapter={props.onNewChapter}
+            onOpenWorkbench={props.onOpenWorkbench}
+            onRenameBook={props.onRenameBook}
+          />
 
         <MainContentColumn
           activeBookId={props.activeBookId}
@@ -52,6 +54,8 @@ export function AppShell(props: AppShellProps) {
           chatCitations={props.chatCitations}
           responseConstraints={props.responseConstraints}
           activeResponseConstraintIds={props.activeResponseConstraintIds}
+          rollingBackLedgerEntryId={props.rollingBackLedgerEntryId}
+          applyingProposalId={props.applyingProposalId}
           onSelectTurn={props.onSelectTurn}
           onSend={props.onSend}
           onReview={props.onReview}
@@ -67,6 +71,10 @@ export function AppShell(props: AppShellProps) {
           onRenameThread={props.onRenameThread}
           onSetThreadStatus={props.onSetThreadStatus}
           onForkThread={props.onForkThread}
+          onRollbackLedgerEntry={props.onRollbackLedgerEntry}
+          onApplyProposal={props.onApplyProposal}
+          onDiscardProposal={props.onDiscardProposal}
+          onProposalApplied={props.onProposalApplied}
         />
 
         <RightSidebarColumn
@@ -78,13 +86,14 @@ export function AppShell(props: AppShellProps) {
           onOpenWorkbench={props.onOpenWorkbench}
           onRollbackLedgerEntry={props.onRollbackLedgerEntry}
         />
-      </div>
+        </div>
 
-      <WorkbenchOverlay
-        workbenchBook={props.workbenchBook}
-        workbenchInitialPath={props.workbenchInitialPath}
-        onCloseWorkbench={props.onCloseWorkbench}
-      />
+        <WorkbenchOverlay
+          workbenchBook={props.workbenchBook}
+          workbenchInitialPath={props.workbenchInitialPath}
+          onCloseWorkbench={props.onCloseWorkbench}
+        />
+      </WorkbenchOpenProvider>
     </main>
   )
 }

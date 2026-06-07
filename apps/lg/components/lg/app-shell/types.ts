@@ -14,6 +14,7 @@ export interface AppShellProps {
   cards: SettingCard[]
   ledgerEntries: LedgerEntry[]
   rollingBackLedgerEntryId: string | null
+  applyingProposalId: string | null
   activeBookId: string
   activeBookTitle: string
   activeChapterId: string | null
@@ -35,6 +36,9 @@ export interface AppShellProps {
   onNewChapter: () => void
   onOpenWorkbench: (bookId: string, path?: string) => void
   onRollbackLedgerEntry: (entryId: string) => Promise<void>
+  onApplyProposal: (proposalId: string, hunkIds?: string[]) => Promise<string | undefined>
+  onDiscardProposal: (proposalId: string) => Promise<void>
+  onProposalApplied: () => Promise<void>
   onRenameBook: (bookId: string, newTitle: string) => void
   onSelectTurn: (turnId: string) => void
   onSend: (text: string, citations: ChatCitation[], options: ChatSendOptions) => Promise<void>

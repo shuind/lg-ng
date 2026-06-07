@@ -1,21 +1,45 @@
 "use client"
 
+import { useState } from "react"
 import { RefreshCw, Sparkles, Trash2 } from "lucide-react"
+import type { ProposalSummary } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 export function DraftSandbox({
   draft,
+  proposal,
   generating,
+  applyingProposal,
   onGenerate,
   onKeepDraft,
+  onApplyProposal,
+  onDiscardProposal,
   onClearDraft,
 }: {
   draft: string
+  proposal: ProposalSummary | null
   generating: boolean
+  applyingProposal: boolean
   onGenerate: () => void
-  onKeepDraft: () => void
+  onKeepDraft: () => void | Promise<void>
+  onApplyProposal: (hunkIds?: string[]) => void | Promise<void>
+  onDiscardProposal: () => void | Promise<void>
   onClearDraft: () => void
 }) {
+  const [selectedHunks, setSelectedHunks] = useState<Set<string>>(new Set())
+  const activeSelected = selectedHunks.size > 0
+    ? [...selectedHunks]
+    : proposal?.hunks.map((hunk) => hunk.id) ?? []
+
+  function toggleHunk(id: string) {
+    setSelectedHunks((current) => {
+      const next = new Set(current.size > 0 ? current : proposal?.hunks.map((hunk) => hunk.id) ?? [])
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
   return (
     <div className="paper rounded-xl border border-dashed border-border bg-muted/20 backdrop-blur">
       <div className="flex items-center justify-between border-b border-border/60 px-4 py-2">
@@ -62,6 +86,57 @@ export function DraftSandbox({
           </span>
         )}
       </div>
+      {proposal && (
+        <div className="border-t border-border/60 px-4 py-3 text-[12px]">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div className="min-w-0 truncate font-mono text-[11px] text-foreground/80">{proposal.targetPath}</div>
+            <div className="rounded bg-background/70 px-1.5 py-0.5 text-[10.5px] text-muted-foreground">{proposal.status}</div>
+          </div>
+          <div className="space-y-1.5">
+            {proposal.hunks.map((hunk) => (
+              <label key={hunk.id} className="flex gap-2 rounded-md bg-background/60 p-2">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={activeSelected.includes(hunk.id)}
+                  disabled={proposal.status !== "pending" || applyingProposal}
+                  onChange={() => toggleHunk(hunk.id)}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="font-mono text-[10.5px] text-foreground/75">{hunk.id} @ {hunk.baseStartLine}</span>
+                  <span className="mt-1 block text-[11px] leading-relaxed text-muted-foreground">{hunk.preview}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+          <div className="mt-2 flex items-center gap-1.5">
+            <button
+              type="button"
+              disabled={proposal.status !== "pending" || applyingProposal || activeSelected.length === 0}
+              onClick={() => onApplyProposal(activeSelected)}
+              className="rounded-md bg-foreground px-2 py-1 text-[11px] text-background transition hover:opacity-90 disabled:opacity-45"
+            >
+              采纳所选
+            </button>
+            <button
+              type="button"
+              disabled={proposal.status !== "pending" || applyingProposal}
+              onClick={() => onApplyProposal()}
+              className="rounded-md px-2 py-1 text-[11px] text-muted-foreground transition hover:bg-secondary hover:text-foreground disabled:opacity-45"
+            >
+              全部采纳
+            </button>
+            <button
+              type="button"
+              disabled={proposal.status !== "pending" || applyingProposal}
+              onClick={onDiscardProposal}
+              className="rounded-md px-2 py-1 text-[11px] text-muted-foreground transition hover:bg-secondary hover:text-destructive disabled:opacity-45"
+            >
+              丢弃
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { ResponseConstraint, Skill } from "@/lib/types"
+import type { WorkflowAction } from "@/lib/types"
 import { listSkills } from "@/lib/api"
 import type { ChatCitation, ChatSendOptions } from "./types"
 
@@ -32,6 +33,8 @@ export function useChatComposerState({
   const [skills, setSkills] = useState<Skill[]>([])
   const [skillIds, setSkillIds] = useState<string[]>([])
   const [temporaryConstraints, setTemporaryConstraints] = useState<string[]>([])
+  const [readonlyOnly, setReadonlyOnly] = useState(false)
+  const [workflowAction, setWorkflowAction] = useState<WorkflowAction | undefined>()
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
 
@@ -84,6 +87,8 @@ export function useChatComposerState({
     setInput("")
     setTemporaryConstraints([])
     setSkillIds([])
+    setReadonlyOnly(false)
+    setWorkflowAction(undefined)
     setPlusTab("constraints")
     setConstraintPickerOpen(false)
     setReferencePickerOpen(false)
@@ -106,16 +111,19 @@ export function useChatComposerState({
         constraintIds: activeResponseConstraintIds,
         temporaryConstraints,
         skillIds,
+        readonlyOnly,
+        workflowAction,
         signal: controller.signal,
       })
       onClearCitations()
       setTemporaryConstraints([])
       setSkillIds([])
+      setWorkflowAction(undefined)
     } finally {
       abortControllerRef.current = null
       setSending(false)
     }
-  }, [activeResponseConstraintIds, citations, input, onClearCitations, onSend, sending, skillIds, temporaryConstraints])
+  }, [activeResponseConstraintIds, citations, input, onClearCitations, onSend, readonlyOnly, sending, skillIds, temporaryConstraints, workflowAction])
 
   const handleCancelSend = useCallback(() => {
     abortControllerRef.current?.abort()
@@ -140,6 +148,14 @@ export function useChatComposerState({
         ? current.filter((id) => id !== skillId)
         : [...current, skillId],
     )
+  }, [])
+
+  const handleToggleReadonly = useCallback(() => {
+    setReadonlyOnly((current) => !current)
+  }, [])
+
+  const handleSelectWorkflowAction = useCallback((action: WorkflowAction) => {
+    setWorkflowAction((current) => current === action ? undefined : action)
   }, [])
 
   const handleRemoveConstraint = useCallback((constraintId: string) => {
@@ -176,6 +192,8 @@ export function useChatComposerState({
     temporaryConstraints,
     activeResponseConstraints,
     selectedSkills,
+    readonlyOnly,
+    workflowAction,
     setInput,
     setPlusTab,
     editLatest,
@@ -184,6 +202,8 @@ export function useChatComposerState({
     handleToggleConstraint,
     handleAddTemporaryConstraint,
     handleToggleSkill,
+    handleToggleReadonly,
+    handleSelectWorkflowAction,
     handleRemoveConstraint,
     handleRemoveTemporaryConstraint,
     handleRemoveSkill,

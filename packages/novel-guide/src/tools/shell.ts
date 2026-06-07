@@ -5,9 +5,26 @@ function str(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
+function isDangerousCommand(command: string): boolean {
+  const normalized = command.toLowerCase().replace(/\s+/g, " ").trim();
+  const dangerousPatterns = [
+    /\brm\s+(-[a-z]*r[a-z]*f|-rf|-fr)\b/,
+    /\bremove-item\b.*\b-recurse\b/,
+    /\brmdir\b.*\s\/s\b/,
+    /\bdel\b.*\s\/s\b/,
+    /\bgit\s+reset\s+--hard\b/,
+    /\bgit\s+clean\b.*\s-f/,
+    /\bgit\s+push\b.*(--force|-f)\b/,
+    /\bformat\b/,
+    /\bdiskpart\b/,
+    /\bmkfs(?:\.[a-z0-9]+)?\b/,
+  ];
+  return dangerousPatterns.some((pattern) => pattern.test(normalized));
+}
+
 export const ShellTool: Tool = {
   name: "shell",
-  description: "Run a shell command in the workspace. Requires confirmation.",
+  description: "Run a shell command in the workspace. Dangerous destructive commands require confirmation.",
   readonly: false,
   parameters: {
     type: "object",
@@ -18,10 +35,13 @@ export const ShellTool: Tool = {
     required: ["command"],
   },
   requiresPermission(input) {
+    const command = str(input.command);
+    if (!isDangerousCommand(command)) return { allowed: true };
     return {
       allowed: false,
       confirmationRequired: true,
-      reason: `Shell command requested: ${str(input.command)}`,
+      forceConfirmation: true,
+      reason: `Dangerous shell command requested: ${command}`,
     };
   },
   async execute(input, context) {

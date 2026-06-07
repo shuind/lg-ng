@@ -13,6 +13,7 @@ import { createAgentTools } from "./agentTool.js";
 
 export interface RegistryOptions {
   readonlyOnly?: boolean;
+  proposalOnly?: boolean;
 }
 
 export function getTools(options: RegistryOptions = {}): Tools {
@@ -25,5 +26,7 @@ export function getTools(options: RegistryOptions = {}): Tools {
     ...createSkillTools(),
     ...createAgentTools(),
   ];
-  return options.readonlyOnly ? base.filter((tool) => tool.readonly) : base;
+  if (options.readonlyOnly) return base.filter((tool) => tool.readonly);
+  if (options.proposalOnly) return base.filter((tool) => tool.readonly || tool.name === "propose_file_change");
+  return base;
 }

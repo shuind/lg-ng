@@ -137,6 +137,55 @@ export const EditFileTool: Tool = {
   },
 };
 
+export const ProposeFileChangeTool: Tool = {
+  name: "propose_file_change",
+  description: "Create a reviewable file-change proposal without modifying the target file. Use in proposal workflows such as /续写 and /改稿.",
+  readonly: false,
+  parameters: {
+    type: "object",
+    properties: {
+      path: { type: "string", description: "Workspace-relative target file path." },
+      after_content: { type: "string", description: "Complete proposed file content after the change." },
+      summary: { type: "string", description: "Short proposal summary." },
+      source: { type: "string", enum: ["chat", "draft", "workflow"] },
+    },
+    required: ["path", "after_content"],
+  },
+  requiresPermission() {
+    return { allowed: true };
+  },
+  async execute(input, context) {
+    const rel = stringInput(input.path);
+    const afterContent = stringInput(input.after_content);
+    const summary = stringInput(input.summary) || `Proposed change to ${rel}`;
+    const source = input.source === "draft" || input.source === "workflow" ? input.source : "chat";
+    const abs = resolveInside(context.cwd, rel);
+    const workspacePath = relativeTo(context.cwd, abs);
+    let beforeContent = "";
+    let beforeExists = false;
+    try {
+      beforeContent = await readFile(abs, "utf8");
+      beforeExists = true;
+    } catch {
+      beforeContent = "";
+    }
+    return {
+      ok: true,
+      content: `Proposed ${workspacePath}; ${beforeContent.length} -> ${afterContent.length} chars. No file was modified.`,
+      metadata: {
+        proposals: [{
+          path: workspacePath,
+          beforeExists,
+          beforeContent,
+          afterContent,
+          summary,
+          source,
+        }],
+      },
+    };
+  },
+};
+
 export function allFileTools(): Tool[] {
-  return [ReadFileTool, WriteFileTool, EditFileTool];
+  return [ReadFileTool, WriteFileTool, EditFileTool, ProposeFileChangeTool];
 }

@@ -150,7 +150,7 @@ export async function createChapter(bookId: string, title?: string): Promise<Cha
   }
 }
 
-export async function getChapter(bookId: string, chapterId: string): Promise<{ id: string; title: string; content: string; updatedAt: string }> {
+export async function getChapter(bookId: string, chapterId: string): Promise<{ id: string; title: string; content: string; path: string; updatedAt: string }> {
   try {
     const res = await fetch(`/api/books/${bookId}/chapters/${encodeURIComponent(chapterId)}`, { cache: "no-store" })
     if (!res.ok) throw new Error("api failed")
@@ -161,6 +161,7 @@ export async function getChapter(bookId: string, chapterId: string): Promise<{ i
       id: chapterId,
       title: mockChapters.find((c) => c.id === chapterId)?.title ?? "",
       content: "",
+      path: mockChapters.find((c) => c.id === chapterId)?.path ?? "",
       updatedAt: new Date().toISOString(),
     }
   }

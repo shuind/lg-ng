@@ -9,6 +9,7 @@ import { getBookDir } from "@/lib/server/paths"
 import { retrieveContext } from "@/lib/server/retrieval"
 import { searchIndexedTerms, updateIndexedFile } from "@/lib/server/book-index"
 import { appendLedgerEntry, listLedgerEntries, rollbackLedgerEntry } from "@/lib/server/ledger"
+import { applyProposal, createProposal, discardProposal } from "@/lib/server/proposal-service"
 
 async function main() {
   process.env.LG_DATA_DIR = await mkdtemp(path.join(os.tmpdir(), "lg-ng-optimization-"))
@@ -93,6 +94,64 @@ async function main() {
     throw new Error("rollback did not mark the file dirty")
   }
 
+  const proposalPath = "章节正文/第二章.md"
+  await writeBookFile(book.id, proposalPath, "one\ntwo\nthree\nfour\n")
+  const proposal = await createProposal(book.id, {
+    targetPath: proposalPath,
+    baseContent: "one\ntwo\nthree\nfour\n",
+    afterContent: "ONE\ntwo\nTHREE\nfour\n",
+    summary: "revise selected lines",
+    source: "workflow",
+  })
+  const partial = await applyProposal(book.id, proposal.id, ["h-1"])
+  if (partial.updatedContent !== "ONE\ntwo\nthree\nfour\n") {
+    throw new Error(`selected hunk apply produced unexpected content: ${JSON.stringify(partial.updatedContent)}`)
+  }
+  if (partial.proposal.status !== "partially_applied") {
+    throw new Error(`partial proposal status was ${partial.proposal.status}`)
+  }
+  const appliedLedger = await listLedgerEntries(book.id, { limit: 10 })
+  if (!appliedLedger.entries.some((entry) => entry.id === partial.ledgerEntry.id)) {
+    throw new Error("proposal apply did not create a ledger entry")
+  }
+
+  const allProposalPath = "章节正文/第三章.md"
+  await writeBookFile(book.id, allProposalPath, "alpha\nbeta\n")
+  const allProposal = await createProposal(book.id, {
+    targetPath: allProposalPath,
+    baseContent: "alpha\nbeta\n",
+    afterContent: "alpha\nBETA\n",
+    source: "draft",
+  })
+  const allApplied = await applyProposal(book.id, allProposal.id)
+  if (allApplied.updatedContent !== "alpha\nBETA\n" || allApplied.proposal.status !== "applied") {
+    throw new Error("apply all hunks failed")
+  }
+
+  const stalePath = "章节正文/第四章.md"
+  await writeBookFile(book.id, stalePath, "base\n")
+  const staleProposal = await createProposal(book.id, {
+    targetPath: stalePath,
+    baseContent: "base\n",
+    afterContent: "next\n",
+  })
+  await writeBookFile(book.id, stalePath, "external\n")
+  let staleRejected = false
+  try {
+    await applyProposal(book.id, staleProposal.id)
+  } catch (error) {
+    staleRejected = error instanceof Error && error.message.includes("target file changed")
+  }
+  if (!staleRejected) throw new Error("stale proposal was not rejected")
+
+  const discardProposalRecord = await createProposal(book.id, {
+    targetPath: stalePath,
+    baseContent: "external\n",
+    afterContent: "discarded\n",
+  })
+  const discarded = await discardProposal(book.id, discardProposalRecord.id)
+  if (discarded.status !== "discarded") throw new Error("discard did not update proposal status")
+
   const streamEvents = await collectStreamClientEvents(book.id)
   if (!streamEvents.includes("turn") || !streamEvents.includes("done")) {
     throw new Error(`stream did not emit turn/done events: ${streamEvents.join(",")}`)
@@ -124,6 +183,8 @@ async function main() {
     streamEvents,
     queueOrder: order,
     rollbackEntryId: agentEntry.id,
+    partialProposalId: proposal.id,
+    allProposalId: allProposal.id,
     restored: await readFile(absChapterPath, "utf-8"),
   }, null, 2))
 }
