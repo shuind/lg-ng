@@ -5,5 +5,5 @@ export type ChatSendOptions = {
   constraintIds: string[]
   temporaryConstraints: string[]
   skillIds: string[]
+  signal?: AbortSignal
 }
-

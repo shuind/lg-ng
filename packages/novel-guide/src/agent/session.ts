@@ -6,7 +6,14 @@ export interface SessionState {
   id: string;
   cwd: string;
   messages: ChatCompletionMessageParam[];
+  compaction?: SessionCompactionState;
   updatedAt: string;
+}
+
+export interface SessionCompactionState {
+  lastCompactedAt: string;
+  originalMessageCount: number;
+  compactedMessageCount: number;
 }
 
 export function createSessionId(): string {

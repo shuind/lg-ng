@@ -3,6 +3,7 @@ import path from "path"
 import type { Book, BookTreeNode, OutlineFile } from "@/lib/types"
 import { markDirty } from "@/lib/server/dirty-index"
 import { appendLedgerEntry } from "@/lib/server/ledger"
+import { withBookMutationQueue } from "@/lib/server/book-mutation-queue"
 import { getBookDir, getBooksRoot } from "@/lib/server/paths"
 import { resolveInsideBook } from "@/lib/server/safe-paths"
 import { getBookTreeFromIndex, listOutlineFilesFromIndex, rebuildBookIndexes, updateIndexedFile } from "@/lib/server/book-index"
@@ -250,6 +251,10 @@ export async function getBookFileMtime(bookId: string, filePath: string): Promis
 }
 
 export async function writeBookFile(bookId: string, filePath: string, content: string): Promise<boolean> {
+  return withBookMutationQueue(bookId, () => writeBookFileUnlocked(bookId, filePath, content))
+}
+
+async function writeBookFileUnlocked(bookId: string, filePath: string, content: string): Promise<boolean> {
   const resolved = resolveInsideBook(bookId, filePath)
   if (!resolved) return false
 

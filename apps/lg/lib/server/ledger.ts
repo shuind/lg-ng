@@ -4,6 +4,7 @@ import path from "path"
 import { applyPatch, createTwoFilesPatch, formatPatch, parsePatch, reversePatch } from "diff"
 import type { LedgerEntry, LedgerListOptions, LedgerListResponse } from "@/lib/types"
 import { markDirty } from "@/lib/server/dirty-index"
+import { withBookMutationQueue } from "@/lib/server/book-mutation-queue"
 import { getBookDir, getIndexRoot } from "@/lib/server/paths"
 import { resolveInsideBook } from "@/lib/server/safe-paths"
 import { updateIndexedFile } from "@/lib/server/book-index"
@@ -411,6 +412,13 @@ async function updateBookTimestamp(bookDir: string) {
 }
 
 export async function rollbackLedgerEntry(
+  bookId: string,
+  entryId: string,
+): Promise<{ success: boolean; updatedAt?: string; error?: string }> {
+  return withBookMutationQueue(bookId, () => rollbackLedgerEntryUnlocked(bookId, entryId))
+}
+
+async function rollbackLedgerEntryUnlocked(
   bookId: string,
   entryId: string,
 ): Promise<{ success: boolean; updatedAt?: string; error?: string }> {

@@ -16,6 +16,7 @@ export interface QueryInput {
   tools: Tools;
   toolContext: ToolContext;
   maxLoops: number;
+  signal?: AbortSignal;
 }
 
 export interface QueryResult {
@@ -26,6 +27,14 @@ export interface QueryResult {
   failedTools: string[];
   fileChanges: FileChange[];
 }
+
+export type QueryEvent =
+  | { type: "model_start"; loop: number }
+  | { type: "assistant_message"; loop: number; text: string }
+  | { type: "tool_call"; loop: number; name: string; argsPreview: string }
+  | { type: "tool_result"; loop: number; name: string; ok: boolean; content: string }
+  | { type: "error"; loop: number; message: string }
+  | { type: "done"; result: QueryResult };
 
 function addUsage(a: ModelUsage, b: ModelUsage): ModelUsage {
   return {
@@ -43,7 +52,37 @@ function parseToolArguments(value: string | undefined): Record<string, unknown> 
     : {};
 }
 
+function previewArguments(value: string | undefined): string {
+  if (!value) return "";
+  return value.length > 240 ? `${value.slice(0, 240)}...` : value;
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  const error = new Error("Operation aborted");
+  error.name = "AbortError";
+  throw error;
+}
+
 export async function query(input: QueryInput): Promise<QueryResult> {
+  let result: QueryResult | null = null;
+  for await (const event of queryEvents(input)) {
+    if (event.type === "done") result = event.result;
+  }
+  if (result) return result;
+
+  const stopText = "Query ended without a final result.";
+  return {
+    messages: input.messages,
+    text: stopText,
+    usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+    toolTrace: [],
+    failedTools: [`query: ${stopText}`],
+    fileChanges: [],
+  };
+}
+
+export async function* queryEvents(input: QueryInput): AsyncGenerator<QueryEvent> {
   let messages = [...input.messages];
   const modelTools: ModelTool[] = input.tools.map(toModelTool);
   let finalText = "";
@@ -53,25 +92,36 @@ export async function query(input: QueryInput): Promise<QueryResult> {
   const fileChanges: FileChange[] = [];
 
   for (let loop = 0; loop < input.maxLoops; loop++) {
+    throwIfAborted(input.signal);
+    yield { type: "model_start", loop };
     const response = await createChatCompletion({
       client: input.client,
       model: input.model,
       messages,
       tools: modelTools,
+      signal: input.signal,
     });
     usage = addUsage(usage, response.usage);
     const assistantMessage = response.message;
     messages.push(assistantMessage as ChatCompletionMessageParam);
 
     const content = typeof assistantMessage.content === "string" ? assistantMessage.content : "";
-    if (content) finalText = content;
+    if (content) {
+      finalText = content;
+      yield { type: "assistant_message", loop, text: content };
+    }
 
     const toolCalls = assistantMessage.tool_calls ?? [];
     if (toolCalls.length === 0) {
-      return { messages, text: withFailureDisclosure(finalText, failedTools), usage, toolTrace, failedTools, fileChanges };
+      yield {
+        type: "done",
+        result: { messages, text: withFailureDisclosure(finalText, failedTools), usage, toolTrace, failedTools, fileChanges },
+      };
+      return;
     }
 
     for (const toolCall of toolCalls) {
+      throwIfAborted(input.signal);
       if (toolCall.type !== "function") {
         messages.push({
           role: "tool",
@@ -81,6 +131,7 @@ export async function query(input: QueryInput): Promise<QueryResult> {
         continue;
       }
       const name = toolCall.function.name;
+      yield { type: "tool_call", loop, name, argsPreview: previewArguments(toolCall.function.arguments) };
       const tool = findTool(input.tools, name);
       if (!tool) {
         const content = `Unknown tool: ${name}`;
@@ -91,6 +142,7 @@ export async function query(input: QueryInput): Promise<QueryResult> {
           tool_call_id: toolCall.id,
           content,
         });
+        yield { type: "tool_result", loop, name, ok: false, content };
         continue;
       }
       const result = await runTool(tool, parseToolArguments(toolCall.function.arguments), input.toolContext);
@@ -104,13 +156,17 @@ export async function query(input: QueryInput): Promise<QueryResult> {
         tool_call_id: toolCall.id,
         content: result.content,
       });
+      yield { type: "tool_result", loop, name, ok: result.ok, content: result.content };
     }
   }
 
   const stopText = `Stopped after ${input.maxLoops} tool loop(s) to avoid an infinite loop.`;
   messages.push({ role: "assistant", content: stopText });
   failedTools.push(`query: ${stopText}`);
-  return { messages, text: withFailureDisclosure(finalText || stopText, failedTools), usage, toolTrace, failedTools, fileChanges };
+  yield {
+    type: "done",
+    result: { messages, text: withFailureDisclosure(finalText || stopText, failedTools), usage, toolTrace, failedTools, fileChanges },
+  };
 }
 
 function withFailureDisclosure(text: string, failedTools: string[]): string {

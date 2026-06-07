@@ -80,6 +80,7 @@ export async function createChatCompletion(input: {
   temperature?: number;
   maxTokens?: number;
   timeoutMs?: number;
+  signal?: AbortSignal;
 }): Promise<ModelResponse> {
   const response = await input.client.chat.completions.create({
     model: input.model,
@@ -89,7 +90,10 @@ export async function createChatCompletion(input: {
     temperature: input.temperature ?? 0.2,
     max_tokens: input.maxTokens ?? 4096,
     stream: false,
-  }, input.timeoutMs ? { timeout: input.timeoutMs } : undefined) as ChatCompletion;
+  }, {
+    ...(input.timeoutMs ? { timeout: input.timeoutMs } : {}),
+    ...(input.signal ? { signal: input.signal } : {}),
+  }) as ChatCompletion;
   const usage = response.usage;
   return {
     message: response.choices[0]?.message ?? { role: "assistant", content: "" },

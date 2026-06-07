@@ -36,10 +36,27 @@ export const ShellTool: Tool = {
       const child = spawn(shell, args, { cwd: context.cwd, windowsHide: true });
       let stdout = "";
       let stderr = "";
+      let settled = false;
+      const finish = (result: { ok: boolean; content: string }) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        context.signal?.removeEventListener("abort", abort);
+        resolve(result);
+      };
+      const abort = () => {
+        child.kill();
+        finish({ ok: false, content: `Command aborted.\n${stdout}\n${stderr}` });
+      };
       const timer = setTimeout(() => {
         child.kill();
-        resolve({ ok: false, content: `Command timed out after ${timeoutMs}ms.\n${stdout}\n${stderr}` });
+        finish({ ok: false, content: `Command timed out after ${timeoutMs}ms.\n${stdout}\n${stderr}` });
       }, timeoutMs);
+      if (context.signal?.aborted) {
+        abort();
+        return;
+      }
+      context.signal?.addEventListener("abort", abort, { once: true });
       child.stdout.setEncoding("utf8");
       child.stderr.setEncoding("utf8");
       child.stdout.on("data", (chunk) => {
@@ -49,15 +66,13 @@ export const ShellTool: Tool = {
         stderr += chunk;
       });
       child.on("close", (code) => {
-        clearTimeout(timer);
-        resolve({
+        finish({
           ok: code === 0,
           content: `Exit code: ${code}\nSTDOUT:\n${stdout || "(empty)"}\nSTDERR:\n${stderr || "(empty)"}`,
         });
       });
       child.on("error", (error) => {
-        clearTimeout(timer);
-        resolve({ ok: false, content: `Failed to start command: ${error.message}` });
+        finish({ ok: false, content: `Failed to start command: ${error.message}` });
       });
     });
   },

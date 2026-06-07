@@ -11,7 +11,7 @@ import {
   listSettingCards,
   listLedgerEntries,
   rollbackLedgerEntry,
-  sendMessage,
+  sendMessageStream,
   runBookReview,
   createThread,
   forkThread,
@@ -382,26 +382,107 @@ export default function Page() {
     setTurns((current) => [...current, optimisticTurn])
     setSelectedTurnId(optimisticTurnId)
 
-    try {
-      const result = await sendMessage(activeBookId, text, threadId, citations, options)
-      setThreads((current) => upsertById(current, result.thread))
-      setActiveThreadId(result.thread.id)
-      setTurns((current) => upsertById(current.filter((turn) => turn.id !== optimisticTurnId), result.turn))
+    let latestTurn = optimisticTurn
+    let serverTurnId = optimisticTurnId
+    let assistantPlaceholderId = `msg-local-running-${optimisticTurnId}`
+    const ensureAssistantPlaceholder = (turnId: string, targetThreadId: string) => {
+      assistantPlaceholderId = `msg-local-running-${turnId}`
       setMessages((current) => {
-        const withoutOptimistic = current.filter((message) => message.id !== optimisticUser.id)
-        return [
-          ...withoutOptimistic,
-          result.userMessage,
-          ...(result.assistantMessage ? [result.assistantMessage] : []),
-        ].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        if (current.some((message) => message.id === assistantPlaceholderId)) return current
+        return [...current, {
+          id: assistantPlaceholderId,
+          threadId: targetThreadId,
+          turnId,
+          role: "assistant" as const,
+          content: "",
+          version: 1,
+          createdAt: new Date().toISOString(),
+          events: [],
+        }]
+      })
+    }
+
+    try {
+      await sendMessageStream(activeBookId, text, threadId, citations, {
+        constraintIds: options.constraintIds ?? threadConstraintIds[threadId] ?? [],
+        temporaryConstraints: options.temporaryConstraints ?? [],
+        skillIds: options.skillIds ?? [],
+      }, {
+        signal: options.signal,
+        onTurn(payload) {
+          serverTurnId = payload.turn.id
+          latestTurn = payload.turn
+          setThreads((current) => upsertById(current, payload.thread))
+          setActiveThreadId(payload.thread.id)
+          setTurns((current) => upsertById(current.filter((turn) => turn.id !== optimisticTurnId), payload.turn))
+          setMessages((current) => {
+            const withoutOptimistic = current.filter((message) => message.id !== optimisticUser.id)
+            return [...withoutOptimistic, payload.userMessage]
+              .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+          })
+          ensureAssistantPlaceholder(payload.turn.id, payload.thread.id)
+          setSelectedTurnId(payload.turn.id)
+        },
+        onAgentEvent(event) {
+          ensureAssistantPlaceholder(serverTurnId, threadId)
+          setMessages((current) => current.map((message) => {
+            if (message.id !== assistantPlaceholderId) return message
+            return { ...message, events: [...(message.events ?? []), event] }
+          }))
+        },
+        onAssistantDelta(payload) {
+          ensureAssistantPlaceholder(serverTurnId, threadId)
+          setMessages((current) => current.map((message) => {
+            if (message.id !== assistantPlaceholderId) return message
+            return { ...message, content: payload.text }
+          }))
+        },
+        onAssistantMessage(message) {
+          setMessages((current) => [
+            ...current.filter((item) => item.id !== assistantPlaceholderId && item.id !== message.id),
+            message,
+          ].sort((a, b) => a.createdAt.localeCompare(b.createdAt)))
+        },
+        onDone(payload) {
+          latestTurn = payload.turn
+          setThreads((current) => upsertById(current, payload.thread))
+          setTurns((current) => upsertById(current.filter((turn) => turn.id !== optimisticTurnId), payload.turn))
+          setMessages((current) => {
+            const filtered = current.filter((message) =>
+              message.id !== optimisticUser.id &&
+              message.id !== assistantPlaceholderId &&
+              message.id !== payload.userMessage.id &&
+              message.id !== payload.assistantMessage?.id
+            )
+            return [
+              ...filtered,
+              payload.userMessage,
+              ...(payload.assistantMessage ? [payload.assistantMessage] : []),
+            ].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+          })
+          setSelectedTurnId(payload.turn.id)
+        },
       })
       listLedgerEntries(activeBookId, { limit: 24 })
         .then((response) => setLedgerEntries(response.entries))
         .catch(() => {})
       listSettingCards(activeBookId).then(setCards).catch(() => {})
       listChapters(activeBookId).then(setChapters).catch(() => {})
-      setSelectedTurnId(result.turn.id)
     } catch (err) {
+      if (options.signal?.aborted) {
+        const cancelledAt = new Date().toISOString()
+        const cancelledTurn: Turn = {
+          ...latestTurn,
+          status: "cancelled",
+          updatedAt: cancelledAt,
+        }
+        setTurns((current) => upsertById(current, {
+          ...cancelledTurn,
+        }))
+        setMessages((current) => current.filter((message) => message.id !== assistantPlaceholderId))
+        setSelectedTurnId(cancelledTurn.id)
+        return
+      }
       console.error("[handleSend] 发送失败:", err)
       const ts = new Date().toISOString()
       const failedTurn: Turn = {

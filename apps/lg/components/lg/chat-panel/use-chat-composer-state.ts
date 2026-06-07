@@ -33,6 +33,7 @@ export function useChatComposerState({
   const [skillIds, setSkillIds] = useState<string[]>([])
   const [temporaryConstraints, setTemporaryConstraints] = useState<string[]>([])
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   const activeResponseConstraints = useMemo(
     () => responseConstraints.filter((constraint) => activeResponseConstraintIds.includes(constraint.id)),
@@ -96,6 +97,8 @@ export function useChatComposerState({
   const handleSend = useCallback(async () => {
     const text = input.trim()
     if (!text || sending) return
+    const controller = new AbortController()
+    abortControllerRef.current = controller
     setInput("")
     setSending(true)
     try {
@@ -103,14 +106,20 @@ export function useChatComposerState({
         constraintIds: activeResponseConstraintIds,
         temporaryConstraints,
         skillIds,
+        signal: controller.signal,
       })
       onClearCitations()
       setTemporaryConstraints([])
       setSkillIds([])
     } finally {
+      abortControllerRef.current = null
       setSending(false)
     }
   }, [activeResponseConstraintIds, citations, input, onClearCitations, onSend, sending, skillIds, temporaryConstraints])
+
+  const handleCancelSend = useCallback(() => {
+    abortControllerRef.current?.abort()
+  }, [])
 
   const handleToggleConstraint = useCallback((constraintId: string) => {
     const next = activeResponseConstraintIds.includes(constraintId)
@@ -171,6 +180,7 @@ export function useChatComposerState({
     setPlusTab,
     editLatest,
     handleSend,
+    handleCancelSend,
     handleToggleConstraint,
     handleAddTemporaryConstraint,
     handleToggleSkill,

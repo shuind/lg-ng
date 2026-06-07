@@ -1,7 +1,7 @@
 import type { RetrievedContext } from "@/lib/types"
 import { getDirtyFiles } from "@/lib/server/dirty-index"
 import { readBookFile } from "@/lib/server/book-store"
-import { listIndexedFiles, listIndexedSettingCards } from "@/lib/server/book-index"
+import { listIndexedFiles, listIndexedSettingCards, searchIndexedTerms } from "@/lib/server/book-index"
 
 const MAX_RESULTS = 5
 const EXCERPT_LEN = 200
@@ -145,6 +145,9 @@ export async function retrieveContext(bookId: string, query: string): Promise<Re
 
   const dirtyPaths = new Set(dirtyEntries.map((e) => e.path))
   const dirtyTimeMap = new Map(dirtyEntries.map((e) => [e.path, e.updatedAt]))
+  const indexedTermScores = new Map(
+    (await searchIndexedTerms(bookId, keywords)).map((item) => [item.path, item.score]),
+  )
 
   // get indexed files in book without walking the filesystem on each request
   const allFiles = (await listIndexedFiles(bookId)).filter((f) => !SKIP_FILES.has(f.name))
@@ -159,6 +162,12 @@ export async function retrieveContext(bookId: string, query: string): Promise<Re
     const aliasScore = aliasExpansion.pathScores.get(file.path)
     if (aliasScore) {
       score += aliasScore
+      reason = "keyword"
+    }
+
+    const termScore = indexedTermScores.get(file.path)
+    if (termScore) {
+      score += termScore
       reason = "keyword"
     }
 

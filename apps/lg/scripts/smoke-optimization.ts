@@ -1,15 +1,19 @@
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { sendMessageStream } from "@/lib/api/chat"
 import { createBook, readBookFile, writeBookFile } from "@/lib/server/book-store"
+import { withBookMutationQueue } from "@/lib/server/book-mutation-queue"
 import { getDirtyFiles } from "@/lib/server/dirty-index"
 import { getBookDir } from "@/lib/server/paths"
 import { retrieveContext } from "@/lib/server/retrieval"
-import { updateIndexedFile } from "@/lib/server/book-index"
+import { searchIndexedTerms, updateIndexedFile } from "@/lib/server/book-index"
 import { appendLedgerEntry, listLedgerEntries, rollbackLedgerEntry } from "@/lib/server/ledger"
 
 async function main() {
   process.env.LG_DATA_DIR = await mkdtemp(path.join(os.tmpdir(), "lg-ng-optimization-"))
+  process.env.DEEPSEEK_API_KEY = ""
+  process.env.MIMO_API_KEY = ""
 
   const book = await createBook("Optimization Smoke")
   await writeBookFile(
@@ -43,6 +47,14 @@ async function main() {
   const canonRetrieved = await retrieveContext(book.id, "百年劫是什么")
   if (!canonRetrieved.some((item) => item.path === "canon/settings/天轮.md")) {
     throw new Error("alias retrieval did not return the canon setting entity")
+  }
+  const bodyRetrieved = await retrieveContext(book.id, "修仙界时间规律")
+  if (!bodyRetrieved.some((item) => item.path === "canon/settings/天轮.md")) {
+    throw new Error("term-index retrieval did not return the body keyword match")
+  }
+  const termHits = await searchIndexedTerms(book.id, ["修仙界时间"])
+  if (!termHits.some((item) => item.path === "canon/settings/天轮.md")) {
+    throw new Error("term-index did not store the body keyword match")
   }
 
   const chapterPath = "章节正文/第一章.md"
@@ -81,14 +93,80 @@ async function main() {
     throw new Error("rollback did not mark the file dirty")
   }
 
+  const streamEvents = await collectStreamClientEvents(book.id)
+  if (!streamEvents.includes("turn") || !streamEvents.includes("done")) {
+    throw new Error(`stream did not emit turn/done events: ${streamEvents.join(",")}`)
+  }
+
+  const order: string[] = []
+  await Promise.all([
+    withBookMutationQueue(book.id, async () => {
+      order.push("a-start")
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      order.push("a-end")
+    }),
+    withBookMutationQueue(book.id, async () => {
+      order.push("b-start")
+      order.push("b-end")
+    }),
+  ])
+  if (order.join(",") !== "a-start,a-end,b-start,b-end") {
+    throw new Error(`book mutation queue did not serialize operations: ${order.join(",")}`)
+  }
+
   console.log(JSON.stringify({
     bookId: book.id,
     dataRoot: process.env.LG_DATA_DIR,
     aliasHit: retrieved[0]?.path ?? null,
     canonAliasHit: canonRetrieved[0]?.path ?? null,
+    bodyTermHit: bodyRetrieved[0]?.path ?? null,
+    directTermHit: termHits[0]?.path ?? null,
+    streamEvents,
+    queueOrder: order,
     rollbackEntryId: agentEntry.id,
     restored: await readFile(absChapterPath, "utf-8"),
   }, null, 2))
+}
+
+async function collectStreamClientEvents(bookId: string): Promise<string[]> {
+  const originalFetch = globalThis.fetch
+  const encoder = new TextEncoder()
+  const events: string[] = []
+  const body = [
+    "event: turn\ndata: {}\n\n",
+    "event: agent_event\ndata: {}\n\n",
+    "event: assistant_message\ndata: {}\n\n",
+    "event: done\ndata: {}\n\n",
+  ].join("")
+
+  globalThis.fetch = (async (input) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+    if (!url.endsWith(`/api/books/${bookId}/messages/stream`)) {
+      throw new Error(`unexpected stream URL: ${url}`)
+    }
+    return new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode(body))
+        controller.close()
+      },
+    }), {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    })
+  }) as typeof fetch
+
+  try {
+    await sendMessageStream(bookId, "synthetic stream smoke", undefined, [], {}, {
+      onTurn: () => events.push("turn"),
+      onAgentEvent: () => events.push("agent_event"),
+      onAssistantMessage: () => events.push("assistant_message"),
+      onDone: () => events.push("done"),
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+
+  return events
 }
 
 main().catch((error) => {

@@ -65,3 +65,55 @@ describe("AgentEngine subagents", () => {
     await expect(access(sessionPath(cwd, result.sessionId))).rejects.toThrow();
   });
 });
+
+describe("AgentEngine compaction", () => {
+  it("summarizes old messages and keeps recent messages", async () => {
+    const cwd = await tempDir();
+    let calls = 0;
+    const client = {
+      chat: {
+        completions: {
+          create: async () => {
+            calls += 1;
+            return {
+              choices: [{
+                message: {
+                  role: "assistant",
+                  content: calls === 1 ? "summary memo" : "done",
+                },
+              }],
+              usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+            };
+          },
+        },
+      },
+    } as unknown as OpenAI;
+    const initialMessages = [
+      { role: "system" as const, content: "system" },
+      { role: "system" as const, content: "NG_COMPACTION_MEMO:\nprevious memo" },
+      ...Array.from({ length: 20 }, (_, index) => ({
+        role: (index % 2 === 0 ? "user" : "assistant") as const,
+        content: `old-${index} ${"x".repeat(120)}`,
+      })),
+    ];
+    const engine = new AgentEngine({
+      cwd,
+      client,
+      model: "mock",
+      sessionId: "compact-session",
+      initialMessages,
+      contextBudgetTokens: 120,
+      recentMessageCount: 2,
+    });
+
+    const result = await engine.submitMessage("new request", { save: false });
+    const rendered = JSON.stringify(result.messages);
+
+    expect(calls).toBe(2);
+    expect(rendered).toContain("NG_COMPACTION_MEMO");
+    expect(rendered).toContain("previous memo");
+    expect(rendered).toContain("summary memo");
+    expect(rendered).toContain("old-19");
+    expect(rendered).not.toContain("old-0");
+  });
+});

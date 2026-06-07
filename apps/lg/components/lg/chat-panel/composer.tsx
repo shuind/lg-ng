@@ -93,6 +93,7 @@ export const ChatComposer = memo(forwardRef<ChatComposerHandle, ChatComposerProp
       settingCards={settingCards}
       onInputChange={composer.setInput}
       onSend={composer.handleSend}
+      onCancelSend={composer.handleCancelSend}
       onReview={onReview}
       onQuestionJump={onQuestionJump}
       onRemoveConstraint={composer.handleRemoveConstraint}

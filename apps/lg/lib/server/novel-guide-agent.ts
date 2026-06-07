@@ -1,6 +1,7 @@
 import {
   AgentEngine,
   createOpenAICompatibleClient,
+  type EngineStreamEvent,
   type FileChange,
   getOpenAICompatibleConfig,
   initNovelWorkspace,
@@ -36,6 +37,10 @@ export interface NovelGuideReviewResult {
   }
   workspacePath: string
 }
+
+export type NovelGuideAgentStreamEvent =
+  | { type: "engine_event"; event: EngineStreamEvent }
+  | { type: "done"; result: NovelGuideAgentResult }
 
 function formatReferences(references: SettingCard[]): string {
   if (references.length === 0) return ""
@@ -105,6 +110,7 @@ export async function runNovelGuideAgent(input: {
   responseConstraints?: AppliedResponseConstraint[]
   skills?: SkillSummary[]
   threadId: string
+  signal?: AbortSignal
 }): Promise<NovelGuideAgentResult> {
   const config = getOpenAICompatibleConfig()
   if (!config) {
@@ -131,6 +137,7 @@ export async function runNovelGuideAgent(input: {
     model: config.model,
     sessionId: input.threadId,
     initialMessages: session?.messages,
+    initialCompaction: session?.compaction,
     appendSystemPrompt: LG_LEGACY_PROMPT,
     permissionMode: "bypass",
   })
@@ -142,7 +149,7 @@ export async function runNovelGuideAgent(input: {
     references: input.references ?? [],
     responseConstraints: input.responseConstraints ?? [],
     skills: input.skills ?? [],
-  }))
+  }), { signal: input.signal })
 
   return {
     reply: result.text,
@@ -152,6 +159,76 @@ export async function runNovelGuideAgent(input: {
     usage: result.usage,
     workspacePath,
     fileChanges: result.fileChanges,
+  }
+}
+
+export async function* runNovelGuideAgentStream(input: {
+  bookId: string
+  userMessage: string
+  references?: SettingCard[]
+  responseConstraints?: AppliedResponseConstraint[]
+  skills?: SkillSummary[]
+  threadId: string
+  signal?: AbortSignal
+}): AsyncGenerator<NovelGuideAgentStreamEvent> {
+  const config = getOpenAICompatibleConfig()
+  if (!config) {
+    yield {
+      type: "done",
+      result: {
+        reply: "Novel Guide 还没有配置模型。请设置 DEEPSEEK_API_KEY，或设置 LLM_PROVIDER=mimo 并提供 MIMO_API_KEY。",
+        sessionId: input.threadId,
+        toolTrace: [],
+        failedTools: ["model_config: missing API key"],
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        workspacePath: getBookDir(input.bookId),
+        fileChanges: [],
+      },
+    }
+    return
+  }
+
+  const book = await getBook(input.bookId)
+  const workspacePath = getBookDir(input.bookId)
+  const bookTitle = book?.title ?? input.bookId
+  await initNovelWorkspace(workspacePath, bookTitle)
+
+  const session = await loadSession(workspacePath, input.threadId)
+  const engine = new AgentEngine({
+    cwd: workspacePath,
+    client: createOpenAICompatibleClient(config),
+    model: config.model,
+    sessionId: input.threadId,
+    initialMessages: session?.messages,
+    initialCompaction: session?.compaction,
+    appendSystemPrompt: LG_LEGACY_PROMPT,
+    permissionMode: "bypass",
+  })
+
+  for await (const event of engine.submitMessageEvents(buildPrompt({
+    bookId: input.bookId,
+    bookTitle,
+    userMessage: input.userMessage,
+    references: input.references ?? [],
+    responseConstraints: input.responseConstraints ?? [],
+    skills: input.skills ?? [],
+  }), { signal: input.signal })) {
+    if (event.type !== "done") {
+      yield { type: "engine_event", event }
+      continue
+    }
+    yield {
+      type: "done",
+      result: {
+        reply: event.result.text,
+        sessionId: event.result.sessionId,
+        toolTrace: event.result.toolTrace,
+        failedTools: event.result.failedTools,
+        usage: event.result.usage,
+        workspacePath,
+        fileChanges: event.result.fileChanges,
+      },
+    }
   }
 }
 

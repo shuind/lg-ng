@@ -30,6 +30,7 @@ export function ChatComposerPanel({
   settingCards,
   onInputChange,
   onSend,
+  onCancelSend,
   onReview,
   onQuestionJump,
   onRemoveConstraint,
@@ -68,6 +69,7 @@ export function ChatComposerPanel({
   settingCards: SettingCard[]
   onInputChange: (value: string) => void
   onSend: () => void
+  onCancelSend: () => void
   onReview: () => void
   onQuestionJump: () => void
   onRemoveConstraint: (constraintId: string) => void
@@ -145,6 +147,7 @@ export function ChatComposerPanel({
             constraintPickerOpen={constraintPickerOpen}
             referencePickerOpen={referencePickerOpen}
             onSend={onSend}
+            onCancel={onCancelSend}
             onReview={onReview}
             onToggleConstraintPicker={onToggleConstraintPicker}
             onToggleReferencePicker={onToggleReferencePicker}

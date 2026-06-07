@@ -5,7 +5,7 @@ import type { BookTreeNode, Chapter, OutlineFile, SettingCard } from "@/lib/type
 import { nowIso } from "@/lib/server/ids"
 import { getBookDir, getIndexRoot } from "@/lib/server/paths"
 
-const INDEX_VERSION = 2
+const INDEX_VERSION = 3
 const INDEX_VALIDATION_MAX_AGE_MS = 60_000
 const CHAPTER_ROOTS = new Set(["章节正文", "chapters"])
 const VOLUME_OUTLINE_ROOTS = new Set(["卷纲"])
@@ -44,6 +44,13 @@ type IndexEnvelope<T> = {
   items: T
 }
 
+type TermPosting = {
+  path: string
+  score: number
+}
+
+type TermIndex = Record<string, TermPosting[]>
+
 type EnsureBookIndexOptions = {
   validateMtimes?: boolean
 }
@@ -72,6 +79,10 @@ function chapterIndexPath(bookId: string): string {
 
 function settingCardIndexPath(bookId: string): string {
   return path.join(bookIndexDir(bookId), "setting-card-index.json")
+}
+
+function termIndexPath(bookId: string): string {
+  return path.join(bookIndexDir(bookId), "term-index.json")
 }
 
 function isOlderThan(iso: string | undefined, maxAgeMs: number): boolean {
@@ -375,6 +386,96 @@ function aliasField(aliases: string[]): string[] | undefined {
   return aliases.length > 0 ? aliases : undefined
 }
 
+function normalizeTerm(value: string): string {
+  return value.trim().toLowerCase()
+}
+
+function addTerm(
+  postings: Map<string, Map<string, number>>,
+  term: string,
+  filePath: string,
+  score: number,
+): void {
+  const normalized = normalizeTerm(term)
+  if (normalized.length < 2 || normalized.length > 40) return
+  let byPath = postings.get(normalized)
+  if (!byPath) {
+    byPath = new Map()
+    postings.set(normalized, byPath)
+  }
+  byPath.set(filePath, (byPath.get(filePath) ?? 0) + score)
+}
+
+function extractContentTerms(content: string): string[] {
+  const terms: string[] = []
+  const chineseRuns = content.match(/[一-鿿]{2,40}/g) ?? []
+  const ascii = content.match(/[a-zA-Z0-9_-]{2,40}/g) ?? []
+  for (const run of chineseRuns) {
+    for (let size = 2; size <= Math.min(6, run.length); size++) {
+      for (let index = 0; index <= run.length - size; index++) {
+        terms.push(run.slice(index, index + size))
+      }
+    }
+  }
+  terms.push(...ascii)
+  return [...new Set(terms)].slice(0, 2000)
+}
+
+function extractHeadingTerms(content: string): string[] {
+  return content
+    .split(/\r?\n/)
+    .flatMap((line) => {
+      const match = line.match(/^#{1,6}\s+(.+)$/)
+      return match ? extractContentTerms(match[1]) : []
+    })
+}
+
+async function buildTermIndex(
+  bookId: string,
+  files: IndexedBookFile[],
+  settingCards: SettingCard[],
+): Promise<TermIndex> {
+  const postings = new Map<string, Map<string, number>>()
+  const visibleFiles = files.filter((file) => !file.hidden)
+
+  for (const file of visibleFiles) {
+    const pathTerms = splitPath(file.path).flatMap((segment) =>
+      extractContentTerms(segment.replace(/\.[^.]+$/i, ""))
+    )
+    for (const term of pathTerms) addTerm(postings, term, file.path, 10)
+
+    const content = await readIndexedFileContent(bookId, file.path)
+    if (!content) continue
+
+    for (const term of extractHeadingTerms(content)) {
+      addTerm(postings, term, file.path, 8)
+    }
+    for (const term of extractContentTerms(content)) {
+      addTerm(postings, term, file.path, 1)
+    }
+  }
+
+  for (const card of settingCards) {
+    if (!card.path) continue
+    addTerm(postings, card.name, card.path, 30)
+    for (const alias of card.aliases ?? []) {
+      addTerm(postings, alias, card.path, 30)
+    }
+  }
+
+  return Object.fromEntries(
+    [...postings.entries()]
+      .sort(([a], [b]) => a.localeCompare(b, "zh-CN"))
+      .map(([term, byPath]) => [
+        term,
+        [...byPath.entries()]
+          .map(([filePath, score]) => ({ path: filePath, score }))
+          .sort((a, b) => b.score - a.score || a.path.localeCompare(b.path, "zh-CN"))
+          .slice(0, 40),
+      ]),
+  )
+}
+
 async function buildChapterIndex(bookId: string, files: IndexedBookFile[]): Promise<Chapter[]> {
   const chapterFiles = files.filter((file) => isChapterFile(file.path))
   const chapters: Chapter[] = []
@@ -400,10 +501,12 @@ async function writeBookIndexesFromFiles(bookId: string, files: IndexedBookFile[
     buildChapterIndex(bookId, files),
     buildSettingCardIndex(bookId, files),
   ])
+  const termIndex = await buildTermIndex(bookId, files, settingCards)
   await Promise.all([
     writeEnvelope(fileIndexPath(bookId), files),
     writeEnvelope(chapterIndexPath(bookId), chapters),
     writeEnvelope(settingCardIndexPath(bookId), settingCards),
+    writeEnvelope(termIndexPath(bookId), termIndex),
   ])
 }
 
@@ -433,16 +536,18 @@ export async function ensureBookIndexes(
   options: EnsureBookIndexOptions = {},
 ): Promise<void> {
   const validateMtimes = options.validateMtimes ?? true
-  const [fileIndex, chapterIndex, settingCardIndex] = await Promise.all([
+  const [fileIndex, chapterIndex, settingCardIndex, termIndex] = await Promise.all([
     readEnvelope<IndexedBookFile[]>(fileIndexPath(bookId)),
     readEnvelope<Chapter[]>(chapterIndexPath(bookId)),
     readEnvelope<SettingCard[]>(settingCardIndexPath(bookId)),
+    readEnvelope<TermIndex>(termIndexPath(bookId)),
   ])
 
   if (
     fileIndex &&
     chapterIndex &&
-    settingCardIndex
+    settingCardIndex &&
+    termIndex
   ) {
     if (validateMtimes && isOlderThan(fileIndex.validatedAt, INDEX_VALIDATION_MAX_AGE_MS)) {
       const scannedFiles = await scanBookFiles(bookId)
@@ -454,6 +559,7 @@ export async function ensureBookIndexes(
         writeEnvelope(fileIndexPath(bookId), fileIndex.items),
         writeEnvelope(chapterIndexPath(bookId), chapterIndex.items),
         writeEnvelope(settingCardIndexPath(bookId), settingCardIndex.items),
+        writeEnvelope(termIndexPath(bookId), termIndex.items),
       ])
     }
     return
@@ -475,6 +581,11 @@ async function readChapterIndex(bookId: string): Promise<Chapter[]> {
 async function readSettingCardIndex(bookId: string): Promise<SettingCard[]> {
   await ensureBookIndexes(bookId)
   return (await readEnvelope<SettingCard[]>(settingCardIndexPath(bookId)))?.items ?? []
+}
+
+async function readTermIndex(bookId: string): Promise<TermIndex> {
+  await ensureBookIndexes(bookId)
+  return (await readEnvelope<TermIndex>(termIndexPath(bookId)))?.items ?? {}
 }
 
 export async function listIndexedFiles(bookId: string, options: { includeHidden?: boolean } = {}): Promise<IndexedBookFile[]> {
@@ -515,6 +626,25 @@ export async function listIndexedChapters(bookId: string): Promise<Chapter[]> {
 
 export async function listIndexedSettingCards(bookId: string): Promise<SettingCard[]> {
   return readSettingCardIndex(bookId)
+}
+
+export async function searchIndexedTerms(
+  bookId: string,
+  terms: string[],
+  limit = 40,
+): Promise<TermPosting[]> {
+  const index = await readTermIndex(bookId)
+  const scores = new Map<string, number>()
+  for (const term of terms) {
+    const postings = index[normalizeTerm(term)] ?? []
+    for (const posting of postings) {
+      scores.set(posting.path, (scores.get(posting.path) ?? 0) + posting.score)
+    }
+  }
+  return [...scores.entries()]
+    .map(([filePath, score]) => ({ path: filePath, score }))
+    .sort((a, b) => b.score - a.score || a.path.localeCompare(b.path, "zh-CN"))
+    .slice(0, limit)
 }
 
 function buildTree(files: IndexedBookFile[]): BookTreeNode[] {
@@ -596,11 +726,13 @@ export async function updateIndexedFile(bookId: string, filePath: string, conten
     const card = await toSettingCard(bookId, indexed, cards.length + 1, content)
     if (card) cards = await buildSettingCardIndex(bookId, files)
   }
+  const termIndex = await buildTermIndex(bookId, files, cards)
 
   await Promise.all([
     writeEnvelope(fileIndexPath(bookId), files),
     writeEnvelope(chapterIndexPath(bookId), chapters),
     writeEnvelope(settingCardIndexPath(bookId), cards),
+    writeEnvelope(termIndexPath(bookId), termIndex),
   ])
 }
 
@@ -615,10 +747,12 @@ export async function removeIndexedFile(bookId: string, filePath: string): Promi
   const files = (fileEnvelope?.items ?? []).filter((file) => file.path !== normalizedPath)
   const chapters = (chapterEnvelope?.items ?? []).filter((chapter) => chapter.path !== normalizedPath)
   const cards = (cardEnvelope?.items ?? []).filter((card) => card.path !== normalizedPath)
+  const termIndex = await buildTermIndex(bookId, files, cards)
 
   await Promise.all([
     writeEnvelope(fileIndexPath(bookId), files),
     writeEnvelope(chapterIndexPath(bookId), chapters),
     writeEnvelope(settingCardIndexPath(bookId), cards),
+    writeEnvelope(termIndexPath(bookId), termIndex),
   ])
 }

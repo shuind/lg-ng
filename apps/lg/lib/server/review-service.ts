@@ -1,4 +1,5 @@
 import { runNovelGuideReview } from "@/lib/server/novel-guide-agent"
+import { withBookMutationQueue } from "@/lib/server/book-mutation-queue"
 import {
   appendThreadMessages,
   createAgentEvent,
@@ -20,6 +21,13 @@ export class ReviewRequestError extends Error {
 type ReviewKind = "continuity"
 
 export async function runBookReview(bookId: string, body: unknown): Promise<{
+  status: number
+  payload: unknown
+}> {
+  return withBookMutationQueue(bookId, () => runBookReviewUnlocked(bookId, body))
+}
+
+async function runBookReviewUnlocked(bookId: string, body: unknown): Promise<{
   status: number
   payload: unknown
 }> {

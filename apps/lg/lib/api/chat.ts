@@ -8,6 +8,23 @@ export type SendMessageOptions = {
   skillIds?: string[]
 }
 
+export type SendMessageStreamHandlers = {
+  signal?: AbortSignal
+  onTurn?: (payload: { thread: Thread; turn: Turn; userMessage: Message }) => void
+  onAgentEvent?: (event: NonNullable<Message["events"]>[number]) => void
+  onAssistantDelta?: (payload: { text: string }) => void
+  onAssistantMessage?: (message: Message) => void
+  onDone?: (payload: {
+    thread: Thread
+    turn: Turn
+    userMessage: Message
+    assistantMessage?: Message
+    events: NonNullable<Message["events"]>
+    cancelled?: boolean
+  }) => void
+  onError?: (payload: { message?: string }) => void
+}
+
 export async function listMessages(bookId: string): Promise<Message[]> {
   try {
     const res = await fetch(`/api/books/${bookId}/messages`, { cache: "no-store" })
@@ -126,6 +143,50 @@ export async function sendMessage(
   }
 }
 
+export async function sendMessageStream(
+  bookId: string,
+  content: string,
+  threadId?: string,
+  references: SettingCard[] = [],
+  options: SendMessageOptions = {},
+  handlers: SendMessageStreamHandlers = {},
+): Promise<void> {
+  const res = await fetch(`/api/books/${bookId}/messages/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    signal: handlers.signal,
+    body: JSON.stringify({
+      content,
+      threadId,
+      references,
+      constraintIds: options.constraintIds,
+      temporaryConstraints: options.temporaryConstraints,
+      skillIds: options.skillIds,
+    }),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data?.error ?? "api failed")
+  }
+  if (!res.body) throw new Error("stream unavailable")
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ""
+
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const parts = buffer.split(/\n\n/)
+    buffer = parts.pop() ?? ""
+    for (const part of parts) {
+      dispatchSseEvent(part, handlers)
+    }
+  }
+  if (buffer.trim()) dispatchSseEvent(buffer, handlers)
+}
+
 export async function runBookReview(
   bookId: string,
   threadId: string,
@@ -157,6 +218,37 @@ export async function runBookReview(
   if (!res.ok && payload.turn && payload.userMessage) return payload
   if (!res.ok) throw new Error(data?.error ?? "体检失败")
   return payload
+}
+
+function dispatchSseEvent(raw: string, handlers: SendMessageStreamHandlers): void {
+  const lines = raw.split(/\r?\n/)
+  const event = lines.find((line) => line.startsWith("event:"))?.slice("event:".length).trim()
+  const dataLines = lines
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice("data:".length).trimStart())
+  if (!event || dataLines.length === 0) return
+
+  const payload = JSON.parse(dataLines.join("\n"))
+  switch (event) {
+    case "turn":
+      handlers.onTurn?.(payload)
+      break
+    case "agent_event":
+      handlers.onAgentEvent?.(payload)
+      break
+    case "assistant_delta":
+      handlers.onAssistantDelta?.(payload)
+      break
+    case "assistant_message":
+      handlers.onAssistantMessage?.(payload)
+      break
+    case "done":
+      handlers.onDone?.(payload)
+      break
+    case "error":
+      handlers.onError?.(payload)
+      break
+  }
 }
 
 export async function listSettingCards(bookId: string): Promise<SettingCard[]> {

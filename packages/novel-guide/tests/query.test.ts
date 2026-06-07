@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type OpenAI from "openai";
-import { query } from "../src/agent/query.js";
+import { query, queryEvents } from "../src/agent/query.js";
 import type { Tool } from "../src/tools/tool.js";
 
 function mockClient(): OpenAI {
@@ -83,6 +83,50 @@ describe("query loop", () => {
     });
     expect(result.text).toBe("done");
     expect(result.toolTrace).toEqual(["read_file: ok", "grep: ok"]);
+  });
+
+  it("emits model and tool events in order", async () => {
+    const events: { type: string }[] = [];
+    for await (const event of queryEvents({
+      client: mockClient(),
+      model: "mock",
+      messages: [{ role: "user", content: "check" }],
+      tools,
+      toolContext: { cwd: process.cwd() },
+      maxLoops: 5,
+    })) {
+      events.push(event);
+    }
+
+    expect(events.map((event) => event.type)).toEqual([
+      "model_start",
+      "tool_call",
+      "tool_result",
+      "model_start",
+      "tool_call",
+      "tool_result",
+      "model_start",
+      "assistant_message",
+      "done",
+    ]);
+  });
+
+  it("aborts before calling the model", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(async () => {
+      for await (const _event of queryEvents({
+        client: mockClient(),
+        model: "mock",
+        messages: [{ role: "user", content: "check" }],
+        tools,
+        toolContext: { cwd: process.cwd() },
+        maxLoops: 5,
+        signal: controller.signal,
+      })) {
+        // consume
+      }
+    }).rejects.toMatchObject({ name: "AbortError" });
   });
 
   it("discloses failed tools in final text", async () => {

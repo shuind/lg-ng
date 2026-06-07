@@ -1,6 +1,6 @@
 "use client"
 
-import { ArrowUp, AtSign, ListChecks, Loader2, Plus } from "lucide-react"
+import { ArrowUp, AtSign, ListChecks, Loader2, Plus, Square } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ToolBtn } from "./pickers"
 
@@ -12,6 +12,7 @@ export function ComposerFooter({
   constraintPickerOpen,
   referencePickerOpen,
   onSend,
+  onCancel,
   onReview,
   onToggleConstraintPicker,
   onToggleReferencePicker,
@@ -23,6 +24,7 @@ export function ComposerFooter({
   constraintPickerOpen: boolean
   referencePickerOpen: boolean
   onSend: () => void
+  onCancel: () => void
   onReview: () => void
   onToggleConstraintPicker: () => void
   onToggleReferencePicker: () => void
@@ -53,17 +55,17 @@ export function ComposerFooter({
         </span>
       </div>
       <button
-        onClick={onSend}
-        disabled={!input.trim() || sending}
+        onClick={sending ? onCancel : onSend}
+        disabled={!sending && !input.trim()}
         className={cn(
           "flex h-8 w-8 items-center justify-center rounded-full transition",
-          input.trim() && !sending
+          sending || input.trim()
             ? "bg-foreground text-background hover:scale-105"
             : "bg-muted text-muted-foreground/50",
         )}
-        aria-label="发送"
+        aria-label={sending ? "停止" : "发送"}
       >
-        {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
+        {sending ? <Square className="h-3.5 w-3.5 fill-current" /> : <ArrowUp className="h-4 w-4" />}
       </button>
     </div>
   )
