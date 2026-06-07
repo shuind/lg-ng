@@ -1,25 +1,29 @@
 "use client"
 
-import { ArrowUp, AtSign, Loader2, Plus } from "lucide-react"
+import { ArrowUp, AtSign, ListChecks, Loader2, Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ToolBtn } from "./pickers"
 
 export function ComposerFooter({
   input,
   sending,
+  reviewing,
   activeThreadTitle,
   constraintPickerOpen,
   referencePickerOpen,
   onSend,
+  onReview,
   onToggleConstraintPicker,
   onToggleReferencePicker,
 }: {
   input: string
   sending: boolean
+  reviewing: boolean
   activeThreadTitle: string
   constraintPickerOpen: boolean
   referencePickerOpen: boolean
   onSend: () => void
+  onReview: () => void
   onToggleConstraintPicker: () => void
   onToggleReferencePicker: () => void
 }) {
@@ -37,6 +41,12 @@ export function ComposerFooter({
           label="引用设定"
           active={referencePickerOpen}
           onClick={onToggleReferencePicker}
+        />
+        <ToolBtn
+          icon={reviewing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ListChecks className="h-3.5 w-3.5" />}
+          label="体检"
+          disabled={sending || reviewing}
+          onClick={onReview}
         />
         <span className="ml-2 max-w-[180px] truncate text-[11px] text-muted-foreground/70">
           {activeThreadTitle}

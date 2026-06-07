@@ -13,6 +13,7 @@ export function ChatComposerPanel({
   inputRef,
   input,
   sending,
+  reviewing,
   latestUserTurnId,
   activeThreadTitle,
   activeResponseConstraints,
@@ -29,6 +30,7 @@ export function ChatComposerPanel({
   settingCards,
   onInputChange,
   onSend,
+  onReview,
   onQuestionJump,
   onRemoveConstraint,
   onRemoveTemporaryConstraint,
@@ -49,6 +51,7 @@ export function ChatComposerPanel({
   inputRef: RefObject<HTMLTextAreaElement | null>
   input: string
   sending: boolean
+  reviewing: boolean
   latestUserTurnId: string | null
   activeThreadTitle: string
   activeResponseConstraints: ResponseConstraint[]
@@ -65,6 +68,7 @@ export function ChatComposerPanel({
   settingCards: SettingCard[]
   onInputChange: (value: string) => void
   onSend: () => void
+  onReview: () => void
   onQuestionJump: () => void
   onRemoveConstraint: (constraintId: string) => void
   onRemoveTemporaryConstraint: (index: number) => void
@@ -136,10 +140,12 @@ export function ChatComposerPanel({
           <ComposerFooter
             input={input}
             sending={sending}
+            reviewing={reviewing}
             activeThreadTitle={activeThreadTitle}
             constraintPickerOpen={constraintPickerOpen}
             referencePickerOpen={referencePickerOpen}
             onSend={onSend}
+            onReview={onReview}
             onToggleConstraintPicker={onToggleConstraintPicker}
             onToggleReferencePicker={onToggleReferencePicker}
           />

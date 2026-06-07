@@ -10,7 +10,7 @@ import { getTools } from "../tools/registry.js";
 import type { FileChange, ToolContext, Tools } from "../tools/tool.js";
 import { query } from "./query.js";
 import { createSessionId, saveSession, type SessionState } from "./session.js";
-import { loadAgentsDir } from "../agents/loadAgentsDir.js";
+import { findAgent, loadAgentsDir } from "../agents/loadAgentsDir.js";
 import { loadSkillsDir } from "../skills/loadSkillsDir.js";
 
 export interface EngineConfig {
@@ -38,6 +38,12 @@ export interface EngineTurnResult {
     totalTokens: number;
   };
   sessionId: string;
+}
+
+export interface EngineSubAgentInput {
+  agent: string;
+  prompt: string;
+  readonly?: boolean;
 }
 
 export class AgentEngine {
@@ -77,19 +83,30 @@ export class AgentEngine {
       askConfirmation: this.config.askConfirmation,
       permissionCache,
       runAgent: async ({ agent, prompt, readonly }) => {
-        const subEngine = new AgentEngine({
-          cwd: this.config.cwd,
-          client: this.config.client,
-          model: this.config.model,
-          askConfirmation: this.config.askConfirmation,
-          maxLoops: Math.min(this.config.maxLoops ?? 8, 5),
-          readonlyOnly: readonly !== false,
-          appendSystemPrompt: `You are running as subagent: ${agent}. Return a structured report. Do not modify files unless explicitly allowed.`,
-        });
-        const result = await subEngine.submitMessage(prompt, { save: false });
+        const result = await this.runSubAgent({ agent, prompt, readonly });
         return result.text;
       },
     };
+  }
+
+  async runSubAgent(input: EngineSubAgentInput): Promise<EngineTurnResult> {
+    const agent = await findAgent(this.config.cwd, input.agent);
+    if (!agent) throw new Error(`Agent not found: ${input.agent}`);
+
+    const subEngine = new AgentEngine({
+      cwd: this.config.cwd,
+      client: this.config.client,
+      model: this.config.model,
+      askConfirmation: this.config.askConfirmation,
+      permissionMode: this.config.permissionMode,
+      maxLoops: Math.min(this.config.maxLoops ?? 8, 5),
+      readonlyOnly: input.readonly !== false,
+      appendSystemPrompt: `You are running as subagent: ${agent.name}. Return a structured report. Do not modify files unless explicitly allowed.`,
+    });
+    return await subEngine.submitMessage(`${agent.prompt}\n\n# Task\n${input.prompt}`, {
+      save: false,
+      systemMeta: true,
+    });
   }
 
   async submitMessage(

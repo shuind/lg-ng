@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit --pretty false",
     "lint": "eslint .",
     "seed": "tsx scripts/seed.ts",
-    "data:migrate": "tsx scripts/migrate-data.ts"
+    "data:migrate": "tsx scripts/migrate-data.ts",
+    "smoke:optimization": "tsx scripts/smoke-optimization.ts"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "1.3.3",

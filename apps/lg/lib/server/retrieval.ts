@@ -1,7 +1,7 @@
 import type { RetrievedContext } from "@/lib/types"
 import { getDirtyFiles } from "@/lib/server/dirty-index"
 import { readBookFile } from "@/lib/server/book-store"
-import { listIndexedFiles } from "@/lib/server/book-index"
+import { listIndexedFiles, listIndexedSettingCards } from "@/lib/server/book-index"
 
 const MAX_RESULTS = 5
 const EXCERPT_LEN = 200
@@ -64,6 +64,44 @@ function shouldIncludeRecentOnly(keywords: string[], dirtyCount: number): boolea
   return keywords.length > 0 || dirtyCount > 0
 }
 
+function normalizeTerm(value: string): string {
+  return value.trim().toLowerCase()
+}
+
+async function buildAliasExpansion(bookId: string, query: string): Promise<{
+  keywords: string[]
+  pathScores: Map<string, number>
+}> {
+  const queryText = normalizeTerm(query)
+  if (!queryText) return { keywords: [], pathScores: new Map() }
+
+  const cards = await listIndexedSettingCards(bookId)
+  const keywords: string[] = []
+  const pathScores = new Map<string, number>()
+
+  for (const card of cards) {
+    if (!card.path) continue
+    const terms = [
+      card.name,
+      ...(card.aliases ?? []),
+      ...(card.meta?.来源 ? [card.meta.来源] : []),
+    ].filter(Boolean)
+    const matched = terms.some((term) => {
+      const normalized = normalizeTerm(term)
+      return normalized.length > 0 && (queryText.includes(normalized) || normalized.includes(queryText))
+    })
+    if (!matched) continue
+
+    keywords.push(...terms)
+    pathScores.set(card.path, Math.max(pathScores.get(card.path) ?? 0, 80))
+  }
+
+  return {
+    keywords: [...new Set(keywords)],
+    pathScores,
+  }
+}
+
 // ─── Tree Flattening ──────────────────────────────────────────
 
 interface FlatFile {
@@ -98,7 +136,8 @@ function makeExcerpt(content: string, keyword?: string): string {
 // ─── Main Retrieval ───────────────────────────────────────────
 
 export async function retrieveContext(bookId: string, query: string): Promise<RetrievedContext[]> {
-  const keywords = extractKeywords(query)
+  const aliasExpansion = await buildAliasExpansion(bookId, query)
+  const keywords = [...new Set([...extractKeywords(query), ...aliasExpansion.keywords])]
   const dirtyEntries = await getDirtyFiles(bookId)
   if (!shouldIncludeRecentOnly(keywords, dirtyEntries.length)) {
     return []
@@ -116,6 +155,12 @@ export async function retrieveContext(bookId: string, query: string): Promise<Re
   for (const file of allFiles) {
     let score = 0
     let reason: RetrievedContext["reason"] = "recent"
+
+    const aliasScore = aliasExpansion.pathScores.get(file.path)
+    if (aliasScore) {
+      score += aliasScore
+      reason = "keyword"
+    }
 
     if (dirtyPaths.has(file.path)) {
       score += 100

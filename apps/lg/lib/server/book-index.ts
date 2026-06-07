@@ -5,13 +5,14 @@ import type { BookTreeNode, Chapter, OutlineFile, SettingCard } from "@/lib/type
 import { nowIso } from "@/lib/server/ids"
 import { getBookDir, getIndexRoot } from "@/lib/server/paths"
 
-const INDEX_VERSION = 1
+const INDEX_VERSION = 2
 const INDEX_VALIDATION_MAX_AGE_MS = 60_000
 const CHAPTER_ROOTS = new Set(["章节正文", "chapters"])
 const VOLUME_OUTLINE_ROOTS = new Set(["卷纲"])
 const CHAPTER_OUTLINE_ROOTS = new Set(["章节大纲", "章纲", "outlines"])
 const CHARACTER_ROOTS = new Set(["人物设定", "characters"])
 const WORLD_ROOTS = new Set(["世界观", "settings"])
+const NOVEL_ENTITY_ROOTS = new Set(["canon", "candidates", "archive"])
 
 const HIDDEN_SEGMENTS = new Set([
   ".claude",
@@ -210,8 +211,22 @@ function isChapterFile(filePath: string): boolean {
   return CHAPTER_ROOTS.has(pathRoot(filePath)) && isMarkdownPath(filePath)
 }
 
+function isCharacterFile(filePath: string): boolean {
+  const segments = splitPath(filePath)
+  const root = segments[0] ?? ""
+  return CHARACTER_ROOTS.has(root) ||
+    (NOVEL_ENTITY_ROOTS.has(root) && segments[1] === "characters")
+}
+
+function isWorldSettingFile(filePath: string): boolean {
+  const segments = splitPath(filePath)
+  const root = segments[0] ?? ""
+  return WORLD_ROOTS.has(root) ||
+    (NOVEL_ENTITY_ROOTS.has(root) && segments[1] === "settings")
+}
+
 function isSettingCardFile(filePath: string): boolean {
-  return (CHARACTER_ROOTS.has(pathRoot(filePath)) || WORLD_ROOTS.has(pathRoot(filePath))) && isMarkdownPath(filePath)
+  return (isCharacterFile(filePath) || isWorldSettingFile(filePath)) && isMarkdownPath(filePath)
 }
 
 function extractSummary(content: string, maxLen = 180): string {
@@ -227,6 +242,43 @@ function extractSummary(content: string, maxLen = 180): string {
 function extractMetaField(content: string, field: string): string | undefined {
   const match = content.match(new RegExp(`\\*\\*${field}\\*\\*[ 　]*(.+)`, "m"))
   return match ? match[1].trim().replace(/\s+.*$/, "") : undefined
+}
+
+function splitAliasValue(value: string): string[] {
+  return value
+    .replace(/^[\s\["'“”‘’]+|[\s\]"'“”‘’]+$/g, "")
+    .split(/[、,，;；|/]/)
+    .map((item) => item.trim().replace(/^[-*]\s*/, "").replace(/^["'“”‘’]+|["'“”‘’]+$/g, ""))
+    .filter((item) => item && !["无", "暂无", "none", "n/a"].includes(item.toLowerCase()))
+}
+
+function extractAliases(content: string, primaryNames: string[]): string[] {
+  const aliases: string[] = []
+  const lines = content.split(/\r?\n/)
+
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index]
+    const keyMatch = line.match(/^\s*(?:aliases?|别名|又名)\s*[:：]\s*(.*)$/i)
+    const boldMatch = line.match(/^\s*\*\*(?:aliases?|别名|又名)\*\*[ 　:：]*(.*)$/i)
+    const rawValue = keyMatch?.[1] ?? boldMatch?.[1]
+    if (rawValue === undefined) continue
+
+    if (rawValue.trim()) {
+      aliases.push(...splitAliasValue(rawValue))
+      continue
+    }
+
+    for (let nextIndex = index + 1; nextIndex < lines.length; nextIndex++) {
+      const nextLine = lines[nextIndex]
+      if (!/^\s+[-*]\s+/.test(nextLine)) break
+      aliases.push(...splitAliasValue(nextLine))
+      index = nextIndex
+    }
+  }
+
+  const primary = new Set(primaryNames.map((name) => name.trim()).filter(Boolean))
+  return [...new Set(aliases)]
+    .filter((alias) => alias.length <= 40 && !primary.has(alias))
 }
 
 function normalizeCardContent(content: string): string {
@@ -287,9 +339,8 @@ async function toSettingCard(bookId: string, file: IndexedBookFile, sequence: nu
   const text = content ?? await readIndexedFileContent(bookId, file.path)
   if (text === null) return null
 
-  const root = pathRoot(file.path)
   const fileBase = file.name.replace(/\.md$/i, "")
-  if (CHARACTER_ROOTS.has(root)) {
+  if (isCharacterFile(file.path)) {
     const meta: Record<string, string> = {}
     for (const field of ["性别", "身份", "年龄"]) {
       const value = extractMetaField(text, field)
@@ -299,6 +350,7 @@ async function toSettingCard(bookId: string, file: IndexedBookFile, sequence: nu
       id: `sc-${sequence}`,
       category: "character",
       name: fileBase,
+      aliases: aliasField(extractAliases(text, [fileBase])),
       summary: extractSummary(text),
       content: normalizeCardContent(text),
       path: file.path,
@@ -311,11 +363,16 @@ async function toSettingCard(bookId: string, file: IndexedBookFile, sequence: nu
     id: `sc-${sequence}`,
     category: classifyWorldCard(fileBase, text),
     name: displayName.name,
+    aliases: aliasField(extractAliases(text, [fileBase, displayName.name])),
     summary: extractSummary(text),
     content: normalizeCardContent(text),
     path: file.path,
     meta: displayName.sourceName ? { 来源: displayName.sourceName } : undefined,
   }
+}
+
+function aliasField(aliases: string[]): string[] | undefined {
+  return aliases.length > 0 ? aliases : undefined
 }
 
 async function buildChapterIndex(bookId: string, files: IndexedBookFile[]): Promise<Chapter[]> {

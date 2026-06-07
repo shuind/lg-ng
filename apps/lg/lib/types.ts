@@ -248,6 +248,7 @@ export interface SettingCard {
   id: string
   category: "character" | "location" | "faction" | "mechanism" | "formation" | "event" | "rule" | "other"
   name: string
+  aliases?: string[]
   summary: string
   content?: string
   path?: string

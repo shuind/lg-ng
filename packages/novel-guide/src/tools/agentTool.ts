@@ -1,5 +1,4 @@
 import type { Tool } from "./tool.js";
-import { findAgent } from "../agents/loadAgentsDir.js";
 
 export function createAgentTools(): Tool[] {
   return [
@@ -22,8 +21,6 @@ export function createAgentTools(): Tool[] {
       async execute(input, context) {
         const agentName = typeof input.agent === "string" ? input.agent : "";
         const prompt = typeof input.prompt === "string" ? input.prompt : "";
-        const agent = await findAgent(context.cwd, agentName);
-        if (!agent) return { ok: false, content: `Agent not found: ${agentName}` };
         if (!context.runAgent) {
           return {
             ok: false,
@@ -31,8 +28,8 @@ export function createAgentTools(): Tool[] {
           };
         }
         const output = await context.runAgent({
-          agent: agent.name,
-          prompt: `${agent.prompt}\n\n# Task\n${prompt}`,
+          agent: agentName,
+          prompt,
           readonly: input.readonly !== false,
         });
         return { ok: true, content: output };

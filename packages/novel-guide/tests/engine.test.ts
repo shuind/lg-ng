@@ -1,0 +1,67 @@
+import { access, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+import type OpenAI from "openai";
+import { AgentEngine } from "../src/agent/engine.js";
+import { sessionPath } from "../src/agent/session.js";
+
+async function tempDir(): Promise<string> {
+  return await mkdtemp(path.join(os.tmpdir(), "novel-guide-engine-"));
+}
+
+function mockClient(seenTools: string[]): OpenAI {
+  return {
+    chat: {
+      completions: {
+        create: async (input: { tools?: { function?: { name?: string } }[] }) => {
+          seenTools.push(...(input.tools ?? []).map((tool) => tool.function?.name ?? ""));
+          return {
+            choices: [{ message: { role: "assistant", content: "## 摘要\nok" } }],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          };
+        },
+      },
+    },
+  } as unknown as OpenAI;
+}
+
+describe("AgentEngine subagents", () => {
+  it("runs subagents as isolated readonly turns by default", async () => {
+    const cwd = await tempDir();
+    await mkdir(path.join(cwd, ".claude", "agents"), { recursive: true });
+    await writeFile(
+      path.join(cwd, ".claude", "agents", "continuity-checker.md"),
+      [
+        "---",
+        "name: continuity-checker",
+        "description: readonly review",
+        "tools: [read_file, grep, glob]",
+        "---",
+        "Return a structured report.",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const seenTools: string[] = [];
+    const engine = new AgentEngine({
+      cwd,
+      client: mockClient(seenTools),
+      model: "mock",
+      sessionId: "main-session",
+      permissionMode: "bypass",
+    });
+
+    const result = await engine.runSubAgent({
+      agent: "continuity-checker",
+      prompt: "check the book",
+    });
+
+    expect(result.text).toContain("ok");
+    expect(seenTools).toContain("read_file");
+    expect(seenTools).toContain("grep");
+    expect(seenTools).not.toContain("write_file");
+    expect(seenTools).not.toContain("edit_file");
+    await expect(access(sessionPath(cwd, result.sessionId))).rejects.toThrow();
+  });
+});

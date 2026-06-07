@@ -19,6 +19,7 @@ export interface AppShellProps {
   activeChapterId: string | null
   activeThreadId: string
   selectedTurnId: string | null
+  reviewing: boolean
   mode: AppMode
   collapsed: boolean
   chatCitations: ChatCitation[]
@@ -37,6 +38,7 @@ export interface AppShellProps {
   onRenameBook: (bookId: string, newTitle: string) => void
   onSelectTurn: (turnId: string) => void
   onSend: (text: string, citations: ChatCitation[], options: ChatSendOptions) => Promise<void>
+  onReview: () => Promise<void>
   onAddCitation: (card: SettingCard) => void
   onRemoveCitation: (cardId: string) => void
   onClearCitations: () => void

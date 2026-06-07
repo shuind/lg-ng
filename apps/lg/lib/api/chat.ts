@@ -126,6 +126,39 @@ export async function sendMessage(
   }
 }
 
+export async function runBookReview(
+  bookId: string,
+  threadId: string,
+  options: { kind?: "continuity"; scope?: string } = {},
+): Promise<{
+  thread: Thread
+  turn: Turn
+  userMessage: Message
+  assistantMessage?: Message
+  events: NonNullable<Message["events"]>
+}> {
+  const res = await fetch(`/api/books/${bookId}/review`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      threadId,
+      kind: options.kind ?? "continuity",
+      scope: options.scope,
+    }),
+  })
+  const data = await res.json()
+  const payload = {
+    thread: data.thread,
+    turn: data.turn,
+    userMessage: data.userMessage,
+    assistantMessage: data.assistantMessage,
+    events: Array.isArray(data.events) ? data.events : [],
+  }
+  if (!res.ok && payload.turn && payload.userMessage) return payload
+  if (!res.ok) throw new Error(data?.error ?? "体检失败")
+  return payload
+}
+
 export async function listSettingCards(bookId: string): Promise<SettingCard[]> {
   try {
     const res = await fetch(`/api/books/${bookId}/setting-cards`, { cache: "no-store" })

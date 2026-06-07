@@ -12,6 +12,7 @@ import {
   listLedgerEntries,
   rollbackLedgerEntry,
   sendMessage,
+  runBookReview,
   createThread,
   forkThread,
   getThread,
@@ -41,6 +42,7 @@ export default function Page() {
   const [cards, setCards] = useState<SettingCard[]>([])
   const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([])
   const [rollingBackLedgerEntryId, setRollingBackLedgerEntryId] = useState<string | null>(null)
+  const [reviewing, setReviewing] = useState(false)
   const [activeBookId, setActiveBookId] = useState<string>("")
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null)
   const [mode, setMode] = useState<AppMode>("chat")
@@ -264,6 +266,83 @@ export default function Page() {
     }
   }
 
+  async function handleReview() {
+    if (!activeBookId || !activeThreadId || reviewing) return
+    const targetThread = threads.find((thread) => thread.id === activeThreadId)
+    if (targetThread && targetThread.status !== "active") return
+
+    const optimisticTurnId = `turn-local-review-${Date.now()}`
+    const ts = new Date().toISOString()
+    const optimisticUser: Message = {
+      id: `msg-local-review-${Date.now()}`,
+      threadId: activeThreadId,
+      turnId: optimisticTurnId,
+      role: "user",
+      content: "体检：连续性检查（全书）",
+      version: 1,
+      createdAt: ts,
+    }
+    const optimisticTurn: Turn = {
+      id: optimisticTurnId,
+      threadId: activeThreadId,
+      userMessageId: optimisticUser.id,
+      status: "running",
+      createdAt: ts,
+      updatedAt: ts,
+    }
+
+    setReviewing(true)
+    setMessages((current) => [...current, optimisticUser])
+    setTurns((current) => [...current, optimisticTurn])
+    setSelectedTurnId(optimisticTurnId)
+
+    try {
+      const result = await runBookReview(activeBookId, activeThreadId, { kind: "continuity" })
+      setThreads((current) => upsertById(current, result.thread))
+      setTurns((current) => upsertById(current.filter((turn) => turn.id !== optimisticTurnId), result.turn))
+      setMessages((current) => {
+        const withoutOptimistic = current.filter((message) => message.id !== optimisticUser.id)
+        return [
+          ...withoutOptimistic,
+          result.userMessage,
+          ...(result.assistantMessage ? [result.assistantMessage] : []),
+        ].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      })
+      setSelectedTurnId(result.turn.id)
+    } catch (err) {
+      console.error("[handleReview] 体检失败:", err)
+      const failedAt = new Date().toISOString()
+      const failedTurn: Turn = {
+        ...optimisticTurn,
+        status: "failed",
+        error: err instanceof Error ? err.message : "体检失败",
+        updatedAt: failedAt,
+      }
+      const assistantMessage: Message = {
+        id: `msg-local-review-error-${Date.now()}`,
+        threadId: activeThreadId,
+        turnId: optimisticTurnId,
+        role: "assistant",
+        content: "体检失败，请稍后重试。",
+        version: 1,
+        createdAt: failedAt,
+        events: [
+          {
+            id: `event-local-review-error-${Date.now()}`,
+            turnId: optimisticTurnId,
+            type: "error",
+            message: failedTurn.error,
+            createdAt: failedAt,
+          },
+        ],
+      }
+      setTurns((current) => upsertById(current, failedTurn))
+      setMessages((current) => [...current, assistantMessage])
+    } finally {
+      setReviewing(false)
+    }
+  }
+
   async function handleSendWithThread(
     text: string,
     threadId: string,
@@ -373,6 +452,7 @@ export default function Page() {
       activeChapterId={activeChapterId}
       activeThreadId={activeThreadId}
       selectedTurnId={selectedTurnId}
+      reviewing={reviewing}
       mode={mode}
       collapsed={collapsed}
       chatCitations={chatCitations}
@@ -401,6 +481,7 @@ export default function Page() {
       onRenameBook={handleRenameBook}
       onSelectTurn={setSelectedTurnId}
       onSend={handleSend}
+      onReview={handleReview}
       onAddCitation={handleCiteSettingCard}
       onRemoveCitation={handleRemoveCitation}
       onClearCitations={handleClearCitations}

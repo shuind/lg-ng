@@ -11,6 +11,7 @@ type MainContentColumnProps = Pick<
   | "activeChapterId"
   | "activeThreadId"
   | "selectedTurnId"
+  | "reviewing"
   | "messages"
   | "turns"
   | "threads"
@@ -21,6 +22,7 @@ type MainContentColumnProps = Pick<
   | "activeResponseConstraintIds"
   | "onSelectTurn"
   | "onSend"
+  | "onReview"
   | "onAddCitation"
   | "onRemoveCitation"
   | "onClearCitations"
@@ -41,6 +43,7 @@ export function MainContentColumn({
   activeChapterId,
   activeThreadId,
   selectedTurnId,
+  reviewing,
   messages,
   turns,
   threads,
@@ -51,6 +54,7 @@ export function MainContentColumn({
   activeResponseConstraintIds,
   onSelectTurn,
   onSend,
+  onReview,
   onAddCitation,
   onRemoveCitation,
   onClearCitations,
@@ -75,12 +79,14 @@ export function MainContentColumn({
           threads={threads}
           activeThreadId={activeThreadId}
           selectedTurnId={selectedTurnId}
+          reviewing={reviewing}
           citations={chatCitations}
           settingCards={cards}
           responseConstraints={responseConstraints}
           activeResponseConstraintIds={activeResponseConstraintIds}
           onSelectTurn={onSelectTurn}
           onSend={onSend}
+          onReview={onReview}
           onAddCitation={onAddCitation}
           onRemoveCitation={onRemoveCitation}
           onClearCitations={onClearCitations}

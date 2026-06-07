@@ -17,12 +17,14 @@ interface ChatPanelProps {
   threads: Thread[]
   activeThreadId: string
   selectedTurnId: string | null
+  reviewing: boolean
   citations: ChatCitation[]
   settingCards: SettingCard[]
   responseConstraints: ResponseConstraint[]
   activeResponseConstraintIds: string[]
   onSelectTurn: (turnId: string) => void
   onSend: (text: string, citations: ChatCitation[], options: ChatSendOptions) => Promise<void>
+  onReview: () => Promise<void>
   onAddCitation: (card: SettingCard) => void
   onRemoveCitation: (cardId: string) => void
   onClearCitations: () => void
@@ -45,12 +47,14 @@ export function ChatPanel({
   threads,
   activeThreadId,
   selectedTurnId,
+  reviewing,
   citations,
   settingCards,
   responseConstraints,
   activeResponseConstraintIds,
   onSelectTurn,
   onSend,
+  onReview,
   onAddCitation,
   onRemoveCitation,
   onClearCitations,
@@ -120,6 +124,7 @@ export function ChatPanel({
         bookId={bookId}
         activeThreadId={activeThreadId}
         activeThreadTitle={activeThread?.title ?? "任务线程"}
+        reviewing={reviewing}
         citations={citations}
         settingCards={settingCards}
         responseConstraints={responseConstraints}
@@ -127,6 +132,7 @@ export function ChatPanel({
         latestUserTurnId={latestUserTurnId}
         onQuestionJump={handleQuestionJump}
         onSend={onSend}
+        onReview={onReview}
         onAddCitation={onAddCitation}
         onRemoveCitation={onRemoveCitation}
         onClearCitations={onClearCitations}

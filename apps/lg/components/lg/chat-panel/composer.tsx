@@ -15,6 +15,7 @@ interface ChatComposerProps {
   bookId: string
   activeThreadId: string
   activeThreadTitle: string
+  reviewing: boolean
   citations: ChatCitation[]
   settingCards: SettingCard[]
   responseConstraints: ResponseConstraint[]
@@ -22,6 +23,7 @@ interface ChatComposerProps {
   latestUserTurnId: string | null
   onQuestionJump: () => void
   onSend: (text: string, citations: ChatCitation[], options: ChatSendOptions) => Promise<void>
+  onReview: () => Promise<void>
   onAddCitation: (card: SettingCard) => void
   onRemoveCitation: (cardId: string) => void
   onClearCitations: () => void
@@ -35,6 +37,7 @@ export const ChatComposer = memo(forwardRef<ChatComposerHandle, ChatComposerProp
   bookId,
   activeThreadId,
   activeThreadTitle,
+  reviewing,
   citations,
   settingCards,
   responseConstraints,
@@ -42,6 +45,7 @@ export const ChatComposer = memo(forwardRef<ChatComposerHandle, ChatComposerProp
   latestUserTurnId,
   onQuestionJump,
   onSend,
+  onReview,
   onAddCitation,
   onRemoveCitation,
   onClearCitations,
@@ -72,6 +76,7 @@ export const ChatComposer = memo(forwardRef<ChatComposerHandle, ChatComposerProp
       inputRef={composer.inputRef}
       input={composer.input}
       sending={composer.sending}
+      reviewing={reviewing}
       latestUserTurnId={latestUserTurnId}
       activeThreadTitle={activeThreadTitle}
       activeResponseConstraints={composer.activeResponseConstraints}
@@ -88,6 +93,7 @@ export const ChatComposer = memo(forwardRef<ChatComposerHandle, ChatComposerProp
       settingCards={settingCards}
       onInputChange={composer.setInput}
       onSend={composer.handleSend}
+      onReview={onReview}
       onQuestionJump={onQuestionJump}
       onRemoveConstraint={composer.handleRemoveConstraint}
       onRemoveTemporaryConstraint={composer.handleRemoveTemporaryConstraint}

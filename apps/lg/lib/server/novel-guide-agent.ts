@@ -24,6 +24,19 @@ export interface NovelGuideAgentResult {
   fileChanges: FileChange[]
 }
 
+export interface NovelGuideReviewResult {
+  reply: string
+  sessionId: string
+  toolTrace: string[]
+  failedTools: string[]
+  usage: {
+    promptTokens: number
+    completionTokens: number
+    totalTokens: number
+  }
+  workspacePath: string
+}
+
 function formatReferences(references: SettingCard[]): string {
   if (references.length === 0) return ""
   const lines = references.map((card) => {
@@ -139,5 +152,67 @@ export async function runNovelGuideAgent(input: {
     usage: result.usage,
     workspacePath,
     fileChanges: result.fileChanges,
+  }
+}
+
+export async function runNovelGuideReview(input: {
+  bookId: string
+  threadId: string
+  scope?: string
+}): Promise<NovelGuideReviewResult> {
+  const config = getOpenAICompatibleConfig()
+  if (!config) {
+    return {
+      reply: "Novel Guide 还没有配置模型。请设置 DEEPSEEK_API_KEY，或设置 LLM_PROVIDER=mimo 并提供 MIMO_API_KEY。",
+      sessionId: input.threadId,
+      toolTrace: [],
+      failedTools: ["model_config: missing API key"],
+      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      workspacePath: getBookDir(input.bookId),
+    }
+  }
+
+  const book = await getBook(input.bookId)
+  const workspacePath = getBookDir(input.bookId)
+  const bookTitle = book?.title ?? input.bookId
+  await initNovelWorkspace(workspacePath, bookTitle)
+
+  const engine = new AgentEngine({
+    cwd: workspacePath,
+    client: createOpenAICompatibleClient(config),
+    model: config.model,
+    sessionId: input.threadId,
+    appendSystemPrompt: LG_LEGACY_PROMPT,
+    permissionMode: "bypass",
+    maxLoops: 5,
+  })
+
+  const scope = input.scope?.trim() || "全书当前项目"
+  const result = await engine.runSubAgent({
+    agent: "continuity-checker",
+    readonly: true,
+    prompt: [
+      `Book: ${bookTitle} (${input.bookId})`,
+      `Review scope: ${scope}`,
+      "",
+      "Run a read-only novel health check. Focus on:",
+      "- overdue or unresolved foreshadowing",
+      "- timeline ordering problems",
+      "- impossible character locations",
+      "- relationship graph inconsistencies",
+      "- POV boundary issues",
+      "",
+      "Return Markdown with these sections: 摘要, 高风险问题, 证据, 建议下一步.",
+      "Do not modify files.",
+    ].join("\n"),
+  })
+
+  return {
+    reply: result.text,
+    sessionId: result.sessionId,
+    toolTrace: result.toolTrace,
+    failedTools: result.failedTools,
+    usage: result.usage,
+    workspacePath,
   }
 }
