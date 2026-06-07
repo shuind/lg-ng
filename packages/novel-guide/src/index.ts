@@ -9,10 +9,15 @@ export {
   resolveInside,
 } from "./utils/paths.js";
 export {
+  createChatCompletion,
   createDeepSeekClient,
   createOpenAICompatibleClient,
   getDeepSeekConfig,
   getOpenAICompatibleConfig,
   type DeepSeekConfig,
+  type ModelMessage,
+  type ModelResponse,
+  type ModelTool,
+  type ModelUsage,
   type OpenAICompatibleConfig,
 } from "./model/deepseek.js";

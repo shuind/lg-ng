@@ -180,30 +180,6 @@ export interface IntentBrief {
     corrected: string[]
     unresolved: string[]
   }
-  selfImprovement?: {
-    triggered: boolean
-    triggerReason?: string
-    failureChain?: string[]
-    failureLayers?: string[]
-    codexBrief?: string
-    proposedEvalCases?: string[]
-    proposedRules?: string[]
-  }
-  taskModel?: {
-    userGoal: string
-    taskType: string
-    artifactLevel: string
-    targetDomain?: "agent_system" | "book_content" | "ambiguous"
-    userCorrection?: boolean
-    requiresClarification?: boolean
-    domainReasoning?: string
-    confidence: number
-    needsBookMutation: boolean
-    needsCreativeDiagnosis: boolean
-    needsPromptBrief: boolean
-    needsSelfImprovement: boolean
-    missingArtifacts: string[]
-  }
   usedFragments?: string[]
   toolTrace?: string[]
 }

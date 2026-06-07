@@ -20,8 +20,3 @@ export function isInside(parent: string, child: string): boolean {
   const rel = path.relative(path.resolve(parent), path.resolve(child));
   return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
 }
-
-export function looksLikeCanonPath(filePath: string): boolean {
-  const normalized = normalizeSlashPath(filePath);
-  return normalized === "canon" || normalized.startsWith("canon/");
-}

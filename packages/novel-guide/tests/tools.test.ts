@@ -33,11 +33,11 @@ describe("workspace tools", () => {
     expect(grep.content).toContain("drafts/ch01.md:2");
   });
 
-  it("gates canon writes", async () => {
+  it("allows canon writes without file-specific confirmation", async () => {
     const cwd = await tempDir();
     await mkdir(path.join(cwd, "canon", "characters"), { recursive: true });
     let asked = false;
-    const denied = await runTool(
+    const result = await runTool(
       WriteFileTool,
       { path: "canon/characters/lin-yan.md", content: "x" },
       {
@@ -49,29 +49,9 @@ describe("workspace tools", () => {
         },
       },
     );
-    expect(asked).toBe(true);
-    expect(denied.ok).toBe(false);
-    await expect(readFile(path.join(cwd, "canon/characters/lin-yan.md"), "utf8")).rejects.toThrow();
-  });
-
-  it("caches canon write confirmation within a turn", async () => {
-    const cwd = await tempDir();
-    let askCount = 0;
-    const permissionCache = new Map<string, boolean>();
-    const context = {
-      cwd,
-      permissionMode: "confirm" as const,
-      permissionCache,
-      askConfirmation: async () => {
-        askCount += 1;
-        return true;
-      },
-    };
-    const first = await runTool(WriteFileTool, { path: "canon/a.md", content: "a" }, context);
-    const second = await runTool(WriteFileTool, { path: "canon/b.md", content: "b" }, context);
-    expect(first.ok).toBe(true);
-    expect(second.ok).toBe(true);
-    expect(askCount).toBe(1);
+    expect(result.ok).toBe(true);
+    expect(asked).toBe(false);
+    await expect(readFile(path.join(cwd, "canon/characters/lin-yan.md"), "utf8")).resolves.toBe("x");
   });
 
   it("bypasses permissions by default", async () => {

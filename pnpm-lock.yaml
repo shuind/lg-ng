@@ -15,9 +15,6 @@ catalogs:
     typescript:
       specifier: 5.9.3
       version: 5.9.3
-    zod:
-      specifier: ^4.1.13
-      version: 4.4.3
 
 importers:
 
@@ -73,9 +70,6 @@ importers:
       tailwind-merge:
         specifier: ^3.3.1
         version: 3.6.0
-      zod:
-        specifier: 'catalog:'
-        version: 4.4.3
     devDependencies:
       '@eslint/eslintrc':
         specifier: ^3.3.5
@@ -137,9 +131,6 @@ importers:
       openai:
         specifier: ^6.10.0
         version: 6.42.0(zod@4.4.3)
-      zod:
-        specifier: 'catalog:'
-        version: 4.4.3
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

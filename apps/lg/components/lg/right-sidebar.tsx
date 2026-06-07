@@ -10,15 +10,19 @@ import { SettingsView } from "./right-sidebar/settings-view"
 interface RightSidebarProps {
   cards: SettingCard[]
   ledgerEntries: LedgerEntry[]
+  rollingBackEntryId?: string | null
   onCite: (card: SettingCard) => void
   onOpenFile: (path: string) => void
+  onRollbackEntry: (entryId: string) => void
 }
 
 export function RightSidebar({
   cards,
   ledgerEntries,
+  rollingBackEntryId,
   onCite,
   onOpenFile,
+  onRollbackEntry,
 }: RightSidebarProps) {
   const [tab, setTab] = useState<"recent" | "settings">("recent")
 
@@ -38,7 +42,12 @@ export function RightSidebar({
 
       <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin px-4 pb-6">
         {tab === "recent" ? (
-          <RecentChangesView entries={ledgerEntries} onOpenFile={onOpenFile} />
+          <RecentChangesView
+            entries={ledgerEntries}
+            rollingBackEntryId={rollingBackEntryId}
+            onOpenFile={onOpenFile}
+            onRollbackEntry={onRollbackEntry}
+          />
         ) : (
           <SettingsView cards={cards} onCite={onCite} />
         )}

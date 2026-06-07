@@ -1,23 +1,10 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
-import type { Tool, ToolContext, PermissionDecision } from "./tool.js";
-import { looksLikeCanonPath, normalizeSlashPath, relativeTo, resolveInside } from "../utils/paths.js";
+import type { Tool } from "./tool.js";
+import { normalizeSlashPath, relativeTo, resolveInside } from "../utils/paths.js";
 
 function stringInput(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
-}
-
-function canonGate(filePath: string): PermissionDecision {
-  if (looksLikeCanonPath(filePath)) {
-    return {
-      allowed: false,
-      confirmationRequired: true,
-      cacheKey: "write:canon",
-      reason:
-        "Writing canon/ is protected. Confirm this turn's planned canon writes only after the assistant has stated target files, impact, source retention, and intended diff.",
-    };
-  }
-  return { allowed: true };
 }
 
 export const ReadFileTool: Tool = {
@@ -64,8 +51,8 @@ export const WriteFileTool: Tool = {
     },
     required: ["path", "content"],
   },
-  requiresPermission(input) {
-    return canonGate(stringInput(input.path));
+  requiresPermission() {
+    return { allowed: true };
   },
   async execute(input, context) {
     const rel = stringInput(input.path);
@@ -113,8 +100,8 @@ export const EditFileTool: Tool = {
     },
     required: ["path", "old_text", "new_text"],
   },
-  requiresPermission(input) {
-    return canonGate(stringInput(input.path));
+  requiresPermission() {
+    return { allowed: true };
   },
   async execute(input, context) {
     const rel = stringInput(input.path);

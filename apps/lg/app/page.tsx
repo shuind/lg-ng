@@ -1,19 +1,16 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { LeftSidebar } from "@/components/lg/left-sidebar"
-import { ChatPanel, type ChatCitation, type ChatSendOptions } from "@/components/lg/chat-panel"
-import { RightSidebar } from "@/components/lg/right-sidebar"
-import { WritingDesk } from "@/components/lg/writing-desk"
-import { Workbench } from "@/components/lg/workbench"
+import { AppShell, type AppMode } from "@/components/lg/app-shell"
+import type { ChatCitation, ChatSendOptions } from "@/components/lg/chat-panel"
 import { useWorkbenchOverlay } from "@/hooks/use-workbench-overlay"
-import { ChevronLeft, ChevronRight } from "lucide-react"
 import {
   listBooks,
   initBook,
   listChapters,
   listSettingCards,
   listLedgerEntries,
+  rollbackLedgerEntry,
   sendMessage,
   createThread,
   forkThread,
@@ -30,8 +27,7 @@ import {
 import type { Book, Chapter, Message, SettingCard, Thread, Turn, OutlineFile } from "@/lib/mock-data"
 import type { ThreadBundle } from "@/lib/api"
 import type { LedgerEntry, ResponseConstraint } from "@/lib/types"
-
-type Mode = "chat" | "writing"
+import { buildAppliedConstraints, findLatestSelectableTurnId, upsertById } from "./page-utils"
 
 export default function Page() {
   const [books, setBooks] = useState<Book[]>([])
@@ -44,9 +40,10 @@ export default function Page() {
   const [selectedTurnId, setSelectedTurnId] = useState<string | null>(null)
   const [cards, setCards] = useState<SettingCard[]>([])
   const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([])
+  const [rollingBackLedgerEntryId, setRollingBackLedgerEntryId] = useState<string | null>(null)
   const [activeBookId, setActiveBookId] = useState<string>("")
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null)
-  const [mode, setMode] = useState<Mode>("chat")
+  const [mode, setMode] = useState<AppMode>("chat")
   const [collapsed, setCollapsed] = useState(false)
   const workbench = useWorkbenchOverlay(books)
   const [chatCitations, setChatCitations] = useState<ChatCitation[]>([])
@@ -246,6 +243,27 @@ export default function Page() {
     workbench.open(bookId, path)
   }
 
+  async function handleRollbackLedgerEntry(entryId: string) {
+    if (!activeBookId || rollingBackLedgerEntryId) return
+    setRollingBackLedgerEntryId(entryId)
+    try {
+      await rollbackLedgerEntry(activeBookId, entryId)
+      const [ledgerResponse, freshCards, freshChapters] = await Promise.all([
+        listLedgerEntries(activeBookId, { limit: 24 }).catch(() => ({ entries: [] })),
+        listSettingCards(activeBookId).catch(() => cards),
+        listChapters(activeBookId).catch(() => chapters),
+      ])
+      setLedgerEntries(ledgerResponse.entries)
+      setCards(freshCards)
+      setChapters(freshChapters)
+    } catch (err) {
+      console.error("[handleRollbackLedgerEntry] 恢复失败:", err)
+      alert(err instanceof Error ? err.message : "恢复失败，请稍后重试")
+    } finally {
+      setRollingBackLedgerEntryId(null)
+    }
+  }
+
   async function handleSendWithThread(
     text: string,
     threadId: string,
@@ -339,149 +357,63 @@ export default function Page() {
   const activeBook = books.find((b) => b.id === activeBookId)
   const activeResponseConstraintIds = activeThreadId ? threadConstraintIds[activeThreadId] ?? [] : []
 
-  const gridCols = collapsed ? "grid-cols-[64px_minmax(0,1fr)_360px]" : "grid-cols-[260px_minmax(0,1fr)_360px]"
-
   return (
-    <main className="ambient-window relative h-screen w-screen overflow-hidden">
-      {/* 全屏柔光层 — 静态，不做动画避免持续 GPU 重绘 */}
-      <div className="pointer-events-none absolute inset-0 -z-0">
-        <div className="absolute -right-24 -top-24 h-[420px] w-[420px] rounded-full bg-[var(--light-warm)] opacity-60 blur-3xl" />
-        <div className="absolute -bottom-32 -left-24 h-[380px] w-[380px] rounded-full bg-[var(--light-cool)] opacity-40 blur-3xl dark:opacity-25" />
-      </div>
-
-      <div className={`relative z-10 grid h-full min-h-0 ${gridCols} transition-[grid-template-columns] duration-300`}>
-        {/* 左 */}
-        <div className="relative min-h-0 border-r border-border/60">
-          {/* 外置折叠手柄 - 常驻在左栏右边缘 */}
-          <button
-            onClick={() => setCollapsed((c) => !c)}
-            className="group absolute -right-3 top-1/2 z-20 flex h-12 w-6 -translate-y-1/2 items-center justify-center rounded-r-md bg-card/0 text-muted-foreground/40 transition hover:bg-card/80 hover:text-foreground hover:shadow-sm"
-            aria-label={collapsed ? "展开侧栏" : "折叠侧栏"}
-            title={collapsed ? "展开侧栏" : "折叠侧栏"}
-          >
-            <span className="absolute left-2 h-8 w-px bg-border/60 transition group-hover:bg-border" />
-            {collapsed ? <ChevronRight className="relative h-3.5 w-3.5" /> : <ChevronLeft className="relative h-3.5 w-3.5" />}
-          </button>
-          <LeftSidebar
-            books={books}
-            chapters={chapters}
-            outlines={outlines}
-            activeBookId={activeBookId}
-            activeChapterId={activeChapterId}
-            mode={mode}
-            collapsed={collapsed}
-            onToggleCollapsed={() => setCollapsed((c) => !c)}
-            onSelectBook={(id) => {
-              setActiveBookId(id)
-              setMode("chat")
-              setActiveChapterId(null)
-            }}
-            onSelectChapter={(id) => {
-              setActiveChapterId(id)
-              setMode("writing")
-            }}
-            onBackToChat={() => {
-              setMode("chat")
-              setActiveChapterId(null)
-            }}
-            onNewBook={handleNewBook}
-            onNewChapter={handleNewChapter}
-            onOpenWorkbench={handleOpenWorkbench}
-            onRenameBook={handleRenameBook}
-          />
-        </div>
-
-        {/* 中 */}
-        <div className="relative min-h-0 min-w-0">
-          {mode === "chat" ? (
-            <ChatPanel
-              bookId={activeBookId}
-              bookTitle={activeBook?.title ?? ""}
-              messages={messages}
-              turns={turns}
-              threads={threads}
-              activeThreadId={activeThreadId}
-              selectedTurnId={selectedTurnId}
-              citations={chatCitations}
-              settingCards={cards}
-              responseConstraints={responseConstraints}
-              activeResponseConstraintIds={activeResponseConstraintIds}
-              onSelectTurn={setSelectedTurnId}
-              onSend={handleSend}
-              onAddCitation={handleCiteSettingCard}
-              onRemoveCitation={handleRemoveCitation}
-              onClearCitations={handleClearCitations}
-              onCreateResponseConstraint={handleCreateResponseConstraint}
-              onUpdateResponseConstraint={handleUpdateResponseConstraint}
-              onDeleteResponseConstraint={handleDeleteResponseConstraint}
-              onSetActiveResponseConstraintIds={handleSetActiveResponseConstraintIds}
-              onCreateThread={handleCreateThread}
-              onSelectThread={handleSelectThread}
-              onRenameThread={handleRenameThread}
-              onSetThreadStatus={handleSetThreadStatus}
-              onForkThread={handleForkThread}
-            />
-          ) : activeChapterId ? (
-            <WritingDesk bookId={activeBookId} chapterId={activeChapterId} />
-          ) : null}
-        </div>
-
-        {/* 右 */}
-        <div className="min-h-0 border-l border-border/60">
-          <RightSidebar
-            cards={cards}
-            ledgerEntries={ledgerEntries}
-            onCite={handleCiteSettingCard}
-            onOpenFile={(path) => activeBookId && handleOpenWorkbench(activeBookId, path)}
-          />
-        </div>
-      </div>
-
-      {/* 工作台:覆盖整屏 */}
-      {workbench.book && (
-        <Workbench
-          book={workbench.book}
-          initialPath={workbench.initialPath}
-          onClose={workbench.close}
-        />
-      )}
-    </main>
+    <AppShell
+      books={books}
+      chapters={chapters}
+      outlines={outlines}
+      messages={messages}
+      turns={turns}
+      threads={threads}
+      cards={cards}
+      ledgerEntries={ledgerEntries}
+      rollingBackLedgerEntryId={rollingBackLedgerEntryId}
+      activeBookId={activeBookId}
+      activeBookTitle={activeBook?.title ?? ""}
+      activeChapterId={activeChapterId}
+      activeThreadId={activeThreadId}
+      selectedTurnId={selectedTurnId}
+      mode={mode}
+      collapsed={collapsed}
+      chatCitations={chatCitations}
+      responseConstraints={responseConstraints}
+      activeResponseConstraintIds={activeResponseConstraintIds}
+      workbenchBook={workbench.book ?? null}
+      workbenchInitialPath={workbench.initialPath}
+      onToggleCollapsed={() => setCollapsed((current) => !current)}
+      onSelectBook={(id) => {
+        setActiveBookId(id)
+        setMode("chat")
+        setActiveChapterId(null)
+      }}
+      onSelectChapter={(id) => {
+        setActiveChapterId(id)
+        setMode("writing")
+      }}
+      onBackToChat={() => {
+        setMode("chat")
+        setActiveChapterId(null)
+      }}
+      onNewBook={handleNewBook}
+      onNewChapter={handleNewChapter}
+      onOpenWorkbench={handleOpenWorkbench}
+      onRollbackLedgerEntry={handleRollbackLedgerEntry}
+      onRenameBook={handleRenameBook}
+      onSelectTurn={setSelectedTurnId}
+      onSend={handleSend}
+      onAddCitation={handleCiteSettingCard}
+      onRemoveCitation={handleRemoveCitation}
+      onClearCitations={handleClearCitations}
+      onCreateResponseConstraint={handleCreateResponseConstraint}
+      onUpdateResponseConstraint={handleUpdateResponseConstraint}
+      onDeleteResponseConstraint={handleDeleteResponseConstraint}
+      onSetActiveResponseConstraintIds={handleSetActiveResponseConstraintIds}
+      onCreateThread={handleCreateThread}
+      onSelectThread={handleSelectThread}
+      onRenameThread={handleRenameThread}
+      onSetThreadStatus={handleSetThreadStatus}
+      onForkThread={handleForkThread}
+      onCloseWorkbench={workbench.close}
+    />
   )
-}
-
-function upsertById<T extends { id: string }>(items: T[], item: T): T[] {
-  return items.some((current) => current.id === item.id)
-    ? items.map((current) => (current.id === item.id ? item : current))
-    : [...items, item]
-}
-
-function findLatestSelectableTurnId(turns: Turn[], messages: Message[]): string | null {
-  const latestDoneTurn = [...turns].reverse().find((turn) => turn.status === "done")
-  if (latestDoneTurn) return latestDoneTurn.id
-  return messages.at(-1)?.turnId ?? null
-}
-
-function buildAppliedConstraints(
-  constraints: ResponseConstraint[],
-  enabledIds: string[],
-  temporaryConstraints: string[],
-): NonNullable<Message["constraints"]> {
-  const enabled = new Set(enabledIds)
-  return [
-    ...constraints
-      .filter((constraint) => enabled.has(constraint.id))
-      .map((constraint) => ({
-        id: constraint.id,
-        title: constraint.title,
-        instruction: constraint.instruction,
-        source: "library" as const,
-      })),
-    ...temporaryConstraints
-      .map((instruction, index) => ({
-        title: `本轮临时约束 ${index + 1}`,
-        instruction: instruction.trim(),
-        source: "temporary" as const,
-      }))
-      .filter((constraint) => constraint.instruction),
-  ]
 }

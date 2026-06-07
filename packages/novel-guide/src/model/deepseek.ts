@@ -35,22 +35,30 @@ export function getDeepSeekConfig(): DeepSeekConfig | null {
   };
 }
 
+function getMimoConfig(): OpenAICompatibleConfig | null {
+  const apiKey = process.env.MIMO_API_KEY;
+  if (!apiKey) return null;
+  return {
+    provider: "mimo",
+    apiKey,
+    baseUrl: process.env.MIMO_BASE_URL ?? "https://api.mimo-v2.com/v1",
+    model: process.env.NG_MODEL ?? process.env.MIMO_MODEL ?? "mimo-v2.5-pro",
+  };
+}
+
 export function getOpenAICompatibleConfig(): OpenAICompatibleConfig | null {
-  const provider = (process.env.NG_PROVIDER ?? process.env.LLM_PROVIDER ?? "deepseek").toLowerCase();
+  const provider = (process.env.NG_PROVIDER ?? process.env.LLM_PROVIDER)?.toLowerCase();
 
   if (provider === "mimo") {
-    const apiKey = process.env.MIMO_API_KEY;
-    if (!apiKey) return null;
-    return {
-      provider: "mimo",
-      apiKey,
-      baseUrl: process.env.MIMO_BASE_URL ?? "https://api.mimo-v2.com/v1",
-      model: process.env.NG_MODEL ?? process.env.MIMO_MODEL ?? "mimo-v2.5-pro",
-    };
+    return getMimoConfig();
   }
 
   const deepseek = getDeepSeekConfig();
-  return deepseek ? { provider: "deepseek", ...deepseek } : null;
+  if (provider || deepseek) {
+    return deepseek ? { provider: "deepseek", ...deepseek } : null;
+  }
+
+  return getMimoConfig();
 }
 
 export function createDeepSeekClient(config: DeepSeekConfig): OpenAI {
@@ -71,6 +79,7 @@ export async function createChatCompletion(input: {
   tools?: ModelTool[];
   temperature?: number;
   maxTokens?: number;
+  timeoutMs?: number;
 }): Promise<ModelResponse> {
   const response = await input.client.chat.completions.create({
     model: input.model,
@@ -80,7 +89,7 @@ export async function createChatCompletion(input: {
     temperature: input.temperature ?? 0.2,
     max_tokens: input.maxTokens ?? 4096,
     stream: false,
-  }) as ChatCompletion;
+  }, input.timeoutMs ? { timeout: input.timeoutMs } : undefined) as ChatCompletion;
   const usage = response.usage;
   return {
     message: response.choices[0]?.message ?? { role: "assistant", content: "" },
