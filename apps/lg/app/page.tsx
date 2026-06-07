@@ -6,6 +6,7 @@ import { ChatPanel, type ChatCitation, type ChatSendOptions } from "@/components
 import { RightSidebar } from "@/components/lg/right-sidebar"
 import { WritingDesk } from "@/components/lg/writing-desk"
 import { Workbench } from "@/components/lg/workbench"
+import { useWorkbenchOverlay } from "@/hooks/use-workbench-overlay"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import {
   listBooks,
@@ -47,8 +48,7 @@ export default function Page() {
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null)
   const [mode, setMode] = useState<Mode>("chat")
   const [collapsed, setCollapsed] = useState(false)
-  const [workbenchBookId, setWorkbenchBookId] = useState<string | null>(null)
-  const [workbenchInitialPath, setWorkbenchInitialPath] = useState<string | undefined>(undefined)
+  const workbench = useWorkbenchOverlay(books)
   const [chatCitations, setChatCitations] = useState<ChatCitation[]>([])
   const [responseConstraints, setResponseConstraints] = useState<ResponseConstraint[]>([])
   const [threadConstraintIds, setThreadConstraintIds] = useState<Record<string, string[]>>({})
@@ -113,8 +113,7 @@ export default function Page() {
       setActiveBookId(b.id)
       setActiveChapterId(null)
       setMode("chat")
-      setWorkbenchBookId(null)
-      setWorkbenchInitialPath(undefined)
+      workbench.close()
     } catch (err) {
       console.error("[handleNewBook] 创建书籍失败:", err)
       alert("创建书籍失败，请重试")
@@ -244,8 +243,7 @@ export default function Page() {
   }
 
   function handleOpenWorkbench(bookId: string, path?: string) {
-    setWorkbenchBookId(bookId)
-    setWorkbenchInitialPath(path)
+    workbench.open(bookId, path)
   }
 
   async function handleSendWithThread(
@@ -339,7 +337,6 @@ export default function Page() {
   }
 
   const activeBook = books.find((b) => b.id === activeBookId)
-  const workbenchBook = books.find((b) => b.id === workbenchBookId)
   const activeResponseConstraintIds = activeThreadId ? threadConstraintIds[activeThreadId] ?? [] : []
 
   const gridCols = collapsed ? "grid-cols-[64px_minmax(0,1fr)_360px]" : "grid-cols-[260px_minmax(0,1fr)_360px]"
@@ -441,14 +438,11 @@ export default function Page() {
       </div>
 
       {/* 工作台:覆盖整屏 */}
-      {workbenchBook && (
+      {workbench.book && (
         <Workbench
-          book={workbenchBook}
-          initialPath={workbenchInitialPath}
-          onClose={() => {
-            setWorkbenchBookId(null)
-            setWorkbenchInitialPath(undefined)
-          }}
+          book={workbench.book}
+          initialPath={workbench.initialPath}
+          onClose={workbench.close}
         />
       )}
     </main>

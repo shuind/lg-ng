@@ -1,6 +1,7 @@
 import fs from "fs/promises"
 import path from "path"
 import type { AppliedResponseConstraint, ResponseConstraint } from "@/lib/types"
+import { makeId, nowIso } from "@/lib/server/ids"
 import { getBookDir } from "@/lib/server/paths"
 
 const RESPONSE_CONSTRAINTS_FILE = "response-constraints.json"
@@ -37,14 +38,6 @@ const DEFAULT_CONSTRAINT_DEFINITIONS = [
 
 function constraintsPath(bookId: string): string {
   return path.join(getBookDir(bookId), RESPONSE_CONSTRAINTS_FILE)
-}
-
-function nowIso(): string {
-  return new Date().toISOString()
-}
-
-function makeId(prefix: string): string {
-  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
 function defaultConstraints(ts: string): ResponseConstraint[] {

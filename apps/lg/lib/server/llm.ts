@@ -39,7 +39,7 @@ export function getLlmProvider(): string {
   return getConfig()?.provider ?? "none"
 }
 
-const LlmActionSchema = z.union([
+export const LlmActionSchema = z.union([
   z.object({
     type: z.literal("gender_change"),
     character: z.string().min(1),

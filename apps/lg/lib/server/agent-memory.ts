@@ -1,5 +1,6 @@
-import fs from "fs/promises"
 import path from "path"
+import { makeId, nowIso } from "@/lib/server/ids"
+import { appendJsonlFile } from "@/lib/server/jsonl"
 import { getDataRoot } from "@/lib/server/paths"
 
 const AGENT_DIR = "agent"
@@ -66,23 +67,12 @@ export interface SelfImprovementRecord {
   proposedRules?: string[]
 }
 
-function nowIso(): string {
-  return new Date().toISOString()
-}
-
-function makeId(prefix: string): string {
-  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-}
-
 function agentFilePath(fileName: string): string {
   return path.join(getDataRoot(), AGENT_DIR, fileName)
 }
 
 async function appendJsonl<T>(fileName: string, records: T[]): Promise<void> {
-  if (records.length === 0) return
-  const target = agentFilePath(fileName)
-  await fs.mkdir(path.dirname(target), { recursive: true })
-  await fs.appendFile(target, `${records.map((record) => JSON.stringify(record)).join("\n")}\n`, "utf-8")
+  await appendJsonlFile(agentFilePath(fileName), records)
 }
 
 export async function appendAgentRule(args: {

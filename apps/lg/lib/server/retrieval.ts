@@ -1,4 +1,3 @@
-import type { BookTreeNode } from "@/lib/types"
 import type { RetrievedContext } from "@/lib/types"
 import { getDirtyFiles } from "@/lib/server/dirty-index"
 import { readBookFile } from "@/lib/server/book-store"
@@ -71,18 +70,6 @@ interface FlatFile {
   path: string
   name: string
   updatedAt: string
-}
-
-function flattenTree(nodes: BookTreeNode[]): FlatFile[] {
-  const files: FlatFile[] = []
-  for (const node of nodes) {
-    if (node.type === "directory" && node.children) {
-      files.push(...flattenTree(node.children))
-    } else if (node.type === "file") {
-      files.push({ path: node.path, name: node.name, updatedAt: node.updatedAt ?? "" })
-    }
-  }
-  return files
 }
 
 // ─── Excerpt Generation ───────────────────────────────────────

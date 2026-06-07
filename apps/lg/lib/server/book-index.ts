@@ -2,6 +2,7 @@ import fs from "fs/promises"
 import path from "node:path"
 import type { Dirent } from "node:fs"
 import type { BookTreeNode, Chapter, OutlineFile, SettingCard } from "@/lib/types"
+import { nowIso } from "@/lib/server/ids"
 import { getBookDir, getIndexRoot } from "@/lib/server/paths"
 
 const INDEX_VERSION = 1
@@ -70,10 +71,6 @@ function chapterIndexPath(bookId: string): string {
 
 function settingCardIndexPath(bookId: string): string {
   return path.join(bookIndexDir(bookId), "setting-card-index.json")
-}
-
-function nowIso(): string {
-  return new Date().toISOString()
 }
 
 function isOlderThan(iso: string | undefined, maxAgeMs: number): boolean {

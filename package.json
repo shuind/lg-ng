@@ -6,7 +6,9 @@
   "scripts": {
     "build": "pnpm --filter lg build",
     "dev": "pnpm --filter lg dev",
+    "lint": "pnpm --filter lg lint",
     "typecheck": "pnpm --filter novel-guide typecheck && pnpm --filter lg typecheck",
-    "test": "pnpm --filter novel-guide test"
+    "test": "pnpm --filter novel-guide test",
+    "check": "pnpm typecheck && pnpm lint && pnpm test"
   }
 }

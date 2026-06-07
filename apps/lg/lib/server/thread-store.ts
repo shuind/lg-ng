@@ -1,6 +1,8 @@
 import fs from "fs/promises"
 import path from "path"
 import type { AgentEvent, Message, Thread, Turn } from "@/lib/types"
+import { makeId, nowIso } from "@/lib/server/ids"
+import { appendJsonlFile, readJsonlFile, writeJsonlFile } from "@/lib/server/jsonl"
 import { getBookDir } from "@/lib/server/paths"
 
 const THREADS_FILE = "threads.json"
@@ -9,14 +11,6 @@ const MESSAGES_FILE = "thread-messages.jsonl"
 
 function filePath(bookId: string, fileName: string): string {
   return path.join(getBookDir(bookId), fileName)
-}
-
-function nowIso(): string {
-  return new Date().toISOString()
-}
-
-function makeId(prefix: string): string {
-  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
 function normalizeThread(bookId: string, thread: Partial<Thread> & { id: string }): Thread {
@@ -32,35 +26,15 @@ function normalizeThread(bookId: string, thread: Partial<Thread> & { id: string 
 }
 
 async function readJsonl<T>(bookId: string, fileName: string): Promise<T[]> {
-  try {
-    const raw = await fs.readFile(filePath(bookId, fileName), "utf-8")
-    const items: T[] = []
-    for (const line of raw.split("\n")) {
-      if (!line.trim()) continue
-      try {
-        items.push(JSON.parse(line) as T)
-      } catch {
-        // Ignore corrupt lines so one bad append does not hide the thread.
-      }
-    }
-    return items
-  } catch {
-    return []
-  }
+  return readJsonlFile(filePath(bookId, fileName))
 }
 
 async function appendJsonl<T>(bookId: string, fileName: string, items: T[]): Promise<void> {
-  if (items.length === 0) return
-  const target = filePath(bookId, fileName)
-  await fs.mkdir(path.dirname(target), { recursive: true })
-  await fs.appendFile(target, `${items.map((item) => JSON.stringify(item)).join("\n")}\n`, "utf-8")
+  await appendJsonlFile(filePath(bookId, fileName), items)
 }
 
 async function writeJsonl<T>(bookId: string, fileName: string, items: T[]): Promise<void> {
-  const target = filePath(bookId, fileName)
-  await fs.mkdir(path.dirname(target), { recursive: true })
-  const body = items.length > 0 ? `${items.map((item) => JSON.stringify(item)).join("\n")}\n` : ""
-  await fs.writeFile(target, body, "utf-8")
+  await writeJsonlFile(filePath(bookId, fileName), items)
 }
 
 async function saveThreads(bookId: string, threads: Thread[]): Promise<void> {

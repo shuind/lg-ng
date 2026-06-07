@@ -25,15 +25,6 @@ function extractTitle(content: string, filename: string): string {
   return filename.replace(/\.md$/, "")
 }
 
-function countWords(content: string): number {
-  return content.replace(/\s/g, "").length
-}
-
-function statusFromWordCount(wordCount: number): "draft" | "writing" | "done" {
-  if (wordCount === 0) return "draft"
-  return "writing"
-}
-
 export async function listChapters(bookId: string): Promise<Chapter[]> {
   return listIndexedChapters(bookId)
 }
