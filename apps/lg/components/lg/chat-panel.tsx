@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react"
 import {
   ArrowUp,
   AtSign,
@@ -91,6 +91,248 @@ export function ChatPanel({
   onSetThreadStatus,
   onForkThread,
 }: ChatPanelProps) {
+  const [highlightedUserTurnId, setHighlightedUserTurnId] = useState<string | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const composerRef = useRef<ChatComposerHandle>(null)
+  const userMessageRefs = useRef(new Map<string, HTMLDivElement>())
+  const highlightResetRef = useRef<number | null>(null)
+  const questionJumpRef = useRef<{ sourceTurnId: string; offset: number } | null>(null)
+  const runningTurn = useMemo(() => turns.find((turn) => turn.status === "running"), [turns])
+  const activeThread = useMemo(
+    () => threads.find((thread) => thread.id === activeThreadId),
+    [threads, activeThreadId],
+  )
+  const latestUserTurnId = useMemo(() => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index]
+      if (message.role === "user") return message.turnId
+    }
+    return null
+  }, [messages])
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" })
+  }, [messages, runningTurn?.id])
+
+  useEffect(() => {
+    return () => {
+      if (highlightResetRef.current) window.clearTimeout(highlightResetRef.current)
+    }
+  }, [])
+
+  useEffect(() => {
+    questionJumpRef.current = null
+  }, [activeThreadId, bookId])
+
+  const handleEditLatest = useCallback((text: string) => {
+    composerRef.current?.editLatest(text)
+  }, [])
+
+  const registerUserMessage = useCallback((turnId: string, element: HTMLDivElement | null) => {
+    if (element) {
+      userMessageRefs.current.set(turnId, element)
+    } else {
+      userMessageRefs.current.delete(turnId)
+    }
+  }, [])
+
+  const scrollToUserTurn = useCallback((turnId: string) => {
+    const target = userMessageRefs.current.get(turnId)
+    if (!target) return
+
+    target.scrollIntoView({ behavior: "smooth", block: "center" })
+    setHighlightedUserTurnId(turnId)
+    if (highlightResetRef.current) window.clearTimeout(highlightResetRef.current)
+    highlightResetRef.current = window.setTimeout(() => {
+      setHighlightedUserTurnId((current) => (current === turnId ? null : current))
+    }, 1400)
+  }, [])
+
+  const jumpToQuestionFromTurn = useCallback((sourceTurnId: string) => {
+    const userTurnIds: string[] = []
+    const seenTurnIds = new Set<string>()
+    for (const message of messages) {
+      if (message.role !== "user" || seenTurnIds.has(message.turnId)) continue
+      seenTurnIds.add(message.turnId)
+      userTurnIds.push(message.turnId)
+    }
+
+    const sourceIndex = userTurnIds.lastIndexOf(sourceTurnId)
+    if (sourceIndex < 0) return
+
+    const previousJump = questionJumpRef.current
+    const nextOffset = previousJump?.sourceTurnId === sourceTurnId
+      ? Math.min(previousJump.offset + 1, sourceIndex)
+      : 0
+    const targetTurnId = userTurnIds[sourceIndex - nextOffset]
+    if (!targetTurnId) return
+
+    questionJumpRef.current = { sourceTurnId, offset: nextOffset }
+    scrollToUserTurn(targetTurnId)
+  }, [messages, scrollToUserTurn])
+
+  const handleQuestionJump = useCallback(() => {
+    const sourceTurnId = selectedTurnId && messages.some((message) => message.turnId === selectedTurnId)
+      ? selectedTurnId
+      : latestUserTurnId
+    if (!sourceTurnId) return
+
+    jumpToQuestionFromTurn(sourceTurnId)
+  }, [jumpToQuestionFromTurn, latestUserTurnId, messages, selectedTurnId])
+
+  return (
+    <section className="relative flex h-full min-h-0 flex-col">
+      <header className="flex items-center justify-between px-8 pt-6 pb-4">
+        <div>
+          <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">当前书籍</div>
+          <h1 className="font-serif text-xl tracking-wide text-foreground">{bookTitle}</h1>
+        </div>
+        <div className="flex items-center gap-2">
+          <ExportMenu
+            bookTitle={bookTitle}
+            threadTitle={activeThread?.title ?? "任务线程"}
+            messages={messages}
+            selectedTurnId={selectedTurnId}
+          />
+          <ThreadMenu
+            threads={threads}
+            activeThread={activeThread}
+            onCreateThread={onCreateThread}
+            onSelectThread={onSelectThread}
+            onRenameThread={onRenameThread}
+            onSetThreadStatus={onSetThreadStatus}
+          />
+        </div>
+      </header>
+
+      <ChatTranscript
+        scrollRef={scrollRef}
+        messages={messages}
+        runningTurn={runningTurn}
+        selectedTurnId={selectedTurnId}
+        latestUserTurnId={latestUserTurnId}
+        highlightedUserTurnId={highlightedUserTurnId}
+        onSelectTurn={onSelectTurn}
+        onForkThread={onForkThread}
+        onEditLatest={handleEditLatest}
+        registerUserMessage={registerUserMessage}
+      />
+
+      <ChatComposer
+        ref={composerRef}
+        bookId={bookId}
+        activeThreadId={activeThreadId}
+        activeThreadTitle={activeThread?.title ?? "任务线程"}
+        citations={citations}
+        settingCards={settingCards}
+        responseConstraints={responseConstraints}
+        activeResponseConstraintIds={activeResponseConstraintIds}
+        latestUserTurnId={latestUserTurnId}
+        onQuestionJump={handleQuestionJump}
+        onSend={onSend}
+        onAddCitation={onAddCitation}
+        onRemoveCitation={onRemoveCitation}
+        onClearCitations={onClearCitations}
+        onCreateResponseConstraint={onCreateResponseConstraint}
+        onUpdateResponseConstraint={onUpdateResponseConstraint}
+        onDeleteResponseConstraint={onDeleteResponseConstraint}
+        onSetActiveResponseConstraintIds={onSetActiveResponseConstraintIds}
+      />
+    </section>
+  )
+}
+
+interface ChatTranscriptProps {
+  scrollRef: React.RefObject<HTMLDivElement | null>
+  messages: Message[]
+  runningTurn?: Turn
+  selectedTurnId: string | null
+  latestUserTurnId: string | null
+  highlightedUserTurnId: string | null
+  onSelectTurn: (turnId: string) => void
+  onForkThread: (turnId: string) => void
+  onEditLatest: (content: string) => void
+  registerUserMessage: (turnId: string, element: HTMLDivElement | null) => void
+}
+
+const ChatTranscript = memo(function ChatTranscript({
+  scrollRef,
+  messages,
+  runningTurn,
+  selectedTurnId,
+  latestUserTurnId,
+  highlightedUserTurnId,
+  onSelectTurn,
+  onForkThread,
+  onEditLatest,
+  registerUserMessage,
+}: ChatTranscriptProps) {
+  return (
+    <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto scrollbar-thin px-8 pb-4">
+      <div className="mx-auto flex max-w-2xl flex-col gap-8">
+        {messages.length === 0 && !runningTurn && <EmptyState />}
+        {messages.map((message) => (
+          <MessageBubble
+            key={message.id}
+            message={message}
+            selected={message.turnId === selectedTurnId}
+            isLatestUser={message.role === "user" && message.turnId === latestUserTurnId}
+            highlightedUser={message.role === "user" && message.turnId === highlightedUserTurnId}
+            registerUserMessage={registerUserMessage}
+            onSelectTurn={onSelectTurn}
+            onForkThread={onForkThread}
+            onEditLatest={onEditLatest}
+          />
+        ))}
+        {runningTurn && <IntentAnalyzer turn={runningTurn} />}
+      </div>
+    </div>
+  )
+})
+
+type ChatComposerHandle = {
+  editLatest: (text: string) => void
+}
+
+interface ChatComposerProps {
+  bookId: string
+  activeThreadId: string
+  activeThreadTitle: string
+  citations: ChatCitation[]
+  settingCards: SettingCard[]
+  responseConstraints: ResponseConstraint[]
+  activeResponseConstraintIds: string[]
+  latestUserTurnId: string | null
+  onQuestionJump: () => void
+  onSend: (text: string, citations: ChatCitation[], options: ChatSendOptions) => Promise<void>
+  onAddCitation: (card: SettingCard) => void
+  onRemoveCitation: (cardId: string) => void
+  onClearCitations: () => void
+  onCreateResponseConstraint: (input: Pick<ResponseConstraint, "title" | "instruction">) => Promise<void>
+  onUpdateResponseConstraint: (input: Pick<ResponseConstraint, "id" | "title" | "instruction">) => Promise<void>
+  onDeleteResponseConstraint: (constraintId: string) => Promise<void>
+  onSetActiveResponseConstraintIds: (constraintIds: string[]) => Promise<void>
+}
+
+const ChatComposer = memo(forwardRef<ChatComposerHandle, ChatComposerProps>(function ChatComposer({
+  bookId,
+  activeThreadId,
+  activeThreadTitle,
+  citations,
+  settingCards,
+  responseConstraints,
+  activeResponseConstraintIds,
+  latestUserTurnId,
+  onQuestionJump,
+  onSend,
+  onAddCitation,
+  onRemoveCitation,
+  onClearCitations,
+  onCreateResponseConstraint,
+  onUpdateResponseConstraint,
+  onDeleteResponseConstraint,
+  onSetActiveResponseConstraintIds,
+}, ref) {
   const [input, setInput] = useState("")
   const [sending, setSending] = useState(false)
   const [constraintPickerOpen, setConstraintPickerOpen] = useState(false)
@@ -99,23 +341,22 @@ export function ChatPanel({
   const [skills, setSkills] = useState<Skill[]>([])
   const [skillIds, setSkillIds] = useState<string[]>([])
   const [temporaryConstraints, setTemporaryConstraints] = useState<string[]>([])
-  const [highlightedUserTurnId, setHighlightedUserTurnId] = useState<string | null>(null)
-  const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  const userMessageRefs = useRef(new Map<string, HTMLDivElement>())
-  const highlightResetRef = useRef<number | null>(null)
-  const questionJumpRef = useRef<{ sourceTurnId: string; offset: number } | null>(null)
-  const runningTurn = turns.find((turn) => turn.status === "running")
-  const activeThread = threads.find((thread) => thread.id === activeThreadId)
-  const latestUserTurnId = [...messages].reverse().find((message) => message.role === "user")?.turnId ?? null
-  const activeResponseConstraints = responseConstraints.filter((constraint) =>
-    activeResponseConstraintIds.includes(constraint.id),
+  const activeResponseConstraints = useMemo(
+    () => responseConstraints.filter((constraint) => activeResponseConstraintIds.includes(constraint.id)),
+    [responseConstraints, activeResponseConstraintIds],
   )
-  const selectedSkills = skills.filter((skill) => skillIds.includes(skill.id))
+  const selectedSkills = useMemo(
+    () => skills.filter((skill) => skillIds.includes(skill.id)),
+    [skills, skillIds],
+  )
 
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" })
-  }, [messages, runningTurn?.id])
+  useImperativeHandle(ref, () => ({
+    editLatest(text: string) {
+      setInput(text)
+      requestAnimationFrame(() => inputRef.current?.focus())
+    },
+  }), [])
 
   useEffect(() => {
     let cancelled = false
@@ -154,77 +395,15 @@ export function ChatPanel({
   }, [])
 
   useEffect(() => {
-    return () => {
-      if (highlightResetRef.current) window.clearTimeout(highlightResetRef.current)
-    }
-  }, [])
-
-  useEffect(() => {
     setInput("")
     setTemporaryConstraints([])
     setSkillIds([])
     setPlusTab("constraints")
     setConstraintPickerOpen(false)
     setReferencePickerOpen(false)
-    questionJumpRef.current = null
   }, [activeThreadId, bookId])
 
-  function handleEditLatest(text: string) {
-    setInput(text)
-    requestAnimationFrame(() => inputRef.current?.focus())
-  }
-
-  function setUserMessageRef(turnId: string, element: HTMLDivElement | null) {
-    if (element) {
-      userMessageRefs.current.set(turnId, element)
-    } else {
-      userMessageRefs.current.delete(turnId)
-    }
-  }
-
-  function scrollToUserTurn(turnId: string) {
-    const target = userMessageRefs.current.get(turnId)
-    if (!target) return
-
-    target.scrollIntoView({ behavior: "smooth", block: "center" })
-    setHighlightedUserTurnId(turnId)
-    if (highlightResetRef.current) window.clearTimeout(highlightResetRef.current)
-    highlightResetRef.current = window.setTimeout(() => {
-      setHighlightedUserTurnId((current) => (current === turnId ? null : current))
-    }, 1400)
-  }
-
-  function jumpToQuestionFromTurn(sourceTurnId: string) {
-    const userTurnIds: string[] = []
-    for (const message of messages) {
-      if (message.role !== "user" || userTurnIds.includes(message.turnId)) continue
-      userTurnIds.push(message.turnId)
-    }
-
-    const sourceIndex = userTurnIds.lastIndexOf(sourceTurnId)
-    if (sourceIndex < 0) return
-
-    const previousJump = questionJumpRef.current
-    const nextOffset = previousJump?.sourceTurnId === sourceTurnId
-      ? Math.min(previousJump.offset + 1, sourceIndex)
-      : 0
-    const targetTurnId = userTurnIds[sourceIndex - nextOffset]
-    if (!targetTurnId) return
-
-    questionJumpRef.current = { sourceTurnId, offset: nextOffset }
-    scrollToUserTurn(targetTurnId)
-  }
-
-  function handleQuestionJump() {
-    const sourceTurnId = selectedTurnId && messages.some((message) => message.turnId === selectedTurnId)
-      ? selectedTurnId
-      : latestUserTurnId
-    if (!sourceTurnId) return
-
-    jumpToQuestionFromTurn(sourceTurnId)
-  }
-
-  async function handleSend() {
+  const handleSend = useCallback(async () => {
     const text = input.trim()
     if (!text || sending) return
     setInput("")
@@ -241,201 +420,164 @@ export function ChatPanel({
     } finally {
       setSending(false)
     }
-  }
+  }, [activeResponseConstraintIds, citations, input, onClearCitations, onSend, sending, skillIds, temporaryConstraints])
 
-  function handleToggleConstraint(constraintId: string) {
+  const handleToggleConstraint = useCallback((constraintId: string) => {
     const next = activeResponseConstraintIds.includes(constraintId)
       ? activeResponseConstraintIds.filter((id) => id !== constraintId)
       : [...activeResponseConstraintIds, constraintId]
     onSetActiveResponseConstraintIds(next)
-  }
+  }, [activeResponseConstraintIds, onSetActiveResponseConstraintIds])
 
-  function handleAddTemporaryConstraint(instruction: string) {
+  const handleAddTemporaryConstraint = useCallback((instruction: string) => {
     const trimmed = instruction.trim()
     if (!trimmed) return
     setTemporaryConstraints((current) => [...current, trimmed])
-  }
+  }, [])
 
-  function handleToggleSkill(skillId: string) {
+  const handleToggleSkill = useCallback((skillId: string) => {
     setSkillIds((current) =>
       current.includes(skillId)
         ? current.filter((id) => id !== skillId)
         : [...current, skillId],
     )
-  }
+  }, [])
+
+  const handleRemoveConstraint = useCallback((constraintId: string) => {
+    onSetActiveResponseConstraintIds(activeResponseConstraintIds.filter((id) => id !== constraintId))
+  }, [activeResponseConstraintIds, onSetActiveResponseConstraintIds])
+
+  const handleRemoveTemporaryConstraint = useCallback((index: number) => {
+    setTemporaryConstraints((current) => current.filter((_, itemIndex) => itemIndex !== index))
+  }, [])
+
+  const handleRemoveSkill = useCallback((skillId: string) => {
+    setSkillIds((current) => current.filter((id) => id !== skillId))
+  }, [])
 
   return (
-    <section className="relative flex h-full min-h-0 flex-col">
-      <header className="flex items-center justify-between px-8 pt-6 pb-4">
-        <div>
-          <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">当前书籍</div>
-          <h1 className="font-serif text-xl tracking-wide text-foreground">{bookTitle}</h1>
+    <div className="px-8 pb-6 pt-2">
+      <div className="mx-auto max-w-2xl">
+        <div className="mb-2 flex justify-end">
+          <button
+            type="button"
+            onClick={onQuestionJump}
+            disabled={!latestUserTurnId}
+            className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border/70 bg-background/85 px-3 text-[12px] text-muted-foreground shadow-sm backdrop-blur transition hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
+            title="跳到提问"
+            aria-label="跳到提问"
+          >
+            <CornerUpLeft className="h-3.5 w-3.5" />
+            <span>跳到提问</span>
+          </button>
         </div>
-        <div className="flex items-center gap-2">
-          <ExportMenu
-            bookTitle={bookTitle}
-            threadTitle={activeThread?.title ?? "任务线程"}
-            messages={messages}
-            selectedTurnId={selectedTurnId}
-          />
-          <ThreadMenu
-            threads={threads}
-            activeThread={activeThread}
-            onCreateThread={onCreateThread}
-            onSelectThread={onSelectThread}
-            onRenameThread={onRenameThread}
-            onSetThreadStatus={onSetThreadStatus}
-          />
-        </div>
-      </header>
-
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto scrollbar-thin px-8 pb-4">
-        <div className="mx-auto flex max-w-2xl flex-col gap-8">
-          {messages.length === 0 && !runningTurn && <EmptyState />}
-          {messages.map((message) => (
-            <MessageBubble
-              key={message.id}
-              message={message}
-              selected={message.turnId === selectedTurnId}
-              isLatestUser={message.role === "user" && message.turnId === latestUserTurnId}
-              highlightedUser={message.role === "user" && message.turnId === highlightedUserTurnId}
-              userMessageRef={message.role === "user" ? (element) => setUserMessageRef(message.turnId, element) : undefined}
-              onSelectTurn={onSelectTurn}
-              onForkThread={onForkThread}
-              onEditLatest={handleEditLatest}
+        <div className="paper relative rounded-2xl border border-border/70 bg-card/80 backdrop-blur transition focus-within:ring-1 focus-within:ring-ring/50 dark:bg-card/40 dark:border-border/50 dark:backdrop-blur-md">
+          {(activeResponseConstraints.length > 0 || temporaryConstraints.length > 0) && (
+            <ResponseConstraintChipBar
+              constraints={activeResponseConstraints}
+              temporaryConstraints={temporaryConstraints}
+              onRemoveConstraint={handleRemoveConstraint}
+              onRemoveTemporary={handleRemoveTemporaryConstraint}
             />
-          ))}
-          {runningTurn && <IntentAnalyzer turn={runningTurn} />}
-        </div>
-      </div>
-
-      <div className="px-8 pb-6 pt-2">
-        <div className="mx-auto max-w-2xl">
-          <div className="mb-2 flex justify-end">
+          )}
+          {selectedSkills.length > 0 && (
+            <SkillChipBar
+              skills={selectedSkills}
+              onRemove={handleRemoveSkill}
+            />
+          )}
+          {citations.length > 0 && (
+            <CitationBar
+              citations={citations}
+              onRemove={onRemoveCitation}
+              onClear={onClearCitations}
+            />
+          )}
+          {constraintPickerOpen && (
+            <PlusPicker
+              tab={plusTab}
+              onTabChange={setPlusTab}
+              constraints={responseConstraints}
+              activeConstraintIds={activeResponseConstraintIds}
+              onToggleConstraint={handleToggleConstraint}
+              onCreateConstraint={onCreateResponseConstraint}
+              onUpdateConstraint={onUpdateResponseConstraint}
+              onDeleteConstraint={onDeleteResponseConstraint}
+              onAddTemporaryConstraint={handleAddTemporaryConstraint}
+              skills={skills}
+              selectedSkillIds={skillIds}
+              onToggleSkill={handleToggleSkill}
+            />
+          )}
+          {referencePickerOpen && (
+            <ReferencePicker
+              cards={settingCards}
+              citations={citations}
+              onAddCitation={onAddCitation}
+              onRemoveCitation={onRemoveCitation}
+            />
+          )}
+          <textarea
+            ref={inputRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault()
+                handleSend()
+              }
+            }}
+            disabled={sending}
+            rows={2}
+            placeholder="描述你想做的修改、新建,或粘贴一段设定..."
+            className="w-full resize-none bg-transparent px-4 pt-3.5 pb-2 font-serif text-[15px] leading-relaxed text-foreground placeholder:text-muted-foreground/70 focus:outline-none disabled:opacity-70"
+          />
+          <div className="flex items-center justify-between px-3 pb-2.5">
+            <div className="flex items-center gap-1" data-chat-popover-keepopen="true">
+              <ToolBtn
+                icon={<Plus className="h-3.5 w-3.5" />}
+                label="约束 / Skill"
+                active={constraintPickerOpen}
+                onClick={() => {
+                  setConstraintPickerOpen((open) => !open)
+                  setReferencePickerOpen(false)
+                }}
+              />
+              <ToolBtn
+                icon={<AtSign className="h-3.5 w-3.5" />}
+                label="引用设定"
+                active={referencePickerOpen}
+                onClick={() => {
+                  setReferencePickerOpen((open) => !open)
+                  setConstraintPickerOpen(false)
+                }}
+              />
+              <span className="ml-2 max-w-[180px] truncate text-[11px] text-muted-foreground/70">
+                {activeThreadTitle}
+              </span>
+            </div>
             <button
-              type="button"
-              onClick={handleQuestionJump}
-              disabled={!latestUserTurnId}
-              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border/70 bg-background/85 px-3 text-[12px] text-muted-foreground shadow-sm backdrop-blur transition hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
-              title="跳到提问"
-              aria-label="跳到提问"
+              onClick={handleSend}
+              disabled={!input.trim() || sending}
+              className={cn(
+                "flex h-8 w-8 items-center justify-center rounded-full transition",
+                input.trim() && !sending
+                  ? "bg-foreground text-background hover:scale-105"
+                  : "bg-muted text-muted-foreground/50",
+              )}
+              aria-label="发送"
             >
-              <CornerUpLeft className="h-3.5 w-3.5" />
-              <span>跳到提问</span>
+              {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
             </button>
           </div>
-          <div className="paper relative rounded-2xl border border-border/70 bg-card/80 backdrop-blur transition focus-within:ring-1 focus-within:ring-ring/50 dark:bg-card/40 dark:border-border/50 dark:backdrop-blur-md">
-            {(activeResponseConstraints.length > 0 || temporaryConstraints.length > 0) && (
-              <ResponseConstraintChipBar
-                constraints={activeResponseConstraints}
-                temporaryConstraints={temporaryConstraints}
-                onRemoveConstraint={(constraintId) =>
-                  onSetActiveResponseConstraintIds(activeResponseConstraintIds.filter((id) => id !== constraintId))
-                }
-                onRemoveTemporary={(index) =>
-                  setTemporaryConstraints((current) => current.filter((_, itemIndex) => itemIndex !== index))
-                }
-              />
-            )}
-            {selectedSkills.length > 0 && (
-              <SkillChipBar
-                skills={selectedSkills}
-                onRemove={(skillId) => setSkillIds((current) => current.filter((id) => id !== skillId))}
-              />
-            )}
-            {citations.length > 0 && (
-              <CitationBar
-                citations={citations}
-                onRemove={onRemoveCitation}
-                onClear={onClearCitations}
-              />
-            )}
-            {constraintPickerOpen && (
-              <PlusPicker
-                tab={plusTab}
-                onTabChange={setPlusTab}
-                constraints={responseConstraints}
-                activeConstraintIds={activeResponseConstraintIds}
-                onToggleConstraint={handleToggleConstraint}
-                onCreateConstraint={onCreateResponseConstraint}
-                onUpdateConstraint={onUpdateResponseConstraint}
-                onDeleteConstraint={onDeleteResponseConstraint}
-                onAddTemporaryConstraint={handleAddTemporaryConstraint}
-                skills={skills}
-                selectedSkillIds={skillIds}
-                onToggleSkill={handleToggleSkill}
-              />
-            )}
-            {referencePickerOpen && (
-              <ReferencePicker
-                cards={settingCards}
-                citations={citations}
-                onAddCitation={onAddCitation}
-                onRemoveCitation={onRemoveCitation}
-              />
-            )}
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault()
-                  handleSend()
-                }
-              }}
-              disabled={sending}
-              rows={2}
-              placeholder="描述你想做的修改、新建,或粘贴一段设定..."
-              className="w-full resize-none bg-transparent px-4 pt-3.5 pb-2 font-serif text-[15px] leading-relaxed text-foreground placeholder:text-muted-foreground/70 focus:outline-none disabled:opacity-70"
-            />
-            <div className="flex items-center justify-between px-3 pb-2.5">
-              <div className="flex items-center gap-1" data-chat-popover-keepopen="true">
-                <ToolBtn
-                  icon={<Plus className="h-3.5 w-3.5" />}
-                  label="约束 / Skill"
-                  active={constraintPickerOpen}
-                  onClick={() => {
-                    setConstraintPickerOpen((open) => !open)
-                    setReferencePickerOpen(false)
-                  }}
-                />
-                <ToolBtn
-                  icon={<AtSign className="h-3.5 w-3.5" />}
-                  label="引用设定"
-                  active={referencePickerOpen}
-                  onClick={() => {
-                    setReferencePickerOpen((open) => !open)
-                    setConstraintPickerOpen(false)
-                  }}
-                />
-                <span className="ml-2 max-w-[180px] truncate text-[11px] text-muted-foreground/70">
-                  {activeThread?.title ?? "任务线程"}
-                </span>
-              </div>
-              <button
-                onClick={handleSend}
-                disabled={!input.trim() || sending}
-                className={cn(
-                  "flex h-8 w-8 items-center justify-center rounded-full transition",
-                  input.trim() && !sending
-                    ? "bg-foreground text-background hover:scale-105"
-                    : "bg-muted text-muted-foreground/50",
-                )}
-                aria-label="发送"
-              >
-                {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
-              </button>
-            </div>
-          </div>
-          <p className="mt-2 px-1 text-center text-[10px] text-muted-foreground/60">
-            按 Enter 发送 · Shift+Enter 换行 · 写入会记录到 Ledger
-          </p>
         </div>
+        <p className="mt-2 px-1 text-center text-[10px] text-muted-foreground/60">
+          按 Enter 发送 · Shift+Enter 换行 · 写入会记录到 Ledger
+        </p>
       </div>
-    </section>
+    </div>
   )
-}
+}))
 
 function CitationBar({
   citations,
@@ -1278,12 +1420,12 @@ function MenuButton({
   )
 }
 
-function MessageBubble({
+const MessageBubble = memo(function MessageBubble({
   message,
   selected,
   isLatestUser,
   highlightedUser,
-  userMessageRef,
+  registerUserMessage,
   onSelectTurn,
   onForkThread,
   onEditLatest,
@@ -1292,7 +1434,7 @@ function MessageBubble({
   selected: boolean
   isLatestUser: boolean
   highlightedUser: boolean
-  userMessageRef?: (element: HTMLDivElement | null) => void
+  registerUserMessage: (turnId: string, element: HTMLDivElement | null) => void
   onSelectTurn: (turnId: string) => void
   onForkThread: (turnId: string) => void
   onEditLatest: (content: string) => void
@@ -1300,6 +1442,9 @@ function MessageBubble({
   const [assistantCopied, setAssistantCopied] = useState(false)
   const copyResetRef = useRef<number | null>(null)
   const isAssistant = message.role === "assistant"
+  const userMessageRef = useCallback((element: HTMLDivElement | null) => {
+    if (message.role === "user") registerUserMessage(message.turnId, element)
+  }, [message.role, message.turnId, registerUserMessage])
 
   useEffect(() => {
     return () => {
@@ -1461,7 +1606,7 @@ function MessageBubble({
       )}
     </div>
   )
-}
+})
 
 type MarkdownBlock =
   | { type: "heading"; level: number; text: string }
@@ -1472,15 +1617,15 @@ type MarkdownBlock =
   | { type: "code"; text: string }
   | { type: "hr" }
 
-function MarkdownContent({ content }: { content: string }) {
-  const blocks = parseMarkdown(content)
+const MarkdownContent = memo(function MarkdownContent({ content }: { content: string }) {
+  const blocks = useMemo(() => parseMarkdown(content), [content])
 
   return (
     <div className="space-y-3 break-words font-serif text-[15px] leading-[1.75] text-foreground">
       {blocks.map((block, index) => renderMarkdownBlock(block, index))}
     </div>
   )
-}
+})
 
 function RunDetailsCard({
   brief,

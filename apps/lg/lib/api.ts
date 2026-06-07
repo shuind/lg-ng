@@ -21,7 +21,8 @@ import {
 import type {
   BookTreeNode,
   CreateSkillRequest,
-  LedgerEntry,
+  LedgerListOptions,
+  LedgerListResponse,
   RelationshipGraph,
   ResponseConstraint,
   RetrievedContext,
@@ -872,16 +873,29 @@ export async function writeWorkbenchFile(bookId: string, path: string, content: 
 }
 
 // === Ledger ===
-export async function listLedgerEntries(bookId: string): Promise<LedgerEntry[]> {
+export async function listLedgerEntries(
+  bookId: string,
+  options: LedgerListOptions = {},
+): Promise<LedgerListResponse> {
   try {
-    const res = await fetch(`/api/books/${bookId}/ledger`, { cache: "no-store" })
+    const params = new URLSearchParams()
+    if (typeof options.limit === "number") params.set("limit", String(options.limit))
+    if (options.cursor) params.set("cursor", options.cursor)
+    const query = params.toString()
+    const res = await fetch(`/api/books/${bookId}/ledger${query ? `?${query}` : ""}`, { cache: "no-store" })
     if (!res.ok) throw new Error("api failed")
     const data = await res.json()
-    if (!Array.isArray(data)) throw new Error("invalid")
-    return data
+    if (Array.isArray(data)) return { entries: data }
+    if (data && typeof data === "object" && Array.isArray(data.entries)) {
+      return {
+        entries: data.entries,
+        nextCursor: typeof data.nextCursor === "string" ? data.nextCursor : undefined,
+      }
+    }
+    throw new Error("invalid")
   } catch {
     await delay()
-    return []
+    return { entries: [] }
   }
 }
 

@@ -87,7 +87,9 @@ export default function Page() {
       setResponseConstraints(responseConstraints)
       setThreadConstraintIds(threadConstraintIds)
     })
-    listLedgerEntries(activeBookId).then(setLedgerEntries).catch(() => setLedgerEntries([]))
+    listLedgerEntries(activeBookId, { limit: 24 })
+      .then((response) => setLedgerEntries(response.entries))
+      .catch(() => setLedgerEntries([]))
   }, [activeBookId])
 
   async function handleSend(
@@ -298,7 +300,9 @@ export default function Page() {
           ...(result.assistantMessage ? [result.assistantMessage] : []),
         ].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
       })
-      listLedgerEntries(activeBookId).then(setLedgerEntries).catch(() => {})
+      listLedgerEntries(activeBookId, { limit: 24 })
+        .then((response) => setLedgerEntries(response.entries))
+        .catch(() => {})
       listSettingCards(activeBookId).then(setCards).catch(() => {})
       listChapters(activeBookId).then(setChapters).catch(() => {})
       setSelectedTurnId(result.turn.id)

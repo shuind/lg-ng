@@ -4,7 +4,7 @@
   "private": true,
   "packageManager": "pnpm@10.27.0",
   "scripts": {
-    "build": "pnpm --filter novel-guide build && pnpm --filter lg build",
+    "build": "pnpm --filter lg build",
     "dev": "pnpm --filter lg dev",
     "typecheck": "pnpm --filter novel-guide typecheck && pnpm --filter lg typecheck",
     "test": "pnpm --filter novel-guide test"

@@ -3,6 +3,7 @@ import path from "node:path"
 import { touchBookUpdatedAt } from "@/lib/server/book-store"
 import { markDirty } from "@/lib/server/dirty-index"
 import { appendLedgerEntry } from "@/lib/server/ledger"
+import { updateIndexedFile } from "@/lib/server/book-index"
 import { runNovelGuideAgent } from "@/lib/server/novel-guide-agent"
 import { getBookDir } from "@/lib/server/paths"
 import { resolveResponseConstraintSnapshot } from "@/lib/server/response-constraint-store"
@@ -101,13 +102,18 @@ async function recordAgentFileChanges(bookId: string, changes: FileChange[]): Pr
       action,
       targetPath: change.path,
       beforeSnapshot: change.beforeContent ?? undefined,
-      afterSnapshot: change.afterContent,
+      afterSnapshot: change.afterContent ?? "",
       summary: `AI ${change.operation === "edit" ? "编辑" : "写入"} ${change.path}`,
     })
     await markDirty(bookId, change.path).catch(() => {})
   }
 
   await touchBookUpdatedAt(bookId)
+  await Promise.all(
+    trackedChanges.map((change) =>
+      updateIndexedFile(bookId, change.path, change.afterContent).catch(() => {}),
+    ),
+  )
   return trackedChanges.map((change) => change.path)
 }
 

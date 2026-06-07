@@ -29,9 +29,28 @@ export interface LedgerEntry {
   actor: "user" | "agent"
   action: string
   targetPath: string
+  summary: string
+  beforeHash?: string
+  afterHash?: string
+  diffPatch?: string
+  fileRevision?: number
+  baseCheckpointHash?: string
+  baseCheckpointPath?: string
+  checkpointHash?: string
+  checkpointPath?: string
+  checkpointReason?: "interval"
   beforeSnapshot?: string
   afterSnapshot?: string
-  summary: string
+}
+
+export interface LedgerListOptions {
+  limit?: number
+  cursor?: string
+}
+
+export interface LedgerListResponse {
+  entries: LedgerEntry[]
+  nextCursor?: string
 }
 
 export interface RelationshipGraphNode {

@@ -459,27 +459,53 @@ function LedgerPane({
 }) {
   const [entries, setEntries] = useState<LedgerEntry[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [nextCursor, setNextCursor] = useState<string | undefined>(undefined)
   const [previewEntry, setPreviewEntry] = useState<LedgerEntry | null>(null)
   const [rollingBackId, setRollingBackId] = useState<string | null>(null)
 
   useEffect(() => {
     setLoading(true)
-    listLedgerEntries(bookId)
-      .then(setEntries)
+    listLedgerEntries(bookId, { limit: 50 })
+      .then((response) => {
+        setEntries(response.entries)
+        setNextCursor(response.nextCursor)
+      })
       .finally(() => setLoading(false))
   }, [bookId])
 
+  function canDirectRollback(entry: LedgerEntry): boolean {
+    return Boolean(
+      entry.beforeSnapshot ||
+      entry.diffPatch ||
+      (entry.beforeHash && entry.beforeHash === entry.baseCheckpointHash),
+    )
+  }
+
   async function handleRollback(entry: LedgerEntry) {
-    if (!entry.beforeSnapshot) return
+    if (!canDirectRollback(entry)) return
     setRollingBackId(entry.id)
     try {
       await rollbackLedgerEntry(bookId, entry.id)
-      const nextEntries = await listLedgerEntries(bookId)
-      setEntries(nextEntries)
+      const response = await listLedgerEntries(bookId, { limit: 50 })
+      setEntries(response.entries)
+      setNextCursor(response.nextCursor)
       setPreviewEntry(null)
       onChanged()
     } finally {
       setRollingBackId(null)
+    }
+  }
+
+  async function handleLoadMore() {
+    if (!nextCursor || loadingMore) return
+    setLoadingMore(true)
+    try {
+      const response = await listLedgerEntries(bookId, { limit: 50, cursor: nextCursor })
+      setEntries((current) => [...current, ...response.entries])
+      setNextCursor(response.nextCursor)
+    } finally {
+      setLoadingMore(false)
     }
   }
 
@@ -531,42 +557,71 @@ function LedgerPane({
             >
               {e.targetPath}
             </button>
-            {e.beforeSnapshot && (
+            {(e.diffPatch || e.beforeSnapshot) && (
               <div className="mt-3 flex items-center gap-2">
                 <button
                   onClick={() => setPreviewEntry(e)}
                   className="flex items-center gap-1 rounded-md border border-border/60 bg-background/60 px-2 py-1 text-[11px] text-muted-foreground transition hover:bg-secondary hover:text-foreground"
                 >
                   <Eye className="h-3 w-3" />
-                  查看旧稿
+                  查看变更
                 </button>
-                <button
-                  onClick={() => handleRollback(e)}
-                  disabled={rollingBackId === e.id}
-                  className="flex items-center gap-1 rounded-md bg-foreground px-2 py-1 text-[11px] font-medium text-background transition hover:opacity-90 disabled:opacity-40"
-                >
-                  <RotateCcw className="h-3 w-3" />
-                  {rollingBackId === e.id ? "恢复中…" : "恢复到保存前"}
-                </button>
+                {canDirectRollback(e) ? (
+                  <button
+                    onClick={() => handleRollback(e)}
+                    disabled={rollingBackId === e.id}
+                    className="flex items-center gap-1 rounded-md bg-foreground px-2 py-1 text-[11px] font-medium text-background transition hover:opacity-90 disabled:opacity-40"
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                    {rollingBackId === e.id ? "恢复中…" : "恢复到保存前"}
+                  </button>
+                ) : (
+                  <span className="rounded-md border border-border/60 bg-background/40 px-2 py-1 text-[11px] text-muted-foreground">
+                    需按历史重建
+                  </span>
+                )}
               </div>
             )}
           </div>
         ))}
+        {nextCursor && (
+          <button
+            type="button"
+            onClick={handleLoadMore}
+            disabled={loadingMore}
+            className="mt-3 flex w-full items-center justify-center rounded-md border border-border/60 bg-background/50 px-3 py-2 text-[12px] text-muted-foreground transition hover:bg-secondary hover:text-foreground disabled:opacity-50"
+          >
+            {loadingMore ? "加载中..." : "加载更多"}
+          </button>
+        )}
         </div>
         <div className="paper sticky top-0 max-h-[calc(100vh-120px)] overflow-hidden rounded-2xl border border-border/60 bg-card/60 backdrop-blur">
           <div className="border-b border-border/60 px-4 py-3">
-            <div className="font-serif text-[14px] text-foreground">旧稿预览</div>
+            <div className="font-serif text-[14px] text-foreground">变更预览</div>
             <div className="mt-1 truncate font-mono text-[10.5px] text-muted-foreground">
               {previewEntry?.targetPath ?? "选择一条可恢复记录"}
             </div>
           </div>
-          {previewEntry?.beforeSnapshot ? (
+          {previewEntry?.diffPatch ? (
+            <pre className="max-h-[calc(100vh-210px)] overflow-auto whitespace-pre-wrap p-4 font-mono text-[11px] leading-[1.6] text-foreground/90">
+              {previewEntry.diffPatch}
+            </pre>
+          ) : previewEntry?.beforeSnapshot ? (
             <pre className="max-h-[calc(100vh-210px)] overflow-auto whitespace-pre-wrap p-4 font-serif text-[12.5px] leading-[1.75] text-foreground/90">
               {previewEntry.beforeSnapshot}
             </pre>
           ) : (
             <div className="p-4 text-[12px] leading-relaxed text-muted-foreground">
-              点击时间线里的“查看旧稿”，这里会显示保存前的内容。确认后可以恢复到那个版本。
+              点击时间线里的“查看变更”，这里会显示本次保存的 diff。没有 checkpoint 的记录需要按历史重建。
+            </div>
+          )}
+          {previewEntry?.beforeHash && (
+            <div className="border-t border-border/60 p-4 text-[10.5px] leading-relaxed text-muted-foreground">
+              <div className="font-mono">before: {previewEntry.beforeHash}</div>
+              <div className="font-mono">after: {previewEntry.afterHash}</div>
+              {previewEntry.checkpointPath && (
+                <div className="mt-1 font-mono">checkpoint: {previewEntry.checkpointPath}</div>
+              )}
             </div>
           )}
         </div>

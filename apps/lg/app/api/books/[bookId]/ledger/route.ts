@@ -2,15 +2,19 @@ import { NextResponse } from "next/server"
 import { listLedgerEntries } from "@/lib/server/ledger"
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ bookId: string }> },
 ) {
   try {
     const { bookId } = await params
-    const entries = await listLedgerEntries(bookId)
-    return NextResponse.json(entries)
+    const { searchParams } = new URL(request.url)
+    const limitParam = searchParams.get("limit")
+    const limit = limitParam ? Number.parseInt(limitParam, 10) : undefined
+    const cursor = searchParams.get("cursor") ?? undefined
+    const response = await listLedgerEntries(bookId, { limit, cursor })
+    return NextResponse.json(response)
   } catch (err) {
     console.error("[api/books/ledger] error:", err)
-    return NextResponse.json([], { status: 200 })
+    return NextResponse.json({ entries: [] }, { status: 200 })
   }
 }

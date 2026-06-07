@@ -10,7 +10,7 @@ export function getDataRoot(): string {
   if (process.env.LG_DATA_DIR) {
     return path.resolve(process.env.LG_DATA_DIR)
   }
-  return path.resolve(process.cwd(), "..", "..", ".lg-data")
+  return path.join(/* turbopackIgnore: true */ process.cwd(), "..", "..", ".lg-data")
 }
 
 export function getBooksRoot(): string {

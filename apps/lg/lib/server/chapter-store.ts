@@ -3,6 +3,7 @@ import path from "path"
 import type { Chapter, ChapterContent } from "@/lib/types"
 import { writeBookFile, readBookFile, getBookFileMtime } from "@/lib/server/book-store"
 import { getBookDir } from "@/lib/server/paths"
+import { listIndexedChapters } from "@/lib/server/book-index"
 
 const CHAPTER_DIR = "章节正文"
 
@@ -34,38 +35,7 @@ function statusFromWordCount(wordCount: number): "draft" | "writing" | "done" {
 }
 
 export async function listChapters(bookId: string): Promise<Chapter[]> {
-  const dir = path.join(getBookDir(bookId), CHAPTER_DIR)
-  try {
-    const entries = await fs.readdir(dir)
-    const mdFiles = entries.filter((e) => e.endsWith(".md")).sort()
-
-    const chapters: Chapter[] = []
-    for (let i = 0; i < mdFiles.length; i++) {
-      const filename = mdFiles[i]
-      const filePath = chapterPath(bookId, filename)
-      const content = await readBookFile(bookId, filePath)
-      if (content === null) continue
-
-      const mtime = await getBookFileMtime(bookId, filePath)
-      const title = extractTitle(content, filename)
-      const wordCount = countWords(content)
-
-      chapters.push({
-        id: chapterIdFromFilename(filename),
-        bookId,
-        title,
-        index: i + 1,
-        wordCount,
-        status: statusFromWordCount(wordCount),
-        path: filePath,
-        updatedAt: mtime,
-      })
-    }
-
-    return chapters
-  } catch {
-    return []
-  }
+  return listIndexedChapters(bookId)
 }
 
 export async function createChapter(bookId: string, title?: string): Promise<Chapter> {

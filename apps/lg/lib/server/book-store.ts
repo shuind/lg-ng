@@ -4,6 +4,8 @@ import type { Book, BookTreeNode, OutlineFile } from "@/lib/types"
 import { markDirty } from "@/lib/server/dirty-index"
 import { appendLedgerEntry } from "@/lib/server/ledger"
 import { getBookDir, getBooksRoot } from "@/lib/server/paths"
+import { resolveInsideBook } from "@/lib/server/safe-paths"
+import { getBookTreeFromIndex, listOutlineFilesFromIndex, rebuildBookIndexes, updateIndexedFile } from "@/lib/server/book-index"
 
 function slugify(title: string): string {
   return title
@@ -139,6 +141,8 @@ export async function createBook(title: string): Promise<Book> {
   await fs.writeFile(path.join(bookDir, "写作约束", "类型规则.md"), `# 类型规则\n\n记录本作品类型（武侠/玄幻/言情等）的写作规范。\n`, "utf-8")
   await fs.writeFile(path.join(bookDir, "写作约束", "质量约束.md"), `# 质量约束\n\n记录写作质量要求：词汇、节奏、描写比例等。\n`, "utf-8")
 
+  await rebuildBookIndexes(id).catch(() => {})
+
   return {
     id,
     title,
@@ -186,49 +190,12 @@ export async function touchBookUpdatedAt(bookId: string): Promise<string> {
 }
 
 export async function getBookTree(bookId: string): Promise<BookTreeNode[]> {
-  const bookDir = getBookDir(bookId)
-  if (!(await dirExists(bookDir))) return []
-
-  async function walk(dir: string, relativePath: string): Promise<BookTreeNode[]> {
-    const entries = await fs.readdir(dir, { withFileTypes: true })
-    const nodes: BookTreeNode[] = []
-
-    for (const entry of entries) {
-      if (entry.name === "book.json") continue
-      const absPath = path.join(dir, entry.name)
-      const relPath = relativePath ? `${relativePath}/${entry.name}` : entry.name
-
-      if (entry.isDirectory()) {
-        const children = await walk(absPath, relPath)
-        nodes.push({
-          id: relPath,
-          name: entry.name,
-          path: relPath,
-          type: "directory",
-          children,
-        })
-      } else {
-        const stat = await fs.stat(absPath)
-        nodes.push({
-          id: relPath,
-          name: entry.name,
-          path: relPath,
-          type: "file",
-          updatedAt: stat.mtime.toISOString(),
-        })
-      }
-    }
-
-    return nodes.sort((a, b) => {
-      if (a.type !== b.type) return a.type === "directory" ? -1 : 1
-      return a.name.localeCompare(b.name)
-    })
-  }
-
-  return walk(bookDir, "")
+  return getBookTreeFromIndex(bookId)
 }
 
 export async function listOutlineFiles(bookId: string): Promise<OutlineFile[]> {
+  return listOutlineFilesFromIndex(bookId)
+
   const tree = await getBookTree(bookId)
   const outlines: OutlineFile[] = []
 
@@ -260,11 +227,8 @@ export async function listOutlineFiles(bookId: string): Promise<OutlineFile[]> {
 }
 
 export async function readBookFile(bookId: string, filePath: string): Promise<string | null> {
-  const bookDir = getBookDir(bookId)
-  const absPath = path.join(bookDir, filePath)
-  // security: prevent path traversal
-  const resolved = path.resolve(absPath)
-  if (!resolved.startsWith(bookDir)) return null
+  const resolved = resolveInsideBook(bookId, filePath)
+  if (!resolved) return null
 
   try {
     return await fs.readFile(resolved, "utf-8")
@@ -274,10 +238,8 @@ export async function readBookFile(bookId: string, filePath: string): Promise<st
 }
 
 export async function getBookFileMtime(bookId: string, filePath: string): Promise<string> {
-  const bookDir = getBookDir(bookId)
-  const absPath = path.join(bookDir, filePath)
-  const resolved = path.resolve(absPath)
-  if (!resolved.startsWith(bookDir)) return new Date().toISOString()
+  const resolved = resolveInsideBook(bookId, filePath)
+  if (!resolved) return new Date().toISOString()
 
   try {
     const stat = await fs.stat(resolved)
@@ -288,10 +250,8 @@ export async function getBookFileMtime(bookId: string, filePath: string): Promis
 }
 
 export async function writeBookFile(bookId: string, filePath: string, content: string): Promise<boolean> {
-  const bookDir = getBookDir(bookId)
-  const absPath = path.join(bookDir, filePath)
-  const resolved = path.resolve(absPath)
-  if (!resolved.startsWith(bookDir)) return false
+  const resolved = resolveInsideBook(bookId, filePath)
+  if (!resolved) return false
 
   // read before snapshot (skip for ledger itself to avoid noise)
   const isLedgerFile = filePath === "ledger.jsonl"
@@ -312,6 +272,7 @@ export async function writeBookFile(bookId: string, filePath: string, content: s
 
   // update book updatedAt
   await touchBookUpdatedAt(bookId)
+  await updateIndexedFile(bookId, filePath, content).catch(() => {})
 
   // append ledger entry (skip for ledger.jsonl to avoid recursion)
   if (!isLedgerFile) {

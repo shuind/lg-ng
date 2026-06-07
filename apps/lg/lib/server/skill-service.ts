@@ -14,6 +14,7 @@ import type {
 import { readBookFile, getBookFileMtime } from "@/lib/server/book-store"
 import { callChatCompletion, getConfig } from "@/lib/server/llm"
 import { getBookDir } from "@/lib/server/paths"
+import { rebuildBookIndexes, updateIndexedFile } from "@/lib/server/book-index"
 
 const SOURCE_FILE = "创作指南.md"
 const SUMMARY_FILE = "skills/style_guide_summary.md"
@@ -540,6 +541,7 @@ export async function createClaudeSkill(bookId: string, input: CreateSkillReques
   try {
     await writeClaudeSkillContents(targetDir, skillMd, resources)
     await touchBookUpdatedAt(bookId)
+    await rebuildBookIndexes(bookId).catch(() => {})
   } catch (error) {
     await fs.rm(targetDir, { recursive: true, force: true }).catch(() => {})
     throw error
@@ -604,6 +606,7 @@ export async function updateClaudeSkill(bookId: string, input: UpdateSkillReques
     await removeExistingTextResources(activeDir)
     await writeClaudeSkillContents(activeDir, skillMd, resources)
     await touchBookUpdatedAt(bookId)
+    await rebuildBookIndexes(bookId).catch(() => {})
   } catch (error) {
     if (renamed && !(await dirExists(originalDir)) && await dirExists(targetDir)) {
       await fs.rename(targetDir, originalDir).catch(() => {})
@@ -833,6 +836,7 @@ export async function refreshStyleGuideSummary(bookId: string): Promise<{ skill:
   const summaryAbs = path.join(getBookDir(bookId), SUMMARY_FILE)
   await fs.mkdir(path.dirname(summaryAbs), { recursive: true })
   await fs.writeFile(summaryAbs, summary, "utf-8")
+  await updateIndexedFile(bookId, SUMMARY_FILE, summary).catch(() => {})
 
   // estimate token count (rough: 1 token ≈ 1.5 Chinese chars)
   const charCount = summary.length

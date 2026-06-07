@@ -1,7 +1,8 @@
 import type { BookTreeNode } from "@/lib/types"
 import type { RetrievedContext } from "@/lib/types"
 import { getDirtyFiles } from "@/lib/server/dirty-index"
-import { getBookTree, readBookFile } from "@/lib/server/book-store"
+import { readBookFile } from "@/lib/server/book-store"
+import { listIndexedFiles } from "@/lib/server/book-index"
 
 const MAX_RESULTS = 5
 const EXCERPT_LEN = 200
@@ -119,9 +120,8 @@ export async function retrieveContext(bookId: string, query: string): Promise<Re
   const dirtyPaths = new Set(dirtyEntries.map((e) => e.path))
   const dirtyTimeMap = new Map(dirtyEntries.map((e) => [e.path, e.updatedAt]))
 
-  // get all files in book
-  const tree = await getBookTree(bookId)
-  const allFiles = flattenTree(tree).filter((f) => !SKIP_FILES.has(f.name))
+  // get indexed files in book without walking the filesystem on each request
+  const allFiles = (await listIndexedFiles(bookId)).filter((f) => !SKIP_FILES.has(f.name))
 
   // score each file — first pass: filename/path matching only (no I/O)
   const scored: { file: FlatFile; reason: RetrievedContext["reason"]; score: number }[] = []

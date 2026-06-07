@@ -7,13 +7,13 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
+      "types": "./src/index.ts",
       "import": "./dist/index.js"
     }
   },
   "bin": {
-    "ng": "./dist/cli.js",
-    "novel-guide": "./dist/cli.js"
+    "ng": "./bin/ng.mjs",
+    "novel-guide": "./bin/ng.mjs"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -30,12 +30,12 @@
     "fast-glob": "^3.3.3",
     "gray-matter": "^4.0.3",
     "openai": "^6.10.0",
-    "zod": "^4.1.13"
+    "zod": "catalog:"
   },
   "devDependencies": {
-    "@types/node": "^24.10.2",
-    "tsx": "^4.21.0",
-    "typescript": "^5.9.3",
+    "@types/node": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
     "vitest": "^4.0.15"
   },
   "packageManager": "pnpm@10.27.0"
