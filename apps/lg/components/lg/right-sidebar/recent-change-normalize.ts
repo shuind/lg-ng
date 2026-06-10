@@ -1,6 +1,6 @@
 import type { LedgerEntry } from "@/lib/types"
 import { canDirectRollback } from "@/lib/ledger-entry-utils"
-import type { NormalizedRecentChange } from "./recent-change-types"
+import type { NormalizedRecentChange, RecentChangeActionKind, RecentChangeRegion } from "./recent-change-types"
 import { pad2 } from "./recent-change-format"
 
 export function normalizeRecentChange(entry: LedgerEntry): NormalizedRecentChange {
@@ -8,11 +8,15 @@ export function normalizeRecentChange(entry: LedgerEntry): NormalizedRecentChang
   const date = new Date(timestamp)
   const targetPath = entry.targetPath || ""
   const action = displayAction(entry)
+  const actionKind = classifyActionKind(entry, action.key)
   const dayMeta = formatDateGroupMeta(timestamp)
+  const region = classifyPathRegion(targetPath)
   const file = {
     path: targetPath,
     name: fileNameFromPath(targetPath),
+    region: region.key,
   }
+  const hasBodyRisk = entry.actor === "agent" && region.key === "body" && actionKind === "agent_action"
 
   return {
     id: entry.id,
@@ -20,6 +24,7 @@ export function normalizeRecentChange(entry: LedgerEntry): NormalizedRecentChang
     actorLabel: actorLabel(entry.actor),
     actionKey: action.key,
     actionLabel: action.label,
+    actionKind,
     timestamp,
     timestampMs: Number.isNaN(date.getTime()) ? 0 : date.getTime(),
     minuteKey: formatMinuteKey(timestamp),
@@ -33,8 +38,11 @@ export function normalizeRecentChange(entry: LedgerEntry): NormalizedRecentChang
       id: entry.id,
       path: targetPath,
       name: file.name,
+      region: region.key,
       rollbackable: entry.actor === "agent" && canDirectRollback(entry),
     },
+    region,
+    hasBodyRisk,
   }
 }
 
@@ -61,6 +69,8 @@ function displayAction(entry: LedgerEntry): { key: string; label: string } {
       return { key: "edit_file", label: "编辑" }
     case "write_file":
       return { key: "write_file", label: "写入" }
+    case "delete_file":
+      return { key: "delete_file", label: "删除" }
     case "rollback_file":
       return { key: "rollback_file", label: "恢复" }
     case "repair_outline_write":
@@ -70,10 +80,49 @@ function displayAction(entry: LedgerEntry): { key: string; label: string } {
         return { key: "repair_outline", label: "修复大纲" }
       }
       if (action.includes("rollback")) return { key: "rollback_file", label: "恢复" }
+      if (action.includes("delete")) return { key: "delete_file", label: "删除" }
       if (action.includes("edit")) return { key: "edit_file", label: "编辑" }
       if (action.includes("write")) return { key: "write_file", label: "写入" }
       return { key: action || "update", label: "更新" }
   }
+}
+
+function classifyActionKind(entry: LedgerEntry, actionKey: string): RecentChangeActionKind {
+  const action = entry.action.toLowerCase()
+  const summary = entry.summary.trim()
+
+  if (actionKey === "rollback_file" || action.includes("rollback")) return "rollback"
+  if (/^手动保存\s+/.test(summary)) return "manual_save"
+  if (
+    entry.actor === "agent" &&
+    (
+      actionKey === "write_file" ||
+      actionKey === "edit_file" ||
+      actionKey === "repair_outline" ||
+      actionKey === "repair_outline_write"
+    )
+  ) {
+    return "agent_action"
+  }
+
+  return "change"
+}
+
+function classifyPathRegion(filePath: string): RecentChangeRegion {
+  const normalized = normalizePathKey(filePath)
+  if (normalized.startsWith("章节正文/")) return { key: "body", label: "正文", count: 1 }
+  if (normalized.startsWith("drafts/") || normalized.startsWith("草稿")) return { key: "draft", label: "草稿", count: 1 }
+  if (normalized.startsWith("状态追踪/")) return { key: "status", label: "状态追踪", count: 1 }
+  if (normalized.startsWith("卷纲/") || normalized.startsWith("大纲/")) return { key: "outline", label: "大纲", count: 1 }
+  if (
+    normalized.startsWith("人物设定/") ||
+    normalized.startsWith("世界观/") ||
+    normalized.startsWith("地点设定/") ||
+    normalized.startsWith("设定/")
+  ) {
+    return { key: "setting", label: "设定", count: 1 }
+  }
+  return { key: "other", label: "其他", count: 1 }
 }
 
 function displaySummary(entry: LedgerEntry, actionLabel: string, fileName: string): string {
@@ -99,7 +148,7 @@ function displaySummary(entry: LedgerEntry, actionLabel: string, fileName: strin
 
 function isTechnicalSummary(summary: string): boolean {
   if (!/^[\x00-\x7F]+$/.test(summary)) return false
-  return /\b(write_file|edit_file|rollback_file|repair_outline_write|outline|ledger|dirty|snapshot)\b/i.test(
+  return /\b(write_file|edit_file|delete_file|rollback_file|repair_outline_write|outline|ledger|dirty|snapshot)\b/i.test(
     summary,
   )
 }

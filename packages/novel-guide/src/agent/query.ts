@@ -57,14 +57,22 @@ function parseToolArguments(value: string | undefined): Record<string, unknown> 
     : {};
 }
 
-function previewArguments(value: string | undefined): string {
+function previewArguments(value: string | undefined, maxLength = 240): string {
   if (!value) return "";
-  return value.length > 240 ? `${value.slice(0, 240)}...` : value;
+  return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
 }
 
-function previewResult(value: string): string {
+function previewResult(value: string, maxLength = 360): string {
   const compact = value.replace(/\s+/g, " ").trim();
-  return compact.length > 360 ? `${compact.slice(0, 360)}...` : compact;
+  return compact.length > maxLength ? `${compact.slice(0, maxLength)}...` : compact;
+}
+
+function previewLimitForTool(name: string): number {
+  return name === "ask_user" ? 2000 : 240;
+}
+
+function resultPreviewLimitForTool(name: string): number {
+  return name === "ask_user" ? 2000 : 360;
 }
 
 function throwIfAborted(signal?: AbortSignal): void {
@@ -193,7 +201,7 @@ export async function* queryEvents(input: QueryInput): AsyncGenerator<QueryEvent
         continue;
       }
       const name = toolCall.function.name;
-      yield { type: "tool_call", loop, name, argsPreview: previewArguments(toolCall.function.arguments) };
+      yield { type: "tool_call", loop, name, argsPreview: previewArguments(toolCall.function.arguments, previewLimitForTool(name)) };
       const tool = findTool(input.tools, name);
       if (!tool) {
         const content = `Unknown tool: ${name}`;
@@ -204,7 +212,7 @@ export async function* queryEvents(input: QueryInput): AsyncGenerator<QueryEvent
           tool_call_id: toolCall.id,
           content,
         });
-        yield { type: "tool_result", loop, name, ok: false, content, resultPreview: previewResult(content), durationMs: 0 };
+        yield { type: "tool_result", loop, name, ok: false, content, resultPreview: previewResult(content, resultPreviewLimitForTool(name)), durationMs: 0 };
         continue;
       }
       const startedAt = Date.now();
@@ -229,7 +237,7 @@ export async function* queryEvents(input: QueryInput): AsyncGenerator<QueryEvent
         name,
         ok: result.ok,
         content: result.content,
-        resultPreview: previewResult(result.content),
+        resultPreview: previewResult(result.content, resultPreviewLimitForTool(name)),
         durationMs,
       };
     }

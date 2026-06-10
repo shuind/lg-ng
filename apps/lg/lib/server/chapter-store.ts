@@ -1,7 +1,7 @@
 import fs from "fs/promises"
 import path from "path"
 import type { Chapter, ChapterContent } from "@/lib/types"
-import { writeBookFile, readBookFile, getBookFileMtime } from "@/lib/server/book-store"
+import { writeBookFile, readBookFile, getBookFileMtime, deleteBookFile } from "@/lib/server/book-store"
 import { getBookDir } from "@/lib/server/paths"
 import { listIndexedChapters } from "@/lib/server/book-index"
 
@@ -122,6 +122,12 @@ export async function saveChapter(
     path: filePath,
     updatedAt: mtime,
   }
+}
+
+export async function deleteChapter(bookId: string, chapterId: string): Promise<boolean> {
+  const filename = filenameFromId(chapterId)
+  const filePath = chapterPath(bookId, filename)
+  return deleteBookFile(bookId, filePath)
 }
 
 async function fileExists(filePath: string): Promise<boolean> {

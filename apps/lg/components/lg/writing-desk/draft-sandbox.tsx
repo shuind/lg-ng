@@ -41,7 +41,7 @@ export function DraftSandbox({
   }
 
   return (
-    <div className="paper rounded-xl border border-dashed border-border bg-muted/20 backdrop-blur">
+    <div className="paper rounded-lg border border-dashed border-border bg-muted/20 backdrop-blur">
       <div className="flex items-center justify-between border-b border-border/60 px-4 py-2">
         <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
           <Sparkles className="h-3.5 w-3.5 text-accent" />

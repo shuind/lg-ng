@@ -1,8 +1,8 @@
-"use client"
+﻿"use client"
 
-import type { RefObject } from "react"
+import { useEffect, useRef, type RefObject } from "react"
 import { LayoutGrid, Pencil } from "lucide-react"
-import type { Book } from "@/lib/mock-data"
+import type { Book } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 export function BookRow({
@@ -15,6 +15,7 @@ export function BookRow({
   onCommitRename,
   onCancelRename,
   onSelectBook,
+  onPrefetchBook,
   onOpenWorkbench,
   onStartRename,
 }: {
@@ -27,11 +28,32 @@ export function BookRow({
   onCommitRename: () => void
   onCancelRename: () => void
   onSelectBook: (bookId: string) => void
+  onPrefetchBook: (bookId: string) => void
   onOpenWorkbench: (bookId: string) => void
   onStartRename: (bookId: string, currentTitle: string) => void
 }) {
+  const prefetchTimerRef = useRef<number | null>(null)
+
+  function cancelPrefetch() {
+    if (prefetchTimerRef.current === null) return
+    window.clearTimeout(prefetchTimerRef.current)
+    prefetchTimerRef.current = null
+  }
+
+  function schedulePrefetch() {
+    cancelPrefetch()
+    prefetchTimerRef.current = window.setTimeout(() => {
+      prefetchTimerRef.current = null
+      onPrefetchBook(book.id)
+    }, 150)
+  }
+
+  useEffect(() => cancelPrefetch, [])
+
   return (
     <div
+      onPointerEnter={schedulePrefetch}
+      onPointerLeave={cancelPrefetch}
       className={cn(
         "group flex items-center gap-1 rounded-lg pr-1 transition",
         active

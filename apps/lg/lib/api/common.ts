@@ -54,4 +54,15 @@ export function relativeTime(iso: string): string {
   return `${days}d`
 }
 
+export async function readJsonResponse<T = unknown>(res: Response): Promise<T> {
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const message = data && typeof data === "object" && "error" in data && typeof data.error === "string"
+      ? data.error
+      : "接口请求失败"
+    throw new Error(message)
+  }
+  return data as T
+}
+
 // === 书籍 ===

@@ -4,13 +4,13 @@ import {
   type EngineStreamEvent,
   type FileChange,
   type FileProposal,
-  getOpenAICompatibleConfig,
   initNovelWorkspace,
   loadSession,
 } from "novel-guide"
 import { getBook } from "@/lib/server/book-store"
+import { getEffectiveOpenAICompatibleConfig } from "@/lib/server/app-settings-store"
 import { getBookDir } from "@/lib/server/paths"
-import type { AppliedResponseConstraint, SettingCard, SkillSummary, WorkflowAction } from "@/lib/types"
+import type { AppliedResponseConstraint, ChatReference, Message, SkillSummary, WorkflowAction } from "@/lib/types"
 
 export interface NovelGuideAgentResult {
   reply: string
@@ -44,13 +44,18 @@ export type NovelGuideAgentStreamEvent =
   | { type: "engine_event"; event: EngineStreamEvent }
   | { type: "done"; result: NovelGuideAgentResult }
 
-function formatReferences(references: SettingCard[]): string {
+function formatReferences(references: ChatReference[]): string {
   if (references.length === 0) return ""
-  const lines = references.map((card) => {
-    const path = card.path ? ` path=${card.path}` : ""
-    return `- ${card.name} (${card.category})${path}`
+  const lines = references.map((reference) => {
+    const path = reference.path ? ` path=${reference.path}` : ""
+    const summary = reference.summary ? ` summary=${reference.summary}` : ""
+    return `- ${reference.name} (${reference.type || reference.kind})${path}${summary}`
   })
-  return `\n\nLG selected references:\n${lines.join("\n")}`
+  return [
+    "LG selected references:",
+    "These are explicit user-selected context items. If a reference has a path, read that file before making claims or changes involving it. Do not assume the summary is complete.",
+    ...lines,
+  ].join("\n")
 }
 
 function formatResponseConstraints(responseConstraints: AppliedResponseConstraint[]): string {
@@ -81,11 +86,38 @@ function formatSkillSummaries(skills: SkillSummary[]): string {
   ].join("\n")
 }
 
+function formatThreadMessages(messages: Message[]): string {
+  const visible = messages
+    .filter((message) => (message.role === "user" || message.role === "assistant") && message.content.trim())
+    .slice(-8)
+
+  if (visible.length === 0) return ""
+
+  const lines = visible.map((message) => {
+    const label = message.role === "user" ? "User" : "Assistant"
+    return `### ${label}\n${clipThreadMessage(message.content, message.role)}`
+  })
+
+  return [
+    "LG prior thread context:",
+    "These are the visible chat messages before the current user request. Use them as conversation context, especially user corrections and established project facts.",
+    ...lines,
+  ].join("\n")
+}
+
+function clipThreadMessage(content: string, role: Message["role"]): string {
+  const maxLength = role === "assistant" ? 2400 : 1600
+  const normalized = content.trim()
+  return normalized.length > maxLength
+    ? `${normalized.slice(0, maxLength)}\n...[truncated]`
+    : normalized
+}
+
 function formatWorkflowAction(action?: WorkflowAction): string {
   if (!action) return ""
   const instructions: Record<WorkflowAction, string> = {
-    continue: "Workflow action /续写: use propose_file_change to create a reviewable continuation proposal for the target draft/chapter. Do not write target files directly.",
-    revise: "Workflow action /改稿: use propose_file_change to create a concrete diff proposal. Prefer minimal edits and do not write target files directly.",
+    continue: "Workflow action /续写: use propose_file_change to create a reviewable continuation proposal. Target drafts/ by default for generated chapter prose; use 章节正文/ only when the user explicitly asks to apply directly to chapter body. Do not write target files directly.",
+    revise: "Workflow action /改稿: use propose_file_change to create a concrete diff proposal. If revising chapter prose, target drafts/ by default; use 章节正文/ only when the user explicitly asks to apply directly to chapter body. Prefer minimal edits and do not write target files directly.",
     plant: "Workflow action /铺垫: plant an open foreshadowing hook and maintain NOVEL.md's 当前 open 伏笔 when writing is requested.",
     resolve: "Workflow action /收线: inspect open foreshadowing hooks, choose the referenced hook, and check the payoff is self-consistent before writing.",
     diagnose: "Workflow action /卡点诊断: read context and provide multiple next directions. This is readonly unless the user explicitly asks to write.",
@@ -98,20 +130,33 @@ function isProposalWorkflow(action?: WorkflowAction): boolean {
   return action === "continue" || action === "revise"
 }
 
+function formatChapterDraftPolicy(): string {
+  return [
+    "Chapter draft-first policy:",
+    "- When the user asks to write, continue, rewrite, or draft chapter prose, create or update prose under drafts/ by default.",
+    "- Use existing 章节正文/ files as context, but do not write or edit 章节正文/ for generated prose unless the user explicitly says to write/apply/save directly to the chapter body.",
+    "- If a corresponding draft does not exist, create a clear markdown file under drafts/ using the chapter number/title in the filename.",
+    "- Do not update 状态追踪/ as a side effect of drafting chapter prose unless the user explicitly asks for status tracking updates; mention suggested status changes in the reply instead.",
+  ].join("\n")
+}
+
 function buildPrompt(input: {
   bookId: string
   bookTitle: string
   userMessage: string
-  references: SettingCard[]
+  threadMessages: Message[]
+  references: ChatReference[]
   responseConstraints: AppliedResponseConstraint[]
   skills: SkillSummary[]
   workflowAction?: WorkflowAction
 }): string {
   return [
     `LG book: ${input.bookTitle} (${input.bookId})`,
+    formatChapterDraftPolicy(),
     formatWorkflowAction(input.workflowAction),
     formatResponseConstraints(input.responseConstraints),
     formatSkillSummaries(input.skills),
+    formatThreadMessages(input.threadMessages),
     "User request:",
     input.userMessage,
     formatReferences(input.references),
@@ -121,21 +166,28 @@ function buildPrompt(input: {
 const LG_LEGACY_PROMPT = `LG integration notes:
 - This workspace may contain legacy LG directories in addition to Novel Guide directories.
 - Treat 人物设定/, 世界观/, 卷纲/, 章节大纲/, 章节正文/, 剧情管理/, 状态追踪/, 读者体验/, 写作约束/, 章节摘要/, and 检查报告/ as first-class novel material.
+- Do not conclude that the project lacks characters, settings, outlines, or prose merely because NOVEL.md, canon/, or drafts/ are sparse. Inspect the legacy LG directories first.
+- For chapter-writing requests, first read the relevant outline/prose files plus nearby world, character, and conflict files before asking the user for basics.
+- For generated chapter prose, draft-first: write to drafts/ by default. Do not write or edit 章节正文/ unless the user explicitly asks to apply/save directly to chapter body.
+- Do not update 状态追踪/ merely as a side effect of drafting chapter prose unless explicitly requested.
 - Prefer reading the real files before answering. If you write files, use the workspace tools and report what changed.
 - The surrounding LG UI stores chat turns separately; do not try to edit thread-messages.jsonl unless the user explicitly asks.`
 
 export async function runNovelGuideAgent(input: {
   bookId: string
   userMessage: string
-  references?: SettingCard[]
+  references?: ChatReference[]
   responseConstraints?: AppliedResponseConstraint[]
   skills?: SkillSummary[]
+  threadMessages?: Message[]
   threadId: string
+  agentSessionId?: string
+  baseAgentSessionId?: string
   signal?: AbortSignal
   readonlyOnly?: boolean
   workflowAction?: WorkflowAction
 }): Promise<NovelGuideAgentResult> {
-  const config = getOpenAICompatibleConfig()
+  const config = getEffectiveOpenAICompatibleConfig()
   if (!config) {
     return {
       reply: "Novel Guide 还没有配置模型。请设置 DEEPSEEK_API_KEY，或设置 LLM_PROVIDER=mimo 并提供 MIMO_API_KEY。",
@@ -154,12 +206,14 @@ export async function runNovelGuideAgent(input: {
   const bookTitle = book?.title ?? input.bookId
   await initNovelWorkspace(workspacePath, bookTitle)
 
-  const session = await loadSession(workspacePath, input.threadId)
+  const agentSessionId = input.agentSessionId ?? input.threadId
+  const baseAgentSessionId = input.baseAgentSessionId ?? agentSessionId
+  const session = await loadSession(workspacePath, baseAgentSessionId)
   const engine = new AgentEngine({
     cwd: workspacePath,
     client: createOpenAICompatibleClient(config),
     model: config.model,
-    sessionId: input.threadId,
+    sessionId: agentSessionId,
     initialMessages: session?.messages,
     initialCompaction: session?.compaction,
     appendSystemPrompt: LG_LEGACY_PROMPT,
@@ -175,6 +229,7 @@ export async function runNovelGuideAgent(input: {
     references: input.references ?? [],
     responseConstraints: input.responseConstraints ?? [],
     skills: input.skills ?? [],
+    threadMessages: input.threadMessages ?? [],
     workflowAction: input.workflowAction,
   }), { signal: input.signal })
 
@@ -193,15 +248,18 @@ export async function runNovelGuideAgent(input: {
 export async function* runNovelGuideAgentStream(input: {
   bookId: string
   userMessage: string
-  references?: SettingCard[]
+  references?: ChatReference[]
   responseConstraints?: AppliedResponseConstraint[]
   skills?: SkillSummary[]
+  threadMessages?: Message[]
   threadId: string
+  agentSessionId?: string
+  baseAgentSessionId?: string
   signal?: AbortSignal
   readonlyOnly?: boolean
   workflowAction?: WorkflowAction
 }): AsyncGenerator<NovelGuideAgentStreamEvent> {
-  const config = getOpenAICompatibleConfig()
+  const config = getEffectiveOpenAICompatibleConfig()
   if (!config) {
     yield {
       type: "done",
@@ -224,12 +282,14 @@ export async function* runNovelGuideAgentStream(input: {
   const bookTitle = book?.title ?? input.bookId
   await initNovelWorkspace(workspacePath, bookTitle)
 
-  const session = await loadSession(workspacePath, input.threadId)
+  const agentSessionId = input.agentSessionId ?? input.threadId
+  const baseAgentSessionId = input.baseAgentSessionId ?? agentSessionId
+  const session = await loadSession(workspacePath, baseAgentSessionId)
   const engine = new AgentEngine({
     cwd: workspacePath,
     client: createOpenAICompatibleClient(config),
     model: config.model,
-    sessionId: input.threadId,
+    sessionId: agentSessionId,
     initialMessages: session?.messages,
     initialCompaction: session?.compaction,
     appendSystemPrompt: LG_LEGACY_PROMPT,
@@ -245,6 +305,7 @@ export async function* runNovelGuideAgentStream(input: {
     references: input.references ?? [],
     responseConstraints: input.responseConstraints ?? [],
     skills: input.skills ?? [],
+    threadMessages: input.threadMessages ?? [],
     workflowAction: input.workflowAction,
   }), { signal: input.signal })) {
     if (event.type !== "done") {
@@ -272,7 +333,7 @@ export async function runNovelGuideReview(input: {
   threadId: string
   scope?: string
 }): Promise<NovelGuideReviewResult> {
-  const config = getOpenAICompatibleConfig()
+  const config = getEffectiveOpenAICompatibleConfig()
   if (!config) {
     return {
       reply: "Novel Guide 还没有配置模型。请设置 DEEPSEEK_API_KEY，或设置 LLM_PROVIDER=mimo 并提供 MIMO_API_KEY。",

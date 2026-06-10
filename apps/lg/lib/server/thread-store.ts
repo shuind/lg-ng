@@ -2,12 +2,26 @@ import fs from "fs/promises"
 import path from "path"
 import type { AgentEvent, Message, Thread, Turn } from "@/lib/types"
 import { makeId, nowIso } from "@/lib/server/ids"
-import { appendJsonlFile, readJsonlFile, writeJsonlFile } from "@/lib/server/jsonl"
+import { appendJsonlFile, readJsonlFile } from "@/lib/server/jsonl"
 import { getBookDir } from "@/lib/server/paths"
 
 const THREADS_FILE = "threads.json"
 const TURNS_FILE = "turns.jsonl"
 const MESSAGES_FILE = "thread-messages.jsonl"
+
+type TurnIndex = {
+  all: Turn[]
+  byId: Map<string, Turn>
+  byThread: Map<string, Turn[]>
+}
+
+type MessageIndex = {
+  visible: Message[]
+  byThread: Map<string, Message[]>
+}
+
+const turnIndexCache = new WeakMap<Turn[], TurnIndex>()
+const messageIndexCache = new WeakMap<Message[], MessageIndex>()
 
 function filePath(bookId: string, fileName: string): string {
   return path.join(getBookDir(bookId), fileName)
@@ -33,14 +47,82 @@ async function appendJsonl<T>(bookId: string, fileName: string, items: T[]): Pro
   await appendJsonlFile(filePath(bookId, fileName), items)
 }
 
-async function writeJsonl<T>(bookId: string, fileName: string, items: T[]): Promise<void> {
-  await writeJsonlFile(filePath(bookId, fileName), items)
-}
-
 async function saveThreads(bookId: string, threads: Thread[]): Promise<void> {
   const target = filePath(bookId, THREADS_FILE)
   await fs.mkdir(path.dirname(target), { recursive: true })
   await fs.writeFile(target, JSON.stringify(threads, null, 2), "utf-8")
+}
+
+function indexTurns(records: Turn[]): TurnIndex {
+  const cached = turnIndexCache.get(records)
+  if (cached) return cached
+
+  const byId = new Map<string, Turn>()
+  for (const record of records) {
+    if (!record.id || !record.threadId) continue
+    const existing = byId.get(record.id)
+    byId.set(record.id, existing ? { ...existing, ...record } : record)
+  }
+
+  const all = [...byId.values()]
+  const byThread = new Map<string, Turn[]>()
+  for (const turn of all) {
+    const bucket = byThread.get(turn.threadId) ?? []
+    bucket.push(turn)
+    byThread.set(turn.threadId, bucket)
+  }
+
+  const index = { all, byId, byThread }
+  turnIndexCache.set(records, index)
+  return index
+}
+
+function indexMessages(records: Message[]): MessageIndex {
+  const cached = messageIndexCache.get(records)
+  if (cached) return cached
+
+  const byId = new Map<string, Message>()
+  for (const record of records) {
+    if (!record.id || !record.threadId) continue
+    const existing = byId.get(record.id)
+    byId.set(record.id, existing ? { ...existing, ...record } : record)
+  }
+
+  const visible = [...byId.values()].filter((message) => !message.deletedAt)
+  const byThread = new Map<string, Message[]>()
+  for (const message of visible) {
+    const bucket = byThread.get(message.threadId) ?? []
+    bucket.push(message)
+    byThread.set(message.threadId, bucket)
+  }
+
+  const index = { visible, byThread }
+  messageIndexCache.set(records, index)
+  return index
+}
+
+function getTurnPathIds(turns: Turn[], leafTurnId: string): string[] | null {
+  const byId = new Map(turns.map((turn) => [turn.id, turn]))
+  const pathIds: string[] = []
+  const seen = new Set<string>()
+  let cursor: string | undefined = leafTurnId
+
+  while (cursor) {
+    if (seen.has(cursor)) return null
+    seen.add(cursor)
+    const turn = byId.get(cursor)
+    if (!turn) return null
+    pathIds.unshift(turn.id)
+    cursor = turn.parentTurnId
+  }
+
+  return pathIds
+}
+
+function messageRoleOrder(role: Message["role"]): number {
+  if (role === "user") return 0
+  if (role === "assistant") return 1
+  return 2
 }
 
 export async function listThreads(bookId: string, options: { includeDeleted?: boolean } = {}): Promise<Thread[]> {
@@ -60,10 +142,24 @@ async function listAllThreads(bookId: string): Promise<Thread[]> {
 
 export async function ensureDefaultThread(bookId: string): Promise<Thread> {
   const threads = await listAllThreads(bookId)
-  const existingActive = threads.find((thread) => thread.status === "active")
+  const existingActive = threads
+    .filter((thread) => thread.status === "active")
+    .sort(compareThreadsByRecency)[0]
   if (existingActive) return existingActive
 
   return createThread(bookId, { title: "默认任务线程" })
+}
+
+function compareThreadsByRecency(a: Thread, b: Thread): number {
+  const byUpdatedAt = timestampValue(b.updatedAt || b.createdAt) - timestampValue(a.updatedAt || a.createdAt)
+  if (byUpdatedAt !== 0) return byUpdatedAt
+  return b.createdAt.localeCompare(a.createdAt)
+}
+
+function timestampValue(value?: string): number {
+  if (!value) return Number.NEGATIVE_INFINITY
+  const time = Date.parse(value)
+  return Number.isFinite(time) ? time : Number.NEGATIVE_INFINITY
 }
 
 export async function getThread(bookId: string, threadId: string): Promise<Thread | null> {
@@ -127,14 +223,39 @@ export async function touchThread(bookId: string, threadId: string): Promise<Thr
 }
 
 export async function listTurns(bookId: string, threadId?: string): Promise<Turn[]> {
-  const turns = await readJsonl<Turn>(bookId, TURNS_FILE)
-  return threadId ? turns.filter((turn) => turn.threadId === threadId) : turns
+  const index = indexTurns(await readJsonl<Turn>(bookId, TURNS_FILE))
+  return threadId ? [...(index.byThread.get(threadId) ?? [])] : [...index.all]
 }
 
 export async function listThreadMessages(bookId: string, threadId?: string): Promise<Message[]> {
-  const messages = await readJsonl<Message>(bookId, MESSAGES_FILE)
-  const visible = messages.filter((message) => !message.deletedAt)
-  return threadId ? visible.filter((message) => message.threadId === threadId) : visible
+  const index = indexMessages(await readJsonl<Message>(bookId, MESSAGES_FILE))
+  return threadId ? [...(index.byThread.get(threadId) ?? [])] : [...index.visible]
+}
+
+export async function listThreadMessagesForTurnPath(
+  bookId: string,
+  threadId: string,
+  leafTurnId: string | null,
+): Promise<Message[]> {
+  if (leafTurnId === null) return []
+
+  const [turns, messages] = await Promise.all([
+    listTurns(bookId, threadId),
+    listThreadMessages(bookId, threadId),
+  ])
+  const pathTurnIds = getTurnPathIds(turns, leafTurnId)
+  if (!pathTurnIds) return []
+
+  const pathOrder = new Map(pathTurnIds.map((turnId, index) => [turnId, index]))
+  return messages
+    .filter((message) => pathOrder.has(message.turnId))
+    .sort((a, b) => {
+      const byTurn = (pathOrder.get(a.turnId) ?? 0) - (pathOrder.get(b.turnId) ?? 0)
+      if (byTurn !== 0) return byTurn
+      const byRole = messageRoleOrder(a.role) - messageRoleOrder(b.role)
+      if (byRole !== 0) return byRole
+      return a.createdAt.localeCompare(b.createdAt)
+    })
 }
 
 export async function getThreadBundle(bookId: string, threadId: string): Promise<{
@@ -155,16 +276,31 @@ export async function appendThreadMessages(bookId: string, messages: Message[]):
   await appendJsonl(bookId, MESSAGES_FILE, messages)
 }
 
+function resolveParentTurn(turns: Turn[], parentTurnId?: string | null): Turn | undefined {
+  if (parentTurnId === undefined) {
+    return [...turns].reverse().find((turn) => turn.status !== "cancelled")
+  }
+  if (parentTurnId === null) return undefined
+
+  const parentTurn = turns.find((turn) => turn.id === parentTurnId)
+  if (!parentTurn) {
+    throw new Error("parentTurnId does not exist in the target thread")
+  }
+  return parentTurn
+}
+
 export async function createRunningTurn(
   bookId: string,
   threadId: string,
   content: string,
   references: Message["references"] = [],
   constraints: Message["constraints"] = [],
+  options: { parentTurnId?: string | null } = {},
 ): Promise<{
   thread: Thread
   turn: Turn
   userMessage: Message
+  baseAgentSessionId: string
 }> {
   const thread = await touchThread(bookId, threadId)
   if (thread.status !== "active") {
@@ -172,15 +308,18 @@ export async function createRunningTurn(
   }
 
   const turns = await listTurns(bookId, threadId)
-  const parentTurn = [...turns].reverse().find((turn) => turn.status !== "cancelled")
+  const parentTurn = resolveParentTurn(turns, options.parentTurnId)
   const ts = nowIso()
   const turnId = makeId("turn")
   const userMessageId = makeId("msg")
+  const assistantMessageId = makeId("msg")
   const turn: Turn = {
     id: turnId,
     threadId: thread.id,
     parentTurnId: parentTurn?.id,
     userMessageId,
+    agentSessionId: turnId,
+    assistantMessageId,
     status: "running",
     createdAt: ts,
     updatedAt: ts,
@@ -199,18 +338,27 @@ export async function createRunningTurn(
 
   await appendJsonl(bookId, TURNS_FILE, [turn])
   await appendThreadMessages(bookId, [userMessage])
-  return { thread, turn, userMessage }
+  return {
+    thread,
+    turn,
+    userMessage,
+    baseAgentSessionId: parentTurn?.agentSessionId ?? (options.parentTurnId === undefined ? thread.id : turnId),
+  }
 }
 
 export async function updateTurn(bookId: string, turnId: string, patch: Partial<Turn>): Promise<Turn | null> {
-  const turns = await listTurns(bookId)
-  let updatedTurn: Turn | null = null
-  const updated = turns.map((turn) => {
-    if (turn.id !== turnId) return turn
-    updatedTurn = { ...turn, ...patch, updatedAt: nowIso() }
-    return updatedTurn
-  })
-  await writeJsonl(bookId, TURNS_FILE, updated)
+  const index = indexTurns(await readJsonl<Turn>(bookId, TURNS_FILE))
+  const existing = index.byId.get(turnId)
+  if (!existing) return null
+  const updatedTurn: Turn = {
+    ...existing,
+    ...patch,
+    id: existing.id,
+    threadId: existing.threadId,
+    createdAt: existing.createdAt,
+    updatedAt: nowIso(),
+  }
+  await appendJsonl(bookId, TURNS_FILE, [updatedTurn])
   return updatedTurn
 }
 
@@ -233,7 +381,7 @@ export async function forkThread(bookId: string, sourceThreadId: string, turnId:
     throw new Error("分叉位置不存在")
   }
 
-  const copiedTurns = sourceTurns.slice(0, pivotIndex)
+  const copiedTurns = sourceTurns.slice(0, pivotIndex + 1)
   const thread = await createThread(bookId, {
     title: title?.trim() || `Branch: ${source.title}`,
     branchFrom: { threadId: sourceThreadId, turnId },
@@ -278,6 +426,7 @@ export async function forkThread(bookId: string, sourceThreadId: string, turnId:
 }
 
 export function createAssistantMessage(args: {
+  id?: string
   threadId: string
   turnId: string
   content: string
@@ -287,7 +436,7 @@ export function createAssistantMessage(args: {
   proposalSet?: Message["proposalSet"]
 }): Message {
   return {
-    id: makeId("msg"),
+    id: args.id ?? makeId("msg"),
     threadId: args.threadId,
     turnId: args.turnId,
     role: "assistant",

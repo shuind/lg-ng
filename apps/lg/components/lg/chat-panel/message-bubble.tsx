@@ -1,20 +1,22 @@
-"use client"
+﻿"use client"
 
 import { memo } from "react"
-import type { Message } from "@/lib/mock-data"
+import type { Message } from "@/lib/types"
 import { AssistantMessageBubble } from "./assistant-message-bubble"
+import type { TurnBranchNavigation } from "./types"
 import { UserMessageBubble } from "./user-message-bubble"
 
 export const MessageBubble = memo(function MessageBubble({
   message,
   selected,
   streaming,
-  isLatestUser,
   highlightedUser,
+  branchNavigation,
   registerUserMessage,
   onSelectTurn,
   onForkThread,
-  onEditLatest,
+  onSelectTurnBranch,
+  onSubmitEditedTurn,
   rollingBackLedgerEntryId,
   applyingProposalId,
   onRollbackLedgerEntry,
@@ -24,12 +26,13 @@ export const MessageBubble = memo(function MessageBubble({
   message: Message
   selected: boolean
   streaming: boolean
-  isLatestUser: boolean
   highlightedUser: boolean
+  branchNavigation?: TurnBranchNavigation
   registerUserMessage: (turnId: string, element: HTMLDivElement | null) => void
   onSelectTurn: (turnId: string) => void
   onForkThread: (turnId: string) => void
-  onEditLatest: (content: string) => void
+  onSelectTurnBranch: (turnId: string) => void
+  onSubmitEditedTurn: (turnId: string, content: string) => Promise<void>
   rollingBackLedgerEntryId: string | null
   applyingProposalId: string | null
   onRollbackLedgerEntry: (entryId: string) => Promise<void>
@@ -41,11 +44,12 @@ export const MessageBubble = memo(function MessageBubble({
       <UserMessageBubble
         message={message}
         selected={selected}
-        isLatestUser={isLatestUser}
         highlightedUser={highlightedUser}
+        branchNavigation={branchNavigation}
         registerUserMessage={registerUserMessage}
         onSelectTurn={onSelectTurn}
-        onEditLatest={onEditLatest}
+        onSelectTurnBranch={onSelectTurnBranch}
+        onSubmitEditedTurn={onSubmitEditedTurn}
       />
     )
   }

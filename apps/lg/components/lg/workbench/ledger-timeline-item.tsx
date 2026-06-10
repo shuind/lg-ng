@@ -2,23 +2,29 @@
 
 import { Eye, RotateCcw } from "lucide-react"
 import type { LedgerEntry } from "@/lib/types"
+import { cn } from "@/lib/utils"
 import { canDirectRollback, formatLedgerTimestamp } from "./ledger-utils"
 
 export function LedgerTimelineItem({
   entry,
+  selected,
   rollingBack,
   onOpenFile,
   onPreview,
   onRollback,
 }: {
   entry: LedgerEntry
+  selected?: boolean
   rollingBack: boolean
   onOpenFile: (path: string) => void
   onPreview: (entry: LedgerEntry) => void
   onRollback: (entry: LedgerEntry) => void
 }) {
   return (
-    <div className="paper rounded-lg border border-border/60 bg-card/60 px-4 py-3 backdrop-blur">
+    <div className={cn(
+      "paper rounded-lg border border-border/60 bg-card/60 px-4 py-3 backdrop-blur transition",
+      selected && "ring-2 ring-primary/50",
+    )}>
       <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
         <span className="font-mono">{formatLedgerTimestamp(entry.timestamp)}</span>
         <span className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10px]">

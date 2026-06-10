@@ -24,7 +24,7 @@ export function SkillCard({
   const canEditSkill = !isStyleGuide && skillDirectoryName(skill) !== null
 
   return (
-    <div className="paper rounded-2xl border border-border/60 bg-card/60 p-4 backdrop-blur">
+    <div className="paper rounded-lg border border-border/60 bg-card/60 p-4 backdrop-blur">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">

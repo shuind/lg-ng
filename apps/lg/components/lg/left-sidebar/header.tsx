@@ -8,7 +8,7 @@ export function SidebarHeader({ onToggleCollapsed }: { onToggleCollapsed: () => 
     <div className="shrink-0 px-5 pb-3 pt-5">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="relative h-7 w-7 rounded-lg bg-gradient-to-br from-accent/40 to-accent/10 ring-1 ring-border/60">
+          <div className="surface-2 relative h-7 w-7 rounded-lg border border-border/60">
             <Sparkles className="absolute inset-0 m-auto h-3.5 w-3.5 text-accent-foreground/80" />
           </div>
           <div className="leading-tight">
@@ -28,7 +28,7 @@ export function SidebarHeader({ onToggleCollapsed }: { onToggleCollapsed: () => 
           </button>
         </div>
       </div>
-      <div className="mt-3 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
+      <div className="mt-3 h-px bg-border/60" />
     </div>
   )
 }

@@ -1,8 +1,8 @@
-"use client"
+﻿"use client"
 
 import { useEffect, useState } from "react"
 import { ChevronRight, FileText } from "lucide-react"
-import type { WorkbenchFile, WorkbenchGroup } from "@/lib/mock-data"
+import type { WorkbenchFile, WorkbenchGroup } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 const DEFAULT_OPEN_WORKBENCH_GROUPS = new Set([

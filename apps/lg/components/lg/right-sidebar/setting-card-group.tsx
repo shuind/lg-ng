@@ -30,16 +30,16 @@ export function SettingCardGroup({
   const { Icon, label } = settingCategoryMeta(category)
 
   return (
-    <section className="space-y-1">
+    <section className="space-y-1.5">
       <button
         type="button"
         onClick={onToggleGroup}
-        className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-[12px] text-muted-foreground transition hover:bg-sidebar-accent/25 hover:text-foreground"
+        className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-[12px] text-muted-foreground/75 transition hover:bg-sidebar-accent/20 hover:text-foreground"
         aria-expanded={open}
       >
         <ChevronRight className={cn("h-3 w-3 shrink-0 transition", open && "rotate-90")} />
-        <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/80" />
-        <span className="min-w-0 flex-1 truncate font-medium text-foreground/85">{label}</span>
+        <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/65" />
+        <span className="min-w-0 flex-1 truncate font-medium text-foreground/75">{label}</span>
         <span className="font-mono text-[10px] text-muted-foreground/60">
           {cards.length}
         </span>

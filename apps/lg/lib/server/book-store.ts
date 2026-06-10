@@ -1,12 +1,12 @@
 import fs from "fs/promises"
 import path from "path"
 import type { Book, BookTreeNode, OutlineFile } from "@/lib/types"
-import { markDirty } from "@/lib/server/dirty-index"
+import { clearDirty, markDirty } from "@/lib/server/dirty-index"
 import { appendLedgerEntry } from "@/lib/server/ledger"
 import { withBookMutationQueue } from "@/lib/server/book-mutation-queue"
 import { getBookDir, getBooksRoot } from "@/lib/server/paths"
 import { resolveInsideBook } from "@/lib/server/safe-paths"
-import { getBookTreeFromIndex, listOutlineFilesFromIndex, rebuildBookIndexes, updateIndexedFile } from "@/lib/server/book-index"
+import { getBookTreeFromIndex, listOutlineFilesFromIndex, rebuildBookIndexes, removeIndexedFile, updateIndexedFile } from "@/lib/server/book-index"
 
 function slugify(title: string): string {
   return title
@@ -36,6 +36,11 @@ async function fileExists(filePath: string) {
   } catch {
     return false
   }
+}
+
+export type WriteBookFileOptions = {
+  action?: string
+  summary?: string
 }
 
 export async function listBooks(): Promise<Book[]> {
@@ -107,6 +112,7 @@ export async function createBook(title: string): Promise<Book> {
   await ensureDir(path.join(bookDir, "写作约束"))
   await ensureDir(path.join(bookDir, "章节摘要"))
   await ensureDir(path.join(bookDir, "检查报告"))
+  await ensureDir(path.join(bookDir, "inbox"))
 
   const bookMeta = {
     id,
@@ -196,35 +202,6 @@ export async function getBookTree(bookId: string): Promise<BookTreeNode[]> {
 
 export async function listOutlineFiles(bookId: string): Promise<OutlineFile[]> {
   return listOutlineFilesFromIndex(bookId)
-
-  const tree = await getBookTree(bookId)
-  const outlines: OutlineFile[] = []
-
-  function visit(nodes: BookTreeNode[]) {
-    for (const node of nodes) {
-      if (node.type === "directory") {
-        visit(node.children ?? [])
-        continue
-      }
-      const isVolume = node.path.startsWith("卷纲/") || node.path.includes("/卷纲/")
-      const isChapter = node.path.startsWith("章节大纲/") || node.path.includes("/章节大纲/") || node.path.includes("章纲")
-      if (!isVolume && !isChapter) continue
-      outlines.push({
-        id: node.path,
-        bookId,
-        title: node.name.replace(/\.md$/i, ""),
-        level: isVolume ? "volume" : "chapter",
-        path: node.path,
-        updatedAt: node.updatedAt ?? "",
-      })
-    }
-  }
-
-  visit(tree)
-  return outlines.sort((a, b) => {
-    if (a.level !== b.level) return a.level === "volume" ? -1 : 1
-    return a.path.localeCompare(b.path, "zh-CN")
-  })
 }
 
 export async function readBookFile(bookId: string, filePath: string): Promise<string | null> {
@@ -250,11 +227,21 @@ export async function getBookFileMtime(bookId: string, filePath: string): Promis
   }
 }
 
-export async function writeBookFile(bookId: string, filePath: string, content: string): Promise<boolean> {
-  return withBookMutationQueue(bookId, () => writeBookFileUnlocked(bookId, filePath, content))
+export async function writeBookFile(
+  bookId: string,
+  filePath: string,
+  content: string,
+  options: WriteBookFileOptions = {},
+): Promise<boolean> {
+  return withBookMutationQueue(bookId, () => writeBookFileUnlocked(bookId, filePath, content, options))
 }
 
-async function writeBookFileUnlocked(bookId: string, filePath: string, content: string): Promise<boolean> {
+async function writeBookFileUnlocked(
+  bookId: string,
+  filePath: string,
+  content: string,
+  options: WriteBookFileOptions = {},
+): Promise<boolean> {
   const resolved = resolveInsideBook(bookId, filePath)
   if (!resolved) return false
 
@@ -283,13 +270,43 @@ async function writeBookFileUnlocked(bookId: string, filePath: string, content: 
   if (!isLedgerFile) {
     await appendLedgerEntry(bookId, {
       actor: "user",
-      action: "write_file",
+      action: options.action ?? "write_file",
       targetPath: filePath,
       beforeSnapshot,
       afterSnapshot: content,
-      summary: `手动保存 ${filePath}`,
+      summary: options.summary ?? `手动保存 ${filePath}`,
     }).catch(() => {})
   }
 
   return true
+}
+
+export async function deleteBookFile(bookId: string, filePath: string): Promise<boolean> {
+  return withBookMutationQueue(bookId, async () => {
+    const resolved = resolveInsideBook(bookId, filePath)
+    if (!resolved || filePath === "ledger.jsonl") return false
+
+    let beforeSnapshot: string
+    try {
+      const stat = await fs.stat(resolved)
+      if (!stat.isFile()) return false
+      beforeSnapshot = await fs.readFile(resolved, "utf-8")
+    } catch {
+      return false
+    }
+
+    await fs.unlink(resolved)
+    await clearDirty(bookId, filePath).catch(() => {})
+    await touchBookUpdatedAt(bookId)
+    await removeIndexedFile(bookId, filePath).catch(() => {})
+    await appendLedgerEntry(bookId, {
+      actor: "user",
+      action: "delete_file",
+      targetPath: filePath,
+      beforeSnapshot,
+      summary: `Delete ${filePath}`,
+    }).catch(() => {})
+
+    return true
+  })
 }

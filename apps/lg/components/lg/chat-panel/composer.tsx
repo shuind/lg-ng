@@ -1,7 +1,7 @@
-"use client"
+﻿"use client"
 
 import { forwardRef, memo, useImperativeHandle } from "react"
-import type { SettingCard } from "@/lib/mock-data"
+import type { ChatReference, ImportedMaterial, SettingCard } from "@/lib/types"
 import type { ResponseConstraint } from "@/lib/types"
 import { ChatComposerPanel } from "./composer-panel"
 import type { ChatCitation, ChatSendOptions } from "./types"
@@ -9,22 +9,23 @@ import { useChatComposerState } from "./use-chat-composer-state"
 
 export type ChatComposerHandle = {
   editLatest: (text: string) => void
+  focus: () => void
 }
 
 interface ChatComposerProps {
   bookId: string
   activeThreadId: string
   activeThreadTitle: string
-  reviewing: boolean
   citations: ChatCitation[]
   settingCards: SettingCard[]
+  importedMaterials: ImportedMaterial[]
   responseConstraints: ResponseConstraint[]
   activeResponseConstraintIds: string[]
   latestUserTurnId: string | null
+  sendBlocked?: boolean
   onQuestionJump: () => void
   onSend: (text: string, citations: ChatCitation[], options: ChatSendOptions) => Promise<void>
-  onReview: () => Promise<void>
-  onAddCitation: (card: SettingCard) => void
+  onAddCitation: (reference: ChatReference) => void
   onRemoveCitation: (cardId: string) => void
   onClearCitations: () => void
   onCreateResponseConstraint: (input: Pick<ResponseConstraint, "title" | "instruction">) => Promise<void>
@@ -37,15 +38,15 @@ export const ChatComposer = memo(forwardRef<ChatComposerHandle, ChatComposerProp
   bookId,
   activeThreadId,
   activeThreadTitle,
-  reviewing,
   citations,
   settingCards,
+  importedMaterials,
   responseConstraints,
   activeResponseConstraintIds,
   latestUserTurnId,
+  sendBlocked = false,
   onQuestionJump,
   onSend,
-  onReview,
   onAddCitation,
   onRemoveCitation,
   onClearCitations,
@@ -60,6 +61,7 @@ export const ChatComposer = memo(forwardRef<ChatComposerHandle, ChatComposerProp
     citations,
     responseConstraints,
     activeResponseConstraintIds,
+    sendBlocked,
     onSend,
     onClearCitations,
     onSetActiveResponseConstraintIds,
@@ -69,6 +71,9 @@ export const ChatComposer = memo(forwardRef<ChatComposerHandle, ChatComposerProp
     editLatest(text: string) {
       composer.editLatest(text)
     },
+    focus() {
+      composer.inputRef.current?.focus()
+    },
   }), [composer])
 
   return (
@@ -76,7 +81,7 @@ export const ChatComposer = memo(forwardRef<ChatComposerHandle, ChatComposerProp
       inputRef={composer.inputRef}
       input={composer.input}
       sending={composer.sending}
-      reviewing={reviewing}
+      sendBlocked={sendBlocked}
       latestUserTurnId={latestUserTurnId}
       activeThreadTitle={activeThreadTitle}
       activeResponseConstraints={composer.activeResponseConstraints}
@@ -93,14 +98,15 @@ export const ChatComposer = memo(forwardRef<ChatComposerHandle, ChatComposerProp
       skills={composer.skills}
       skillIds={composer.skillIds}
       settingCards={settingCards}
+      importedMaterials={importedMaterials}
       onInputChange={composer.setInput}
       onSend={composer.handleSend}
       onCancelSend={composer.handleCancelSend}
-      onReview={onReview}
       onQuestionJump={onQuestionJump}
       onRemoveConstraint={composer.handleRemoveConstraint}
       onRemoveTemporaryConstraint={composer.handleRemoveTemporaryConstraint}
       onRemoveSkill={composer.handleRemoveSkill}
+      onClearWorkflowAction={composer.handleClearWorkflowAction}
       onRemoveCitation={onRemoveCitation}
       onClearCitations={onClearCitations}
       onTabChange={composer.setPlusTab}

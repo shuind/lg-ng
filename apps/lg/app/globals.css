@@ -161,14 +161,9 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: 'ss01', 'cv11';
-    /* 纸质纹理 + 窗边光 */
+    /* 纸质纹理 */
     background-image:
-      /* 纸纹噪点 */
-      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.045 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"),
-      /* 暖光从右上 */
-      radial-gradient(ellipse 80% 60% at 95% -10%, var(--light-warm), transparent 70%),
-      /* 冷光从左下 */
-      radial-gradient(ellipse 60% 50% at 5% 110%, var(--light-cool), transparent 70%);
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.045 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
     background-attachment: fixed;
   }
 }
@@ -183,6 +178,25 @@
 
   .paper-soft {
     background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.0' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.025 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  }
+
+  .surface-1 {
+    background: oklch(from var(--card) l c h / 0.78);
+    border-color: oklch(from var(--border) l c h / 0.72);
+  }
+
+  .surface-2 {
+    background: oklch(from var(--muted) l c h / 0.48);
+    border-color: oklch(from var(--border) l c h / 0.56);
+  }
+
+  .surface-3 {
+    background: oklch(from var(--background) l c h / 0.72);
+    border-color: oklch(from var(--border) l c h / 0.42);
+  }
+
+  .hairline {
+    border-color: oklch(from var(--border) l c h / 0.52);
   }
 
   /* 呼吸动画 */
@@ -214,16 +228,6 @@
     animation: breathe-glow 5s ease-in-out infinite;
   }
 
-  @keyframes drift {
-    0%, 100% { transform: translate(0, 0); }
-    33% { transform: translate(8px, -6px); }
-    66% { transform: translate(-6px, 4px); }
-  }
-
-  .animate-drift {
-    animation: drift 18s ease-in-out infinite;
-  }
-
   @keyframes pulse-dot {
     0%, 100% { opacity: 0.4; }
     50% { opacity: 1; }
@@ -231,22 +235,6 @@
 
   .animate-pulse-dot {
     animation: pulse-dot 2s ease-in-out infinite;
-  }
-
-  /* 月光/阳光环境光层 */
-  .ambient-window {
-    position: relative;
-  }
-  .ambient-window::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background:
-      radial-gradient(ellipse 50% 40% at 90% 0%, var(--light-warm), transparent 65%),
-      radial-gradient(ellipse 40% 30% at 10% 100%, var(--light-cool), transparent 70%);
-    opacity: 0.7;
-    z-index: 0;
   }
 
   .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }

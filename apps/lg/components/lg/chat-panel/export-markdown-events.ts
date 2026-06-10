@@ -1,4 +1,4 @@
-import type { AgentEvent } from "@/lib/mock-data"
+﻿import type { AgentEvent } from "@/lib/types"
 
 export function appendEventMarkdown(lines: string[], events: AgentEvent[]) {
   if (events.length === 0) return

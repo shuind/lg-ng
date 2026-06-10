@@ -17,9 +17,10 @@ import {
   ensureDefaultThread,
   getThread,
   listThreadMessages,
+  listThreadMessagesForTurnPath,
   updateTurn,
 } from "@/lib/server/thread-store"
-import type { AppliedResponseConstraint, ChatChangeEntry, LedgerEntry, SettingCard, WorkflowAction } from "@/lib/types"
+import type { AppliedResponseConstraint, ChatChangeEntry, ChatReference, LedgerEntry, Message, SettingCard, WorkflowAction } from "@/lib/types"
 import type { FileChange, FileProposal } from "novel-guide"
 
 type TrackedFileChange = FileChange & { path: string }
@@ -72,6 +73,9 @@ async function sendThreadMessageUnlocked(bookId: string, body: unknown): Promise
   if (!targetThread || targetThread.status !== "active") {
     throw new ChatRequestError("当前线程不可发送消息", 409)
   }
+  const priorThreadMessages = input.parentTurnId === undefined
+    ? await listThreadMessages(bookId, targetThreadId)
+    : await listThreadMessagesForTurnPath(bookId, targetThreadId, input.parentTurnId)
 
   const selectedSkills = await resolveSkillSummaries(bookId, input.skillIds)
   const responseConstraints = await resolveResponseConstraintSnapshot(bookId, {
@@ -85,19 +89,20 @@ async function sendThreadMessageUnlocked(bookId: string, body: unknown): Promise
     path: skill.summaryFile || skill.sourceFile,
   }))
   const messageReferences = [
-    ...input.references.map((card) => ({
-      type: card.category,
-      name: card.name,
-      path: card.path ?? card.id,
+    ...input.references.map((reference) => ({
+      type: reference.type || reference.category || reference.kind,
+      name: reference.name,
+      path: reference.path ?? reference.id,
     })),
     ...skillReferences,
   ]
-  const { thread, turn, userMessage } = await createRunningTurn(
+  const { thread, turn, userMessage, baseAgentSessionId } = await createRunningTurn(
     bookId,
     targetThreadId,
     input.userText,
     messageReferences,
     responseConstraints,
+    { parentTurnId: input.parentTurnId },
   )
 
   try {
@@ -107,7 +112,10 @@ async function sendThreadMessageUnlocked(bookId: string, body: unknown): Promise
       references: input.references,
       responseConstraints,
       skills: selectedSkills,
+      threadMessages: priorThreadMessages,
       threadId: thread.id,
+      agentSessionId: turn.agentSessionId,
+      baseAgentSessionId,
       readonlyOnly: input.readonlyOnly,
       workflowAction: input.workflowAction,
     })
@@ -154,6 +162,7 @@ async function sendThreadMessageUnlocked(bookId: string, body: unknown): Promise
       : result.reply
 
     const assistantMessage = createAssistantMessage({
+      id: turn.assistantMessageId,
       threadId: thread.id,
       turnId: turn.id,
       content: assistantContent,
@@ -185,9 +194,10 @@ async function sendThreadMessageUnlocked(bookId: string, body: unknown): Promise
       createAgentEvent(turn.id, { type: "error", message: errorMessage }),
     ]
     const assistantMessage = createAssistantMessage({
+      id: turn.assistantMessageId,
       threadId: thread.id,
       turnId: turn.id,
-      content: "处理失败，请稍后重试。",
+      content: userFacingErrorMessage(errorMessage),
       events,
     })
     await appendThreadMessages(bookId, [assistantMessage]).catch(() => {})
@@ -245,6 +255,9 @@ async function streamThreadMessageUnlocked(
   if (!targetThread || targetThread.status !== "active") {
     throw new ChatRequestError("当前线程不可发送消息", 409)
   }
+  const priorThreadMessages = input.parentTurnId === undefined
+    ? await listThreadMessages(bookId, targetThreadId)
+    : await listThreadMessagesForTurnPath(bookId, targetThreadId, input.parentTurnId)
 
   const selectedSkills = await resolveSkillSummaries(bookId, input.skillIds)
   const responseConstraints = await resolveResponseConstraintSnapshot(bookId, {
@@ -258,19 +271,20 @@ async function streamThreadMessageUnlocked(
     path: skill.summaryFile || skill.sourceFile,
   }))
   const messageReferences = [
-    ...input.references.map((card) => ({
-      type: card.category,
-      name: card.name,
-      path: card.path ?? card.id,
+    ...input.references.map((reference) => ({
+      type: reference.type || reference.category || reference.kind,
+      name: reference.name,
+      path: reference.path ?? reference.id,
     })),
     ...skillReferences,
   ]
-  const { thread, turn, userMessage } = await createRunningTurn(
+  const { thread, turn, userMessage, baseAgentSessionId } = await createRunningTurn(
     bookId,
     targetThreadId,
     input.userText,
     messageReferences,
     responseConstraints,
+    { parentTurnId: input.parentTurnId },
   )
   emitSse(controller, "turn", { thread, turn, userMessage })
 
@@ -278,8 +292,37 @@ async function streamThreadMessageUnlocked(
     createAgentEvent(turn.id, { type: "observe", text: "已开始处理。" }),
   ]
   emitSse(controller, "agent_event", events[0])
+  let assistantContent = ""
+  let lastProgressWriteAt = 0
+  let progressWritePending = false
+  const progressMessageId = turn.assistantMessageId
+  const persistProgressMessage = async (force = false) => {
+    if (!progressMessageId) return
+    const now = Date.now()
+    if (!force && now - lastProgressWriteAt < 750) {
+      progressWritePending = true
+      return
+    }
+    lastProgressWriteAt = now
+    progressWritePending = false
+    const progressMessage: Message = {
+      id: progressMessageId,
+      threadId: thread.id,
+      turnId: turn.id,
+      role: "assistant",
+      content: assistantContent,
+      version: 1,
+      createdAt: turn.createdAt,
+      events: [...events],
+    }
+    await appendThreadMessages(bookId, [progressMessage]).catch(() => {})
+  }
+  const flushProgressMessage = async () => {
+    if (progressWritePending) await persistProgressMessage(true)
+  }
 
   try {
+    await persistProgressMessage(true)
     let finalResult: Awaited<ReturnType<typeof runNovelGuideAgent>> | null = null
     for await (const streamEvent of runNovelGuideAgentStream({
       bookId,
@@ -287,7 +330,10 @@ async function streamThreadMessageUnlocked(
       references: input.references,
       responseConstraints,
       skills: selectedSkills,
+      threadMessages: priorThreadMessages,
       threadId: thread.id,
+      agentSessionId: turn.agentSessionId,
+      baseAgentSessionId,
       signal,
       readonlyOnly: input.readonlyOnly,
       workflowAction: input.workflowAction,
@@ -303,8 +349,11 @@ async function streamThreadMessageUnlocked(
         const event = createAgentEvent(turn.id, { type: "observe", text: `模型轮次 ${engineEvent.loop + 1}/${engineEvent.maxLoops}。` })
         events.push(event)
         emitSse(controller, "agent_event", event)
+        await persistProgressMessage(true)
       } else if (engineEvent.type === "assistant_delta") {
+        assistantContent = engineEvent.accumulatedText
         emitSse(controller, "assistant_delta", { text: engineEvent.accumulatedText, delta: engineEvent.text })
+        await persistProgressMessage()
       } else if (engineEvent.type === "reasoning_delta") {
         const event = createAgentEvent(turn.id, {
           type: "reasoning",
@@ -312,6 +361,7 @@ async function streamThreadMessageUnlocked(
         })
         events.push(event)
         emitSse(controller, "reasoning_delta", { text: engineEvent.text, loop: engineEvent.loop })
+        await persistProgressMessage()
       } else if (engineEvent.type === "usage_update") {
         const event = createAgentEvent(turn.id, {
           type: "observe",
@@ -320,6 +370,7 @@ async function streamThreadMessageUnlocked(
         })
         events.push(event)
         emitSse(controller, "agent_event", event)
+        await persistProgressMessage(true)
       } else if (engineEvent.type === "tool_call") {
         const event = createAgentEvent(turn.id, {
           type: "tool_call",
@@ -329,6 +380,7 @@ async function streamThreadMessageUnlocked(
         })
         events.push(event)
         emitSse(controller, "agent_event", event)
+        await persistProgressMessage(true)
       } else if (engineEvent.type === "tool_result") {
         const event = createAgentEvent(turn.id, {
           type: engineEvent.ok ? "observe" : "error",
@@ -340,14 +392,17 @@ async function streamThreadMessageUnlocked(
         })
         events.push(event)
         emitSse(controller, "agent_event", event)
+        await persistProgressMessage(true)
       } else if (engineEvent.type === "error") {
         const event = createAgentEvent(turn.id, { type: "error", message: engineEvent.message })
         events.push(event)
         emitSse(controller, "agent_event", event)
+        await persistProgressMessage(true)
       }
     }
 
     if (!finalResult) throw new Error("处理结束但没有返回结果")
+    await flushProgressMessage()
     const changeRecord = await recordAgentFileChanges(bookId, finalResult.fileChanges)
     const changedPaths = changeRecord.paths
     const changeSet = buildMessageChangeSet(changeRecord.entries)
@@ -385,10 +440,11 @@ async function streamThreadMessageUnlocked(
           toolTrace: finalResult.toolTrace.length > 0 ? finalResult.toolTrace : undefined,
         }
       : undefined
-    const assistantContent = changedPaths.length > 0
+    assistantContent = changedPaths.length > 0
       ? `${finalResult.reply.trim()}\n\n${summarizeChangedPaths(changedPaths)}`
       : finalResult.reply
     const assistantMessage = createAssistantMessage({
+      id: turn.assistantMessageId,
       threadId: thread.id,
       turnId: turn.id,
       content: assistantContent,
@@ -414,6 +470,7 @@ async function streamThreadMessageUnlocked(
   } catch (err) {
     if (isAbortError(err) || signal.aborted) {
       const cancelledTurn = await updateTurn(bookId, turn.id, { status: "cancelled" })
+      await flushProgressMessage()
       emitSse(controller, "done", {
         thread,
         turn: cancelledTurn ?? { ...turn, status: "cancelled" },
@@ -428,10 +485,13 @@ async function streamThreadMessageUnlocked(
     const event = createAgentEvent(turn.id, { type: "error", message: errorMessage })
     events.push(event)
     emitSse(controller, "agent_event", event)
+    assistantContent = userFacingErrorMessage(errorMessage)
+    await persistProgressMessage(true)
     const assistantMessage = createAssistantMessage({
+      id: turn.assistantMessageId,
       threadId: thread.id,
       turnId: turn.id,
-      content: "处理失败，请稍后重试。",
+      content: assistantContent,
       events,
     })
     await appendThreadMessages(bookId, [assistantMessage]).catch(() => {})
@@ -472,13 +532,38 @@ function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError"
 }
 
+function userFacingErrorMessage(errorMessage: string): string {
+  const lower = errorMessage.toLowerCase()
+  if (
+    lower.includes("api key") ||
+    lower.includes("apikey") ||
+    lower.includes("auth") ||
+    lower.includes("unauthorized") ||
+    lower.includes("401") ||
+    lower.includes("deepseek")
+  ) {
+    return "模型配置不可用。请检查服务端环境变量里的 API key，然后重试。"
+  }
+  if (lower.includes("timeout") || lower.includes("timed out") || lower.includes("超时")) {
+    return "请求超时。可以直接重试；如果连续发生，请缩小本轮范围或检查网络连接。"
+  }
+  if (lower.includes("network") || lower.includes("fetch failed") || lower.includes("econnreset")) {
+    return "网络请求失败。请检查连接后重试。"
+  }
+  if (errorMessage.includes("当前线程不可发送消息")) {
+    return "当前线程不可发送消息。请切换到活跃线程或新建任务线程。"
+  }
+  return `处理失败：${errorMessage || "请稍后重试。"}`
+}
+
 function normalizeSendMessageInput(body: unknown): {
   userText: string
   threadId: string | undefined
-  references: SettingCard[]
+  references: ChatReference[]
   constraintIds: string[] | undefined
   skillIds: string[]
   temporaryConstraints: AppliedResponseConstraint[]
+  parentTurnId?: string | null
   readonlyOnly: boolean
   workflowAction?: WorkflowAction
 } {
@@ -499,6 +584,7 @@ function normalizeSendMessageInput(body: unknown): {
     constraintIds: parseConstraintIds(raw.constraintIds),
     skillIds: parseSkillIds(raw.skillIds),
     temporaryConstraints: parseTemporaryConstraints(raw.temporaryConstraints),
+    parentTurnId: parseParentTurnId(raw.parentTurnId),
     readonlyOnly: raw.readonlyOnly === true,
     workflowAction: parseWorkflowAction(raw.workflowAction),
   }
@@ -566,6 +652,7 @@ function buildMessageChangeSet(entries: LedgerEntry[]) {
       targetPath: entry.targetPath,
       summary: entry.summary,
       diffPatch: entry.diffPatch && entry.diffPatch.length <= 60000 ? entry.diffPatch : undefined,
+      diffOmitted: Boolean(entry.diffPatch && entry.diffPatch.length > 60000),
       rollbackable: Boolean(entry.targetPath && entry.afterHash),
     })),
   }
@@ -610,14 +697,31 @@ async function recordAgentProposals(bookId: string, proposals: FileProposal[]) {
   })))
 }
 
-function parseReferences(value: unknown): SettingCard[] {
+function parseReferences(value: unknown): ChatReference[] {
   if (!Array.isArray(value)) return []
-  return value.flatMap((item) => {
-    if (!item || typeof item !== "object") return []
+  const references: ChatReference[] = []
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue
     const raw = item as Record<string, unknown>
     const card = item as Partial<SettingCard>
+    const rawKind = raw.kind === "material" ? "material" : raw.kind === "setting" ? "setting" : undefined
     const category = raw.category === "place" ? "location" : card.category
-    if (typeof card.id !== "string" || typeof card.name !== "string" || typeof card.summary !== "string") return []
+    if (typeof card.id !== "string" || typeof card.name !== "string" || typeof card.summary !== "string") continue
+    if (rawKind === "material" || raw.type === "material") {
+      const materialPath = typeof raw.path === "string" ? raw.path : undefined
+      if (!materialPath) continue
+      references.push({
+        id: card.id,
+        kind: "material",
+        type: "material",
+        name: card.name,
+        summary: card.summary,
+        path: materialPath,
+        size: typeof raw.size === "number" ? raw.size : undefined,
+        updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : undefined,
+      })
+      continue
+    }
     if (
       category !== "character" &&
       category !== "location" &&
@@ -628,18 +732,22 @@ function parseReferences(value: unknown): SettingCard[] {
       category !== "rule" &&
       category !== "other"
     ) {
-      return []
+      continue
     }
-    return [{
+    references.push({
       id: card.id,
+      kind: "setting",
+      type: category,
       category,
       name: card.name,
       summary: card.summary,
       content: typeof card.content === "string" ? card.content : undefined,
       path: typeof card.path === "string" ? card.path : undefined,
+      aliases: Array.isArray(card.aliases) ? card.aliases.filter((item): item is string => typeof item === "string") : undefined,
       meta: card.meta && typeof card.meta === "object" ? card.meta as Record<string, string> : undefined,
-    }]
-  })
+    })
+  }
+  return references
 }
 
 function parseConstraintIds(value: unknown): string[] | undefined {
@@ -650,6 +758,14 @@ function parseConstraintIds(value: unknown): string[] | undefined {
 function parseSkillIds(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return [...new Set(value.filter((item): item is string => typeof item === "string"))]
+}
+
+function parseParentTurnId(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined
+  if (value === null) return null
+  if (typeof value !== "string") return undefined
+  const trimmed = value.trim()
+  return trimmed ? trimmed : null
 }
 
 function parseTemporaryConstraints(value: unknown): AppliedResponseConstraint[] {

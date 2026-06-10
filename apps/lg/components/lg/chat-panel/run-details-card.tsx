@@ -1,8 +1,9 @@
-"use client"
+﻿"use client"
 
-import { ChevronDown, FileText, ListChecks } from "lucide-react"
-import type { AgentEvent, Message } from "@/lib/mock-data"
+import { AlertTriangle, CheckCircle2, ChevronDown, FileText, ListChecks, Wrench } from "lucide-react"
+import type { AgentEvent, Message } from "@/lib/types"
 import { useWorkbenchOpen } from "@/components/lg/workbench-open-context"
+import { cn } from "@/lib/utils"
 
 export function RunDetailsCard({
   brief,
@@ -26,22 +27,22 @@ export function RunDetailsCard({
   ].slice(0, 4)
   const contextPaths = brief?.contextPaths ?? events.flatMap((event) => event.paths ?? [])
   const changedPaths = brief?.changedPaths ?? events.flatMap((event) => event.paths ?? [])
-  const resultEvents = events.filter((event) => event.resultPreview || event.durationMs || event.usage)
+  const toolRuns = buildToolRuns(events)
   const latestUsage = [...events].reverse().find((event) => event.usage)?.usage
   const toolSummary = summarizeToolTrace(toolTrace)
-  const hasDetails = toolTrace.length > 0 || failures.length > 0 || visibleNotes.length > 0 || contextPaths.length > 0 || changedPaths.length > 0 || resultEvents.length > 0 || Boolean(latestUsage)
+  const hasDetails = toolTrace.length > 0 || failures.length > 0 || visibleNotes.length > 0 || contextPaths.length > 0 || changedPaths.length > 0 || toolRuns.length > 0 || Boolean(latestUsage)
 
   if (!hasDetails) return null
 
   return (
-    <details className="group mt-1 rounded-lg border border-border/50 bg-muted/20 text-[12px] text-muted-foreground">
+    <details className="surface-2 group mt-1 rounded-lg border border-l-2 border-l-border text-[12px] text-muted-foreground">
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 [&::-webkit-details-marker]:hidden">
         <ListChecks className="h-3.5 w-3.5 shrink-0" />
         <span className="font-medium text-foreground/80">处理细节</span>
         <span className="min-w-0 flex-1 truncate">{failures.length > 0 ? `${failures.length} 个问题` : toolSummary}</span>
         <ChevronDown className="h-3.5 w-3.5 shrink-0 transition group-open:rotate-180" />
       </summary>
-      <div className="space-y-2 border-t border-border/40 px-3 py-2">
+      <div className="space-y-2 border-t hairline px-3 py-2">
         {contextPaths.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {dedupe(contextPaths).slice(0, 3).map((item) => (
@@ -63,61 +64,86 @@ export function RunDetailsCard({
             </div>
           </div>
         )}
-        {toolTrace.length > 0 && <div>{toolSummary}</div>}
+        {toolRuns.length > 0 ? (
+          <div className="space-y-1.5">
+            {toolRuns.map((run) => {
+              const evidenceLinks = extractEvidenceLinks(run)
+              return (
+                <details key={run.id} className="surface-3 group/tool rounded-md border">
+                  <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1.5 [&::-webkit-details-marker]:hidden">
+                    {run.ok === false ? (
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-destructive" />
+                    ) : run.resultPreview || run.durationMs ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                    ) : (
+                      <Wrench className="h-3.5 w-3.5 shrink-0" />
+                    )}
+                    <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-foreground/85">
+                      {run.name}
+                    </span>
+                    {typeof run.durationMs === "number" && (
+                      <span className="font-mono text-[10px] text-muted-foreground">{run.durationMs}ms</span>
+                    )}
+                    <ChevronDown className="h-3.5 w-3.5 shrink-0 transition group-open/tool:rotate-180" />
+                  </summary>
+                  <div className="space-y-2 border-t hairline px-2 py-2">
+                    {run.argsPreview && (
+                      <pre className="max-h-28 overflow-auto whitespace-pre-wrap rounded bg-background/55 p-2 font-mono text-[10.5px] leading-relaxed">
+                        {run.argsPreview}
+                      </pre>
+                    )}
+                    {run.resultPreview && (
+                      <div className={cn("rounded bg-background/55 p-2 text-[11px] leading-relaxed", run.ok === false && "text-destructive")}>
+                        {run.resultPreview}
+                      </div>
+                    )}
+                    {run.message && (
+                      <div className="rounded bg-destructive/10 p-2 text-[11px] leading-relaxed text-destructive">
+                        {run.message}
+                      </div>
+                    )}
+                    {evidenceLinks.length > 0 && (
+                      <div className="space-y-1">
+                        {evidenceLinks.map((link, index) => (
+                          <button
+                            key={`${link.path}:${link.line ?? 0}:${index}`}
+                            type="button"
+                            disabled={!workbench}
+                            onClick={(clickEvent) => {
+                              clickEvent.preventDefault()
+                              clickEvent.stopPropagation()
+                              workbench?.openPath(link.path, { initialLine: link.line })
+                            }}
+                            className="flex w-full min-w-0 items-start gap-1.5 rounded border hairline bg-background/60 px-2 py-1 text-left transition hover:bg-secondary/60 disabled:cursor-default disabled:opacity-60"
+                            title={link.line ? `${link.path}:${link.line}` : link.path}
+                          >
+                            <FileText className="mt-0.5 h-3 w-3 shrink-0" />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate font-mono text-[10.5px] text-foreground/80">
+                                {formatContextPath(link.path)}
+                                {link.line ? `:${link.line}` : ""}
+                              </span>
+                              {link.excerpt && (
+                                <span className="mt-0.5 block line-clamp-1 text-[10.5px] leading-relaxed">
+                                  {link.excerpt}
+                                </span>
+                              )}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </details>
+              )
+            })}
+          </div>
+        ) : toolTrace.length > 0 ? (
+          <div>{toolSummary}</div>
+        ) : null}
         {latestUsage && (
           <div className="rounded bg-background/60 px-2 py-1 font-mono text-[10.5px]">
             tokens p:{latestUsage.promptTokens} c:{latestUsage.completionTokens} total:{latestUsage.totalTokens}
-          </div>
-        )}
-        {resultEvents.length > 0 && (
-          <div className="space-y-1">
-            {resultEvents.slice(-6).map((event) => {
-              const evidenceLinks = extractEvidenceLinks(event)
-              return (
-                <div key={event.id} className="rounded bg-background/60 px-2 py-1">
-                  <div className="flex items-center gap-2 font-mono text-[10.5px] text-foreground/80">
-                    <span>{event.name ?? event.type}</span>
-                    {typeof event.durationMs === "number" && <span>{event.durationMs}ms</span>}
-                  </div>
-                  {event.resultPreview && (
-                    <div className="mt-0.5 line-clamp-2 text-[11px] leading-relaxed">
-                      {event.resultPreview}
-                    </div>
-                  )}
-                  {evidenceLinks.length > 0 && (
-                    <div className="mt-1.5 space-y-1">
-                      {evidenceLinks.map((link, index) => (
-                        <button
-                          key={`${link.path}:${link.line ?? 0}:${index}`}
-                          type="button"
-                          disabled={!workbench}
-                          onClick={(clickEvent) => {
-                            clickEvent.preventDefault()
-                            clickEvent.stopPropagation()
-                            workbench?.openPath(link.path)
-                          }}
-                          className="flex w-full min-w-0 items-start gap-1.5 rounded border border-border/40 bg-background/70 px-2 py-1 text-left transition hover:border-border hover:bg-secondary/60 disabled:cursor-default disabled:opacity-60"
-                          title={link.line ? `${link.path}:${link.line}` : link.path}
-                        >
-                          <FileText className="mt-0.5 h-3 w-3 shrink-0" />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate font-mono text-[10.5px] text-foreground/80">
-                              {formatContextPath(link.path)}
-                              {link.line ? `:${link.line}` : ""}
-                            </span>
-                            {link.excerpt && (
-                              <span className="mt-0.5 block line-clamp-1 text-[10.5px] leading-relaxed">
-                                {link.excerpt}
-                              </span>
-                            )}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
           </div>
         )}
         {visibleNotes.length > 0 && (
@@ -145,7 +171,49 @@ interface EvidenceLink {
   excerpt?: string
 }
 
-function extractEvidenceLinks(event: AgentEvent): EvidenceLink[] {
+interface ToolRun {
+  id: string
+  name: string
+  argsPreview?: string
+  resultPreview?: string
+  durationMs?: number
+  ok?: boolean
+  message?: string
+}
+
+function buildToolRuns(events: AgentEvent[]): ToolRun[] {
+  const runs: ToolRun[] = []
+
+  for (const event of events) {
+    if (event.type === "tool_call") {
+      runs.push({
+        id: event.id,
+        name: event.name ?? event.text ?? "tool",
+        argsPreview: event.argsPreview,
+      })
+      continue
+    }
+
+    if (!event.name || (!event.resultPreview && typeof event.durationMs !== "number" && event.type !== "error")) {
+      continue
+    }
+
+    const run = [...runs].reverse().find((item) => item.name === event.name && !item.resultPreview && item.ok === undefined)
+    const target: ToolRun = run ?? {
+      id: event.id,
+      name: event.name,
+    }
+    target.resultPreview = event.resultPreview
+    target.durationMs = event.durationMs
+    target.ok = event.type !== "error"
+    target.message = event.message
+    if (!run) runs.push(target)
+  }
+
+  return runs.slice(-8)
+}
+
+function extractEvidenceLinks(event: Pick<ToolRun, "resultPreview">): EvidenceLink[] {
   const preview = event.resultPreview?.trim()
   if (!preview) return []
 

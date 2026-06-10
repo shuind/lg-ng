@@ -10,7 +10,7 @@ export function ComposerQuestionJump({
   onQuestionJump: () => void
 }) {
   return (
-    <div className="mb-2 flex justify-end">
+    <div className="mb-1 flex justify-end">
       <button
         type="button"
         onClick={onQuestionJump}

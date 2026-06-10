@@ -1,10 +1,12 @@
 "use client"
 
 import { createContext, useContext, useMemo, type ReactNode } from "react"
+import type { WorkbenchOpenOptions } from "./workbench/types"
 
 interface WorkbenchOpenContextValue {
   activeBookId: string
-  openPath: (path?: string) => void
+  openPath: (path?: string, options?: Pick<WorkbenchOpenOptions, "initialLine">) => void
+  openLedger: (entryId: string, path?: string) => void
 }
 
 const WorkbenchOpenContext = createContext<WorkbenchOpenContextValue | null>(null)
@@ -15,14 +17,26 @@ export function WorkbenchOpenProvider({
   children,
 }: {
   activeBookId: string
-  onOpenWorkbench: (bookId: string, path?: string) => void
+  onOpenWorkbench: (bookId: string, options?: string | WorkbenchOpenOptions) => void
   children: ReactNode
 }) {
   const value = useMemo<WorkbenchOpenContextValue>(() => ({
     activeBookId,
-    openPath(path) {
+    openPath(path, options) {
       if (!activeBookId) return
-      onOpenWorkbench(activeBookId, path)
+      onOpenWorkbench(activeBookId, {
+        path,
+        initialLine: options?.initialLine,
+        initialTab: "editor",
+      })
+    },
+    openLedger(entryId, path) {
+      if (!activeBookId) return
+      onOpenWorkbench(activeBookId, {
+        path,
+        initialTab: "ledger",
+        initialLedgerEntryId: entryId,
+      })
     },
   }), [activeBookId, onOpenWorkbench])
 

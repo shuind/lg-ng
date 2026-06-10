@@ -1,4 +1,4 @@
-import type { Message } from "@/lib/mock-data"
+﻿import type { Message } from "@/lib/types"
 
 export function roleLabel(role: Message["role"]): string {
   if (role === "user") return "用户"

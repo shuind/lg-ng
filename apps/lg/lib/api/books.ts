@@ -1,70 +1,52 @@
-import {
-  type Book,
-  type Chapter,
-  type Message,
-  type OutlineFile,
-  type SettingCard,
-  type Thread,
-  type Turn,
-  mockBooks,
-  mockChapters,
-  mockMessages,
-  mockSettingCards,
-  mockThreads,
-  mockTurns,
-} from "../mock-data"
+import type { Book, Chapter, ImportedMaterial, Message, OutlineFile, SettingCard, Thread, Turn } from "../types"
 import type { ResponseConstraint } from "../types"
-import { delay, fallbackResponseConstraints, relativeTime } from "./common"
+import { readJsonResponse, relativeTime } from "./common"
+
+type RawBook = {
+  id: string
+  title: string
+  createdAt?: string
+  updatedAt: string
+  rootPath?: string
+}
+
+function normalizeBook(book: RawBook): Book {
+  return {
+    id: book.id,
+    title: book.title,
+    createdAt: book.createdAt ?? book.updatedAt,
+    updatedAt: relativeTime(book.updatedAt),
+    rootPath: book.rootPath ?? book.id,
+  }
+}
 
 export async function listBooks(): Promise<Book[]> {
-  try {
-    const res = await fetch("/api/books", { cache: "no-store" })
-    if (!res.ok) throw new Error("api failed")
-    const data = await res.json()
-    if (!Array.isArray(data) || data.length === 0) throw new Error("empty")
-    return data.map((b: { id: string; title: string; updatedAt: string }) => ({
-      id: b.id,
-      title: b.title,
-      updatedAt: relativeTime(b.updatedAt),
-    }))
-  } catch {
-    await delay()
-    return mockBooks
-  }
+  const res = await fetch("/api/books", { cache: "no-store" })
+  const data = await readJsonResponse<RawBook[]>(res)
+  if (!Array.isArray(data)) throw new Error("书籍列表返回格式无效")
+  return data.map(normalizeBook)
 }
 
 export async function createBook(title?: string): Promise<Book> {
-  try {
-    const res = await fetch("/api/books", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: title ?? "未命名书籍" }),
-    })
-    if (!res.ok) throw new Error("api failed")
-    const b = await res.json()
-    return { id: b.id, title: b.title, updatedAt: "刚刚" }
-  } catch {
-    await delay()
-    return { id: `b${Date.now()}`, title: title ?? "未命名", updatedAt: "刚刚" }
-  }
+  const res = await fetch("/api/books", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title: title ?? "未命名书籍" }),
+  })
+  const book = await readJsonResponse<RawBook>(res)
+  return normalizeBook({ ...book, updatedAt: book.updatedAt ?? new Date().toISOString() })
 }
 
-export async function renameBook(bookId: string, title: string): Promise<Book | null> {
-  try {
-    const res = await fetch(`/api/books/${bookId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title }),
-    })
-    if (!res.ok) throw new Error("api failed")
-    const b = await res.json()
-    return { id: b.id, title: b.title, updatedAt: relativeTime(b.updatedAt) }
-  } catch {
-    return null
-  }
+export async function renameBook(bookId: string, title: string): Promise<Book> {
+  const res = await fetch(`/api/books/${bookId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  })
+  const book = await readJsonResponse<RawBook>(res)
+  return normalizeBook(book)
 }
 
-// === 初始化(合并请求) ===
 export async function initBook(bookId: string): Promise<{
   chapters: Chapter[]
   outlines: OutlineFile[]
@@ -73,131 +55,91 @@ export async function initBook(bookId: string): Promise<{
   activeThreadId: string
   turns: Turn[]
   cards: SettingCard[]
+  importedMaterials: ImportedMaterial[]
   responseConstraints: ResponseConstraint[]
   threadConstraintIds: Record<string, string[]>
 }> {
-  try {
-    const res = await fetch(`/api/books/${bookId}/init`, { cache: "no-store" })
-    if (!res.ok) throw new Error("api failed")
-    const data = await res.json()
-    const threads = Array.isArray(data.threads) ? data.threads : []
-    const activeThreadId = typeof data.activeThreadId === "string" ? data.activeThreadId : threads[0]?.id ?? ""
-    return {
-      chapters: Array.isArray(data.chapters) ? data.chapters : [],
-      outlines: Array.isArray(data.outlines) ? data.outlines : [],
-      messages: Array.isArray(data.messages) ? data.messages : [],
-      threads,
-      activeThreadId,
-      turns: Array.isArray(data.turns) ? data.turns : [],
-      cards: Array.isArray(data.cards) ? data.cards : [],
-      responseConstraints: Array.isArray(data.responseConstraints) ? data.responseConstraints : [],
-      threadConstraintIds: data.threadConstraintIds && typeof data.threadConstraintIds === "object" ? data.threadConstraintIds : {},
-    }
-  } catch {
-    await delay()
-    const threads = mockThreads.filter((t) => t.bookId === bookId || bookId === "b1")
-    return {
-      chapters: mockChapters.filter((c) => c.bookId === bookId),
-      outlines: [],
-      messages: mockMessages,
-      threads,
-      activeThreadId: threads[0]?.id ?? "thread-mock",
-      turns: mockTurns,
-      cards: mockSettingCards,
-      responseConstraints: fallbackResponseConstraints,
-      threadConstraintIds: {},
-    }
+  const res = await fetch(`/api/books/${bookId}/init`, { cache: "no-store" })
+  const data = await readJsonResponse<{
+    chapters?: unknown
+    outlines?: unknown
+    messages?: unknown
+    threads?: unknown
+    activeThreadId?: unknown
+    turns?: unknown
+    cards?: unknown
+    importedMaterials?: unknown
+    responseConstraints?: unknown
+    threadConstraintIds?: unknown
+  }>(res)
+  const threads = Array.isArray(data.threads) ? data.threads as Thread[] : []
+  return {
+    chapters: Array.isArray(data.chapters) ? data.chapters as Chapter[] : [],
+    outlines: Array.isArray(data.outlines) ? data.outlines as OutlineFile[] : [],
+    messages: Array.isArray(data.messages) ? data.messages as Message[] : [],
+    threads,
+    activeThreadId: typeof data.activeThreadId === "string" ? data.activeThreadId : threads[0]?.id ?? "",
+    turns: Array.isArray(data.turns) ? data.turns as Turn[] : [],
+    cards: Array.isArray(data.cards) ? data.cards as SettingCard[] : [],
+    importedMaterials: Array.isArray(data.importedMaterials) ? data.importedMaterials as ImportedMaterial[] : [],
+    responseConstraints: Array.isArray(data.responseConstraints) ? data.responseConstraints as ResponseConstraint[] : [],
+    threadConstraintIds: data.threadConstraintIds && typeof data.threadConstraintIds === "object"
+      ? data.threadConstraintIds as Record<string, string[]>
+      : {},
   }
 }
 
-// === 章节 ===
 export async function listChapters(bookId: string): Promise<Chapter[]> {
-  try {
-    const res = await fetch(`/api/books/${bookId}/chapters`, { cache: "no-store" })
-    if (!res.ok) throw new Error("api failed")
-    const data = await res.json()
-    if (!Array.isArray(data)) throw new Error("invalid")
-    return data
-  } catch {
-    await delay()
-    return mockChapters.filter((c) => c.bookId === bookId)
-  }
+  const res = await fetch(`/api/books/${bookId}/chapters`, { cache: "no-store" })
+  const data = await readJsonResponse<Chapter[]>(res)
+  if (!Array.isArray(data)) throw new Error("章节列表返回格式无效")
+  return data
 }
 
 export async function createChapter(bookId: string, title?: string): Promise<Chapter> {
-  try {
-    const res = await fetch(`/api/books/${bookId}/chapters`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title }),
-    })
-    if (!res.ok) throw new Error("api failed")
-    return await res.json()
-  } catch {
-    await delay()
-    const idx =
-      mockChapters.filter((c) => c.bookId === bookId).reduce((m, c) => Math.max(m, c.index), 0) + 1
-    return {
-      id: `c${Date.now()}`,
-      bookId,
-      title: title ?? `第${idx}章 · 未命名`,
-      index: idx,
-      wordCount: 0,
-      status: "draft",
-      path: `章节正文/${title ?? `第${idx}章 · 未命名`}.md`,
-      updatedAt: new Date().toISOString(),
-    }
-  }
+  const res = await fetch(`/api/books/${bookId}/chapters`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  })
+  return readJsonResponse<Chapter>(res)
 }
 
-export async function getChapter(bookId: string, chapterId: string): Promise<{ id: string; title: string; content: string; path: string; updatedAt: string }> {
-  try {
-    const res = await fetch(`/api/books/${bookId}/chapters/${encodeURIComponent(chapterId)}`, { cache: "no-store" })
-    if (!res.ok) throw new Error("api failed")
-    return await res.json()
-  } catch {
-    await delay()
-    return {
-      id: chapterId,
-      title: mockChapters.find((c) => c.id === chapterId)?.title ?? "",
-      content: "",
-      path: mockChapters.find((c) => c.id === chapterId)?.path ?? "",
-      updatedAt: new Date().toISOString(),
-    }
-  }
+export async function getChapter(
+  bookId: string,
+  chapterId: string,
+): Promise<{ id: string; title: string; content: string; path: string; updatedAt: string }> {
+  const res = await fetch(`/api/books/${bookId}/chapters/${encodeURIComponent(chapterId)}`, { cache: "no-store" })
+  return readJsonResponse(res)
 }
 
-export async function saveChapter(bookId: string, chapterId: string, content: string): Promise<{ updatedAt: string }> {
-  try {
-    const res = await fetch(`/api/books/${bookId}/chapters/${encodeURIComponent(chapterId)}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content }),
-    })
-    if (!res.ok) throw new Error("api failed")
-    return await res.json()
-  } catch {
-    await delay()
-    return { updatedAt: new Date().toISOString() }
-  }
+export async function saveChapter(
+  bookId: string,
+  chapterId: string,
+  content: string,
+): Promise<{ updatedAt: string }> {
+  const res = await fetch(`/api/books/${bookId}/chapters/${encodeURIComponent(chapterId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  })
+  return readJsonResponse(res)
 }
 
-// === 对话 ===
+export async function deleteChapter(bookId: string, chapterId: string): Promise<{ success: boolean; updatedAt: string }> {
+  const res = await fetch(`/api/books/${bookId}/chapters/${encodeURIComponent(chapterId)}`, {
+    method: "DELETE",
+  })
+  return readJsonResponse(res)
+}
 
 export async function generateDraft(bookId: string, chapterId: string, prompt?: string): Promise<string> {
-  try {
-    const res = await fetch(`/api/books/${bookId}/chapters/${encodeURIComponent(chapterId)}/draft`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt }),
-    })
-    if (!res.ok) throw new Error("api failed")
-    const data = await res.json()
-    return data.draft ?? "（试写）生成失败，请重试。"
-  } catch {
-    await delay(600)
-    return "（试写）夜色压得人心头发沉。林晓提着剑,沿着回廊往内堂走去,廊下的灯一盏一盏地灭。"
-  }
+  const res = await fetch(`/api/books/${bookId}/chapters/${encodeURIComponent(chapterId)}/draft`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt }),
+  })
+  const data = await readJsonResponse<{ draft?: string }>(res)
+  if (typeof data.draft !== "string") throw new Error("试写接口没有返回正文")
+  return data.draft
 }
-
-// === 工作台 ===

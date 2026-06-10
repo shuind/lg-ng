@@ -1,5 +1,6 @@
 /**
- * Migrate runtime data from lg/data/ to ../.lg-data (the new default data root).
+ * Migrate runtime data from apps/lg/data/ to the repo-level .lg-data/
+ * directory (the default runtime data root).
  *
  * Usage:  pnpm data:migrate
  *         LG_DATA_DIR=/custom/path pnpm data:migrate
@@ -8,14 +9,16 @@
  */
 import fs from "fs/promises"
 import path from "path"
+import { fileURLToPath } from "url"
 
-const OLD_DATA_DIR = path.join(process.cwd(), "data")
+const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
+const OLD_DATA_DIR = path.join(APP_ROOT, "data")
 
 function getTargetRoot(): string {
   if (process.env.LG_DATA_DIR) {
     return path.resolve(process.env.LG_DATA_DIR)
   }
-  return path.resolve(process.cwd(), "..", ".lg-data")
+  return path.resolve(APP_ROOT, "..", "..", ".lg-data")
 }
 
 async function dirExists(dir: string): Promise<boolean> {

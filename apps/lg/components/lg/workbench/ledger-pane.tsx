@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
+import { useVirtualizer } from "@tanstack/react-virtual"
 import { Clock3 } from "lucide-react"
 import type { LedgerEntry } from "@/lib/types"
 import { listLedgerEntries, rollbackLedgerEntry } from "@/lib/api"
@@ -11,10 +12,12 @@ import { EmptyPane, LoadingPane } from "./shared"
 
 export function LedgerPane({
   bookId,
+  initialEntryId,
   onOpenFile,
   onChanged,
 }: {
   bookId: string
+  initialEntryId?: string
   onOpenFile: (path: string) => void
   onChanged: () => void
 }) {
@@ -24,6 +27,13 @@ export function LedgerPane({
   const [nextCursor, setNextCursor] = useState<string | undefined>(undefined)
   const [previewEntry, setPreviewEntry] = useState<LedgerEntry | null>(null)
   const [rollingBackId, setRollingBackId] = useState<string | null>(null)
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+  const virtualizer = useVirtualizer({
+    count: entries.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 96,
+    overscan: 8,
+  })
 
   useEffect(() => {
     setLoading(true)
@@ -31,9 +41,12 @@ export function LedgerPane({
       .then((response) => {
         setEntries(response.entries)
         setNextCursor(response.nextCursor)
+        if (initialEntryId) {
+          setPreviewEntry(response.entries.find((entry) => entry.id === initialEntryId) ?? null)
+        }
       })
       .finally(() => setLoading(false))
-  }, [bookId])
+  }, [bookId, initialEntryId])
 
   async function handleRollback(entry: LedgerEntry) {
     if (!canDirectRollback(entry)) return
@@ -75,10 +88,10 @@ export function LedgerPane({
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin px-10 py-6">
-      <div className="mx-auto grid max-w-5xl gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="space-y-2">
-          <div className="mb-4 flex items-center justify-between">
+    <div className="h-full min-h-0 overflow-hidden px-8 py-6">
+      <div className="mx-auto grid h-full min-h-0 max-w-[1440px] gap-4 lg:grid-cols-[minmax(320px,420px)_minmax(0,1fr)]">
+        <div className="flex min-h-0 flex-col">
+          <div className="mb-4 flex shrink-0 items-center justify-between">
             <div>
               <div className="font-serif text-[16px] text-foreground">最近修改</div>
               <div className="mt-1 text-[12px] text-muted-foreground">设定与正文的写作时间线</div>
@@ -86,28 +99,47 @@ export function LedgerPane({
             <span className="text-[11px] text-muted-foreground">{entries.length} 条</span>
           </div>
 
-          {entries.map((entry) => (
-            <LedgerTimelineItem
-              key={entry.id}
-              entry={entry}
-              rollingBack={rollingBackId === entry.id}
-              onOpenFile={onOpenFile}
-              onPreview={setPreviewEntry}
-              onRollback={handleRollback}
-            />
-          ))}
-
-          {nextCursor && (
-            <button
-              type="button"
-              onClick={handleLoadMore}
-              disabled={loadingMore}
-              className="mt-3 flex w-full items-center justify-center rounded-md border border-border/60 bg-background/50 px-3 py-2 text-[12px] text-muted-foreground transition hover:bg-secondary hover:text-foreground disabled:opacity-50"
+          <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto pr-1 scrollbar-thin">
+            <div
+              className="relative"
+              style={{ height: `${virtualizer.getTotalSize()}px` }}
             >
-              {loadingMore ? "加载中..." : "加载更多"}
-            </button>
-          )}
+              {virtualizer.getVirtualItems().map((virtualRow) => {
+                const entry = entries[virtualRow.index]
+                return (
+                  <div
+                    key={virtualRow.key}
+                    data-index={virtualRow.index}
+                    ref={virtualizer.measureElement}
+                    className="absolute left-0 top-0 w-full pb-2"
+                    style={{ transform: `translateY(${virtualRow.start}px)` }}
+                  >
+                    <LedgerTimelineItem
+                      entry={entry}
+                      selected={previewEntry?.id === entry.id}
+                      rollingBack={rollingBackId === entry.id}
+                      onOpenFile={onOpenFile}
+                      onPreview={setPreviewEntry}
+                      onRollback={handleRollback}
+                    />
+                  </div>
+                )
+              })}
+            </div>
+
+            {nextCursor && (
+              <button
+                type="button"
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+                className="mt-3 flex w-full items-center justify-center rounded-md border border-border/60 bg-background/50 px-3 py-2 text-[12px] text-muted-foreground transition hover:bg-secondary hover:text-foreground disabled:opacity-50"
+              >
+                {loadingMore ? "加载中..." : "加载更多"}
+              </button>
+            )}
+          </div>
         </div>
+
         <LedgerPreviewPanel entry={previewEntry} />
       </div>
     </div>

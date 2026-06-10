@@ -1,8 +1,11 @@
-"use client"
+﻿"use client"
 
-import { BookOpen, PanelLeft, Plus, Settings } from "lucide-react"
-import type { Book } from "@/lib/mock-data"
+import { useEffect, useRef } from "react"
+import { BookOpen, PanelLeft, Plus } from "lucide-react"
+import { AppSettingsLink } from "@/components/lg/app-settings-link"
+import type { Book } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { ThemeModeToggle } from "./theme-mode-toggle"
 
 export function CollapsedSidebar({
   books,
@@ -10,6 +13,7 @@ export function CollapsedSidebar({
   mode,
   onToggleCollapsed,
   onSelectBook,
+  onPrefetchBook,
   onNewBook,
 }: {
   books: Book[]
@@ -17,8 +21,32 @@ export function CollapsedSidebar({
   mode: "chat" | "writing" | "workbench"
   onToggleCollapsed: () => void
   onSelectBook: (id: string) => void
+  onPrefetchBook: (id: string) => void
   onNewBook: () => void
 }) {
+  const prefetchTimersRef = useRef<Map<string, number>>(new Map())
+
+  function cancelPrefetch(bookId: string) {
+    const timer = prefetchTimersRef.current.get(bookId)
+    if (timer === undefined) return
+    window.clearTimeout(timer)
+    prefetchTimersRef.current.delete(bookId)
+  }
+
+  function schedulePrefetch(bookId: string) {
+    cancelPrefetch(bookId)
+    const timer = window.setTimeout(() => {
+      prefetchTimersRef.current.delete(bookId)
+      onPrefetchBook(bookId)
+    }, 150)
+    prefetchTimersRef.current.set(bookId, timer)
+  }
+
+  useEffect(() => () => {
+    prefetchTimersRef.current.forEach((timer) => window.clearTimeout(timer))
+    prefetchTimersRef.current.clear()
+  }, [])
+
   return (
     <aside className="relative flex h-full min-h-0 w-full flex-col items-center gap-1 bg-sidebar/80 paper-soft py-4">
       <button
@@ -35,6 +63,8 @@ export function CollapsedSidebar({
           <button
             key={book.id}
             onClick={() => onSelectBook(book.id)}
+            onPointerEnter={() => schedulePrefetch(book.id)}
+            onPointerLeave={() => cancelPrefetch(book.id)}
             className={cn(
               "group relative flex h-9 w-9 items-center justify-center rounded-lg transition",
               book.id === activeBookId && mode !== "workbench"
@@ -54,12 +84,8 @@ export function CollapsedSidebar({
           <Plus className="h-4 w-4" />
         </button>
       </div>
-      <button
-        className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-sidebar-accent hover:text-foreground"
-        title="设置"
-      >
-        <Settings className="h-4 w-4" />
-      </button>
+      <AppSettingsLink compact />
+      <ThemeModeToggle compact />
     </aside>
   )
 }

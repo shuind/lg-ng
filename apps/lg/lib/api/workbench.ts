@@ -1,6 +1,5 @@
-import { type WorkbenchFile, type WorkbenchGroup, mockFileContent, mockWorkbenchTree } from "../mock-data"
-import type { BookTreeNode, RelationshipGraph, RetrievedContext } from "../types"
-import { delay } from "./common"
+import type { BookTreeNode, RelationshipGraph, RetrievedContext, WorkbenchFile, WorkbenchGroup } from "../types"
+import { readJsonResponse } from "./common"
 
 const workbenchGroupOrder = [
   "章节正文",
@@ -177,108 +176,77 @@ function sortWorkbenchFiles(files: WorkbenchFile[]): WorkbenchFile[] {
 }
 
 export async function listWorkbenchTree(bookId: string): Promise<WorkbenchGroup[]> {
-  try {
-    const res = await fetch(`/api/books/${bookId}/tree`, { cache: "no-store" })
-    if (!res.ok) throw new Error("api failed")
-    const nodes: BookTreeNode[] = await res.json()
-    if (!Array.isArray(nodes) || nodes.length === 0) throw new Error("empty")
+  const res = await fetch(`/api/books/${bookId}/tree`, { cache: "no-store" })
+  const nodes = await readJsonResponse<BookTreeNode[]>(res)
+  if (!Array.isArray(nodes)) throw new Error("工作台文件树返回格式无效")
 
-    const groups = new Map<string, WorkbenchGroup>()
+  const groups = new Map<string, WorkbenchGroup>()
 
-    function appendFile(node: BookTreeNode) {
-      const category = toWorkbenchCategory(node.path)
-      if (!category) return
+  function appendFile(node: BookTreeNode) {
+    const category = toWorkbenchCategory(node.path)
+    if (!category) return
 
-      const existing = groups.get(category.label)
-      const group = existing ?? { id: `workbench:${category.label}`, label: category.label, files: [] }
-      group.files.push({ id: node.path, name: category.name, path: node.path })
-      groups.set(category.label, group)
-    }
+    const existing = groups.get(category.label)
+    const group = existing ?? { id: `workbench:${category.label}`, label: category.label, files: [] }
+    group.files.push({ id: node.path, name: category.name, path: node.path })
+    groups.set(category.label, group)
+  }
 
-    function visit(nodes: BookTreeNode[]) {
-      for (const node of nodes) {
-        if (node.type === "file") {
-          appendFile(node)
-        } else {
-          visit(node.children ?? [])
-        }
+  function visit(nodes: BookTreeNode[]) {
+    for (const node of nodes) {
+      if (node.type === "file") {
+        appendFile(node)
+      } else {
+        visit(node.children ?? [])
       }
     }
-
-    visit(nodes)
-
-    return [...groups.values()]
-      .map((group) => ({ ...group, files: sortWorkbenchFiles(group.files) }))
-      .sort((a, b) => {
-        const ai = workbenchGroupOrder.indexOf(a.label)
-        const bi = workbenchGroupOrder.indexOf(b.label)
-        if (ai !== -1 || bi !== -1) return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi)
-        return a.label.localeCompare(b.label, "zh-CN", { numeric: true })
-      })
-  } catch {
-    await delay()
-    return mockWorkbenchTree
   }
+
+  visit(nodes)
+
+  return [...groups.values()]
+    .map((group) => ({ ...group, files: sortWorkbenchFiles(group.files) }))
+    .sort((a, b) => {
+      const ai = workbenchGroupOrder.indexOf(a.label)
+      const bi = workbenchGroupOrder.indexOf(b.label)
+      if (ai !== -1 || bi !== -1) return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi)
+      return a.label.localeCompare(b.label, "zh-CN", { numeric: true })
+    })
 }
 
 export async function readWorkbenchFile(bookId: string, path: string): Promise<{ content: string; updatedAt: string }> {
-  try {
-    const res = await fetch(`/api/books/${bookId}/file?path=${encodeURIComponent(path)}`, { cache: "no-store" })
-    if (!res.ok) throw new Error("api failed")
-    const data = await res.json()
-    if (typeof data.content === "string") return { content: data.content, updatedAt: data.updatedAt ?? "" }
-    throw new Error("no content")
-  } catch {
-    await delay()
-    return { content: mockFileContent[path] ?? `# ${path}\n\n（暂无内容）`, updatedAt: "" }
+  const res = await fetch(`/api/books/${bookId}/file?path=${encodeURIComponent(path)}`, { cache: "no-store" })
+  const data = await readJsonResponse<{ content?: unknown; updatedAt?: unknown }>(res)
+  if (typeof data.content === "string") {
+    return { content: data.content, updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : "" }
   }
+  throw new Error("文件内容返回格式无效")
 }
 
 export async function writeWorkbenchFile(bookId: string, path: string, content: string): Promise<{ updatedAt: string }> {
-  try {
-    const res = await fetch(`/api/books/${bookId}/file`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path, content }),
-    })
-    if (!res.ok) throw new Error("api failed")
-    const data = await res.json()
-    return { updatedAt: data.updatedAt ?? new Date().toISOString() }
-  } catch {
-    await delay()
-    return { updatedAt: new Date().toISOString() }
-  }
+  const res = await fetch(`/api/books/${bookId}/file`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path, content }),
+  })
+  const data = await readJsonResponse<{ updatedAt?: unknown }>(res)
+  return { updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : new Date().toISOString() }
 }
-
-// === Ledger ===
 
 export async function getRelationshipGraph(bookId: string): Promise<RelationshipGraph> {
-  try {
-    const res = await fetch(`/api/books/${bookId}/graph`, { cache: "no-store" })
-    if (!res.ok) throw new Error("api failed")
-    const data = await res.json()
-    if (!Array.isArray(data.nodes) || !Array.isArray(data.edges)) throw new Error("invalid")
-    return data
-  } catch {
-    await delay()
-    return { nodes: [], edges: [] }
-  }
+  const res = await fetch(`/api/books/${bookId}/graph`, { cache: "no-store" })
+  const data = await readJsonResponse<RelationshipGraph>(res)
+  if (!Array.isArray(data.nodes) || !Array.isArray(data.edges)) throw new Error("关系图返回格式无效")
+  return data
 }
 
-// === Retrieval ===
 export async function retrieveContext(bookId: string, query: string): Promise<RetrievedContext[]> {
-  try {
-    const res = await fetch(`/api/books/${bookId}/retrieve`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query }),
-    })
-    if (!res.ok) throw new Error("api failed")
-    const data = await res.json()
-    if (!Array.isArray(data)) throw new Error("invalid")
-    return data
-  } catch {
-    await delay()
-    return []
-  }
+  const res = await fetch(`/api/books/${bookId}/retrieve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query }),
+  })
+  const data = await readJsonResponse<RetrievedContext[]>(res)
+  if (!Array.isArray(data)) throw new Error("检索结果返回格式无效")
+  return data
 }

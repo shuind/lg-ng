@@ -1,6 +1,5 @@
 "use client"
 
-import { AppBackground } from "./app-shell/app-background"
 import { LeftSidebarColumn } from "./app-shell/left-sidebar-column"
 import { MainContentColumn } from "./app-shell/main-content-column"
 import { RightSidebarColumn } from "./app-shell/right-sidebar-column"
@@ -16,9 +15,7 @@ export function AppShell(props: AppShellProps) {
     : "grid-cols-[260px_minmax(0,1fr)_360px]"
 
   return (
-    <main className="ambient-window relative h-screen w-screen overflow-hidden">
-      <AppBackground />
-
+    <main className="relative h-screen w-screen overflow-hidden">
       <WorkbenchOpenProvider activeBookId={props.activeBookId} onOpenWorkbench={props.onOpenWorkbench}>
         <div className={`relative z-10 grid h-full min-h-0 ${gridCols} transition-[grid-template-columns] duration-300`}>
           <LeftSidebarColumn
@@ -31,10 +28,12 @@ export function AppShell(props: AppShellProps) {
             collapsed={props.collapsed}
             onToggleCollapsed={props.onToggleCollapsed}
             onSelectBook={props.onSelectBook}
+            onPrefetchBook={props.onPrefetchBook}
             onSelectChapter={props.onSelectChapter}
             onBackToChat={props.onBackToChat}
             onNewBook={props.onNewBook}
             onNewChapter={props.onNewChapter}
+            onDeleteChapter={props.onDeleteChapter}
             onOpenWorkbench={props.onOpenWorkbench}
             onRenameBook={props.onRenameBook}
           />
@@ -45,11 +44,13 @@ export function AppShell(props: AppShellProps) {
           activeChapterId={props.activeChapterId}
           activeThreadId={props.activeThreadId}
           selectedTurnId={props.selectedTurnId}
+          turnBranchNavigation={props.turnBranchNavigation}
           reviewing={props.reviewing}
           messages={props.messages}
           turns={props.turns}
           threads={props.threads}
           cards={props.cards}
+          importedMaterials={props.importedMaterials}
           mode={props.mode}
           chatCitations={props.chatCitations}
           responseConstraints={props.responseConstraints}
@@ -71,6 +72,8 @@ export function AppShell(props: AppShellProps) {
           onRenameThread={props.onRenameThread}
           onSetThreadStatus={props.onSetThreadStatus}
           onForkThread={props.onForkThread}
+          onSelectTurnBranch={props.onSelectTurnBranch}
+          onSubmitEditedTurn={props.onSubmitEditedTurn}
           onRollbackLedgerEntry={props.onRollbackLedgerEntry}
           onApplyProposal={props.onApplyProposal}
           onDiscardProposal={props.onDiscardProposal}
@@ -79,10 +82,13 @@ export function AppShell(props: AppShellProps) {
 
         <RightSidebarColumn
           activeBookId={props.activeBookId}
+          chapters={props.chapters}
           cards={props.cards}
+          importedMaterials={props.importedMaterials}
           ledgerEntries={props.ledgerEntries}
           rollingBackLedgerEntryId={props.rollingBackLedgerEntryId}
           onAddCitation={props.onAddCitation}
+          onImportMaterials={props.onImportMaterials}
           onOpenWorkbench={props.onOpenWorkbench}
           onRollbackLedgerEntry={props.onRollbackLedgerEntry}
         />
@@ -91,6 +97,9 @@ export function AppShell(props: AppShellProps) {
         <WorkbenchOverlay
           workbenchBook={props.workbenchBook}
           workbenchInitialPath={props.workbenchInitialPath}
+          workbenchInitialLine={props.workbenchInitialLine}
+          workbenchInitialTab={props.workbenchInitialTab}
+          workbenchInitialLedgerEntryId={props.workbenchInitialLedgerEntryId}
           onCloseWorkbench={props.onCloseWorkbench}
         />
       </WorkbenchOpenProvider>

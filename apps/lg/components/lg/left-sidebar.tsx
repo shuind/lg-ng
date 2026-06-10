@@ -1,6 +1,6 @@
-"use client"
+﻿"use client"
 
-import type { Book, Chapter, OutlineFile } from "@/lib/mock-data"
+import type { Book, Chapter, OutlineFile } from "@/lib/types"
 import { BookSection } from "./left-sidebar/book-section"
 import { ChapterSection } from "./left-sidebar/chapter-section"
 import { CollapsedSidebar } from "./left-sidebar/collapsed-sidebar"
@@ -18,10 +18,12 @@ interface LeftSidebarProps {
   collapsed: boolean
   onToggleCollapsed: () => void
   onSelectBook: (id: string) => void
+  onPrefetchBook: (id: string) => void
   onSelectChapter: (id: string) => void
   onBackToChat: () => void
   onNewBook: () => void
   onNewChapter: () => void
+  onDeleteChapter: (chapterId: string) => Promise<void>
   onOpenWorkbench: (bookId: string, path?: string) => void
   onRenameBook: (bookId: string, newTitle: string) => void
 }
@@ -36,10 +38,12 @@ export function LeftSidebar({
   collapsed,
   onToggleCollapsed,
   onSelectBook,
+  onPrefetchBook,
   onSelectChapter,
   onBackToChat,
   onNewBook,
   onNewChapter,
+  onDeleteChapter,
   onOpenWorkbench,
   onRenameBook,
 }: LeftSidebarProps) {
@@ -51,6 +55,7 @@ export function LeftSidebar({
         mode={mode}
         onToggleCollapsed={onToggleCollapsed}
         onSelectBook={onSelectBook}
+        onPrefetchBook={onPrefetchBook}
         onNewBook={onNewBook}
       />
     )
@@ -67,6 +72,7 @@ export function LeftSidebar({
           mode={mode}
           onNewBook={onNewBook}
           onSelectBook={onSelectBook}
+          onPrefetchBook={onPrefetchBook}
           onOpenWorkbench={onOpenWorkbench}
           onRenameBook={onRenameBook}
         />
@@ -85,6 +91,7 @@ export function LeftSidebar({
             activeChapterId={activeChapterId}
             mode={mode}
             onNewChapter={onNewChapter}
+            onDeleteChapter={onDeleteChapter}
             onSelectChapter={onSelectChapter}
           />
         </div>

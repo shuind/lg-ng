@@ -1,13 +1,24 @@
-"use client"
+﻿"use client"
 
-import { Workbench } from "@/components/lg/workbench"
+import dynamic from "next/dynamic"
 import type { AppShellProps } from "./types"
 
-type WorkbenchOverlayProps = Pick<AppShellProps, "workbenchBook" | "workbenchInitialPath" | "onCloseWorkbench">
+const Workbench = dynamic(
+  () => import("@/components/lg/workbench/index").then((mod) => mod.Workbench),
+  { ssr: false },
+)
+
+type WorkbenchOverlayProps = Pick<
+  AppShellProps,
+  "workbenchBook" | "workbenchInitialPath" | "workbenchInitialLine" | "workbenchInitialTab" | "workbenchInitialLedgerEntryId" | "onCloseWorkbench"
+>
 
 export function WorkbenchOverlay({
   workbenchBook,
   workbenchInitialPath,
+  workbenchInitialLine,
+  workbenchInitialTab,
+  workbenchInitialLedgerEntryId,
   onCloseWorkbench,
 }: WorkbenchOverlayProps) {
   if (!workbenchBook) return null
@@ -16,6 +27,9 @@ export function WorkbenchOverlay({
     <Workbench
       book={workbenchBook}
       initialPath={workbenchInitialPath}
+      initialLine={workbenchInitialLine}
+      initialTab={workbenchInitialTab}
+      initialLedgerEntryId={workbenchInitialLedgerEntryId}
       onClose={onCloseWorkbench}
     />
   )

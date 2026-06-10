@@ -1,4 +1,4 @@
-import type { Message } from "@/lib/mock-data"
+﻿import type { Message } from "@/lib/types"
 import { appendFullMessageDetails } from "./export-markdown-details"
 import { formatDisplayDate, roleLabel } from "./export-markdown-utils"
 

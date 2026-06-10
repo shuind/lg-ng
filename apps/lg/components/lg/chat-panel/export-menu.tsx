@@ -1,8 +1,8 @@
-"use client"
+﻿"use client"
 
 import { useState } from "react"
 import { Download } from "lucide-react"
-import type { Message } from "@/lib/mock-data"
+import type { Message } from "@/lib/types"
 import {
   buildChatExportMarkdown,
   downloadMarkdown,
@@ -58,7 +58,7 @@ export function ExportMenu({
         <Download className="h-3.5 w-3.5" />
       </button>
       {open && !disabled && (
-        <div className="absolute right-0 top-9 z-30 w-36 rounded-xl border border-border/70 bg-popover p-1.5 text-[12px] text-popover-foreground shadow-lg">
+        <div className="absolute right-0 top-9 z-30 w-36 rounded-lg border border-border/70 bg-popover p-1.5 text-[12px] text-popover-foreground shadow-lg">
           <button
             type="button"
             onClick={() => handleExport("simple")}

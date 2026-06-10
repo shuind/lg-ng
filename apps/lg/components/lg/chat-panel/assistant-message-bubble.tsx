@@ -1,10 +1,13 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Check, CheckCheck, ChevronDown, Copy, GitBranch, Loader2, Sparkles, Trash2, Undo2 } from "lucide-react"
-import type { Message } from "@/lib/mock-data"
+import { Check, CheckCheck, ChevronDown, Copy, ExternalLink, GitBranch, MessageCircleQuestionMark, Sparkles, Trash2, Undo2 } from "lucide-react"
+import { useWorkbenchOpen } from "@/components/lg/workbench-open-context"
+import type { AgentEvent, Message } from "@/lib/types"
 import type { ProposalSummary } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { ActivityIndicator } from "./activity-indicator"
+import { DiffBlock } from "./diff-block"
 import { MarkdownContent } from "./markdown-content"
 import { RunDetailsCard } from "./run-details-card"
 
@@ -33,6 +36,7 @@ export function AssistantMessageBubble({
 }) {
   const [assistantCopied, setAssistantCopied] = useState(false)
   const copyResetRef = useRef<number | null>(null)
+  const workbench = useWorkbenchOpen()
   const isAssistant = message.role === "assistant"
   const reasoningText = isAssistant
     ? (message.events ?? [])
@@ -45,6 +49,9 @@ export function AssistantMessageBubble({
   // arrives. Treat reasoning as live until the answer body starts.
   const reasoningStreaming = streaming && message.content.trim().length === 0
   const contentStreaming = streaming && message.content.trim().length > 0
+  const askUserQuestions = isAssistant
+    ? extractAskUserQuestions(message.events ?? [], message.content)
+    : []
 
   useEffect(() => {
     return () => {
@@ -63,9 +70,9 @@ export function AssistantMessageBubble({
   return (
     <div
       className={cn(
-        "group relative flex flex-col gap-2 rounded-xl px-3 py-2 transition",
+        "group relative flex flex-col gap-3 rounded-lg px-2 py-1 transition",
         isAssistant && "pr-10",
-        selected && "bg-muted/30 ring-1 ring-border/70",
+        selected && "surface-2 ring-1 ring-border/70",
       )}
       onClick={() => onSelectTurn(message.turnId)}
     >
@@ -93,11 +100,17 @@ export function AssistantMessageBubble({
           </span>
         </div>
       )}
+      {streaming && (message.events ?? []).length > 0 && (
+        <ActivityIndicator events={message.events ?? []} streaming={streaming} />
+      )}
       {reasoningText && <ReasoningTrace text={reasoningText} streaming={reasoningStreaming} />}
+      {askUserQuestions.length > 0 && <AskUserQuestionCard questions={askUserQuestions} />}
       {message.content.trim()
-        ? <MarkdownContent content={contentStreaming ? `${message.content}▍` : message.content} />
-        : reasoningStreaming
-          ? <ThinkingHint />
+        ? contentStreaming
+          ? <StreamingPlainText content={message.content} />
+          : <MarkdownContent content={message.content} />
+        : reasoningStreaming && (message.events ?? []).length === 0
+          ? <ActivityIndicator events={message.events ?? []} streaming />
           : null}
 
       {message.proposalSet?.proposals && message.proposalSet.proposals.length > 0 && (
@@ -115,48 +128,53 @@ export function AssistantMessageBubble({
       )}
 
       {message.changeSet?.entries && message.changeSet.entries.length > 0 && (
-        <div className="mt-2 space-y-2">
+        <div className="mt-1 space-y-2">
           {message.changeSet.entries.map((entry) => (
-            <details
-              key={entry.id}
-              className="rounded-lg border border-border/60 bg-muted/20 text-[12px]"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 [&::-webkit-details-marker]:hidden">
-                <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground/85">
-                  {entry.targetPath}
-                </span>
-                {entry.rollbackable && (
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.preventDefault()
-                      event.stopPropagation()
-                      void onRollbackLedgerEntry(entry.id)
-                    }}
-                    disabled={rollingBackLedgerEntryId === entry.id}
-                    className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground transition hover:bg-secondary hover:text-foreground disabled:opacity-50"
-                    title="撤销"
-                    aria-label="撤销"
-                  >
-                    <Undo2 className="h-3 w-3" />
-                    撤销
-                  </button>
-                )}
-              </summary>
-              <div className="border-t border-border/50 px-3 py-2">
-                <div className="mb-2 text-[11px] text-muted-foreground">{entry.summary}</div>
-                {entry.diffPatch ? (
-                  <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-md bg-background/70 p-3 font-mono text-[10.5px] leading-relaxed text-foreground/85">
-                    {entry.diffPatch}
-                  </pre>
-                ) : (
-                  <div className="rounded-md bg-background/70 p-3 text-[11px] text-muted-foreground">
-                    diff 过大，已保留在 Ledger。
+            <div key={entry.id} onClick={(event) => event.stopPropagation()}>
+              <DiffBlock
+                title={entry.targetPath}
+                subtitle={entry.summary}
+                patch={entry.diffPatch}
+                emptyMessage={entry.diffOmitted ? "diff 过大，完整内容已保留在 Ledger。" : "本次改动没有可预览 diff。"}
+                action={(
+                  <div className="flex shrink-0 items-center gap-1">
+                    {entry.diffOmitted && (
+                      <button
+                        type="button"
+                        disabled={!workbench}
+                        onClick={() => workbench?.openLedger(entry.id, entry.targetPath)}
+                        className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] text-muted-foreground transition hover:bg-secondary hover:text-foreground disabled:opacity-50"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                        Ledger
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={!workbench}
+                      onClick={() => workbench?.openPath(entry.targetPath)}
+                      className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] text-muted-foreground transition hover:bg-secondary hover:text-foreground disabled:opacity-50"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      文件
+                    </button>
+                    {entry.rollbackable && (
+                      <button
+                        type="button"
+                        onClick={() => void onRollbackLedgerEntry(entry.id)}
+                        disabled={rollingBackLedgerEntryId === entry.id}
+                        className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] text-muted-foreground transition hover:bg-secondary hover:text-foreground disabled:opacity-50"
+                        title="撤销"
+                        aria-label="撤销"
+                      >
+                        <Undo2 className="h-3 w-3" />
+                        撤销
+                      </button>
+                    )}
                   </div>
                 )}
-              </div>
-            </details>
+              />
+            </div>
           ))}
         </div>
       )}
@@ -170,7 +188,7 @@ export function AssistantMessageBubble({
           {message.references.map((reference) => (
             <span
               key={reference.path}
-              className="rounded-md bg-muted/60 px-2 py-0.5 text-[10px] font-mono text-muted-foreground ring-1 ring-border/50"
+              className="surface-2 rounded-md border px-2 py-0.5 text-[10px] font-mono text-muted-foreground"
             >
               {reference.path}
             </span>
@@ -211,22 +229,13 @@ export function AssistantMessageBubble({
   )
 }
 
-function ThinkingHint() {
-  return (
-    <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
-      <Loader2 className="h-3.5 w-3.5 animate-spin opacity-70" />
-      <span>正在思考…</span>
-    </div>
-  )
-}
-
 function ReasoningTrace({ text, streaming = false }: { text: string; streaming?: boolean }) {
   return (
     <details
       open={streaming}
       className={cn(
-        "group rounded-lg border bg-muted/20 text-[12px] text-muted-foreground transition",
-        streaming ? "border-accent/40" : "border-border/50",
+        "surface-2 group rounded-lg border border-l-2 text-[12px] text-muted-foreground transition",
+        streaming ? "border-l-accent" : "border-l-border",
       )}
       onClick={(event) => event.stopPropagation()}
     >
@@ -236,7 +245,7 @@ function ReasoningTrace({ text, streaming = false }: { text: string; streaming?:
         <span className="min-w-0 flex-1 truncate">{summarizeReasoning(text)}</span>
         <ChevronDown className="h-3.5 w-3.5 shrink-0 transition group-open:rotate-180" />
       </summary>
-      <div className="border-t border-border/40 px-3 py-2">
+      <div className="border-t hairline px-3 py-2">
         <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-sans text-[11.5px] leading-relaxed text-foreground/80">
           {text}{streaming && <span className="animate-pulse">▍</span>}
         </pre>
@@ -245,9 +254,107 @@ function ReasoningTrace({ text, streaming = false }: { text: string; streaming?:
   )
 }
 
+function StreamingPlainText({ content }: { content: string }) {
+  return (
+    <div className="whitespace-pre-wrap break-words font-serif text-[15.5px] leading-[1.8] text-foreground">
+      {content}
+      <span className="animate-pulse">▍</span>
+    </div>
+  )
+}
+
 function summarizeReasoning(text: string): string {
   const firstLine = text.split(/\r?\n/).map((line) => line.trim()).find(Boolean)
   return firstLine ? firstLine.slice(0, 80) : "模型正在整理推理过程"
+}
+
+function AskUserQuestionCard({ questions }: { questions: string[] }) {
+  return (
+    <div className="surface-2 rounded-lg border border-accent/40 px-3 py-2.5 text-[13px] shadow-sm">
+      <div className="mb-2 flex items-center gap-2 font-medium text-foreground/85">
+        <MessageCircleQuestionMark className="h-3.5 w-3.5 shrink-0 text-accent-foreground" />
+        <span>需要你确认</span>
+      </div>
+      <div className="space-y-3">
+        {questions.map((question, index) => (
+          <div key={`${index}:${question.slice(0, 32)}`} className="whitespace-pre-wrap break-words font-serif text-[14.5px] leading-[1.75] text-foreground">
+            {question}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function extractAskUserQuestions(events: AgentEvent[], content: string): string[] {
+  const seen = new Set<string>()
+  const questions: string[] = []
+
+  for (const event of events) {
+    if (event.name !== "ask_user" && event.text !== "ask_user") continue
+    const question = parseAskUserArgs(event.argsPreview) ?? parseAskUserResult(event.resultPreview)
+    if (!question) continue
+
+    const normalized = normalizeQuestion(question)
+    if (!normalized || seen.has(normalized) || contentAlreadyShowsQuestion(content, question)) continue
+    seen.add(normalized)
+    questions.push(question)
+  }
+
+  return questions
+}
+
+function parseAskUserArgs(value?: string): string | null {
+  const trimmed = value?.trim()
+  if (!trimmed) return null
+
+  const withoutEllipsis = trimmed.endsWith("...") ? trimmed.slice(0, -3) : trimmed
+  try {
+    const parsed = JSON.parse(withoutEllipsis) as unknown
+    if (parsed && typeof parsed === "object" && "question" in parsed) {
+      const question = (parsed as { question?: unknown }).question
+      return typeof question === "string" ? question.trim() : null
+    }
+  } catch {
+    // Recover below when a preview contains extra text around the JSON.
+  }
+
+  const match = trimmed.match(/"question"\s*:\s*"((?:\\.|[^"\\])*)"/)
+  if (!match?.[1]) return null
+  try {
+    return JSON.parse(`"${match[1]}"`).trim()
+  } catch {
+    return match[1].replace(/\\n/g, "\n").replace(/\\"/g, "\"").trim()
+  }
+}
+
+function parseAskUserResult(value?: string): string | null {
+  const trimmed = value?.trim()
+  if (!trimmed) return null
+
+  const marker = "Question for user:"
+  const markerIndex = trimmed.indexOf(marker)
+  if (markerIndex < 0) return null
+
+  let question = trimmed.slice(markerIndex + marker.length).trim()
+  const footerIndex = [
+    "The CLI will show",
+    "Present this question to the user",
+  ].map((footer) => question.indexOf(footer)).filter((index) => index >= 0).sort((a, b) => a - b)[0]
+  if (footerIndex !== undefined) question = question.slice(0, footerIndex).trim()
+  return question || null
+}
+
+function contentAlreadyShowsQuestion(content: string, question: string): boolean {
+  const normalizedContent = normalizeQuestion(content)
+  const normalizedQuestion = normalizeQuestion(question)
+  if (!normalizedContent || !normalizedQuestion) return false
+  const probeLength = Math.min(80, normalizedQuestion.length)
+  return normalizedContent.includes(normalizedQuestion.slice(0, probeLength))
+}
+
+function normalizeQuestion(value: string): string {
+  return value.replace(/\s+/g, " ").trim()
 }
 
 function ProposalCard({
@@ -275,7 +382,7 @@ function ProposalCard({
   }
 
   return (
-    <details className="rounded-lg border border-border/60 bg-muted/20 text-[12px]" onClick={(event) => event.stopPropagation()}>
+    <details open className="surface-1 rounded-lg border text-[12px]" onClick={(event) => event.stopPropagation()}>
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 [&::-webkit-details-marker]:hidden">
         <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground/85">
           {proposal.targetPath}
@@ -284,11 +391,11 @@ function ProposalCard({
           {proposal.status}
         </span>
       </summary>
-      <div className="space-y-2 border-t border-border/50 px-3 py-2">
+      <div className="space-y-2 border-t hairline px-3 py-2">
         <div className="text-[11px] text-muted-foreground">{proposal.summary}</div>
         <div className="space-y-1.5">
           {proposal.hunks.map((hunk) => (
-            <label key={hunk.id} className="flex gap-2 rounded-md bg-background/60 p-2">
+            <label key={hunk.id} className="surface-3 flex gap-2 rounded-md border p-2">
               <input
                 type="checkbox"
                 className="mt-0.5"
@@ -307,11 +414,7 @@ function ProposalCard({
             </label>
           ))}
         </div>
-        {proposal.diffPatch && (
-          <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-background/70 p-3 font-mono text-[10.5px] leading-relaxed text-foreground/85">
-            {proposal.diffPatch}
-          </pre>
-        )}
+        {proposal.diffPatch && <DiffBlock patch={proposal.diffPatch} maxHeightClass="max-h-64" />}
         <div className="flex items-center gap-1.5">
           <button
             type="button"

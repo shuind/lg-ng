@@ -66,6 +66,70 @@ describe("AgentEngine subagents", () => {
   });
 });
 
+describe("AgentEngine project memory", () => {
+  it("surfaces LG legacy material index in the user context", async () => {
+    const cwd = await tempDir();
+    await mkdir(path.join(cwd, "世界观"), { recursive: true });
+    await mkdir(path.join(cwd, "卷纲"), { recursive: true });
+    await writeFile(
+      path.join(cwd, "NOVEL.md"),
+      [
+        "---",
+        "project: 长生",
+        "type: novel-workspace",
+        "---",
+        "",
+        "# 长生",
+        "",
+        "## 核心实体清单",
+        "- TODO",
+      ].join("\n"),
+      "utf8",
+    );
+    await writeFile(
+      path.join(cwd, "世界观", "天轮与岁轮.md"),
+      "# 天轮与岁轮\n\n顾慎的百岁雷劫被瞒天佩延迟。",
+      "utf8",
+    );
+    await writeFile(
+      path.join(cwd, "卷纲", "第一卷.md"),
+      "# 第一卷\n\n第 1 章：《第七天，雷云开始聚》。",
+      "utf8",
+    );
+
+    let userContext = "";
+    const client = {
+      chat: {
+        completions: {
+          create: async (input: { messages: { role?: string; content?: unknown }[] }) => {
+            const last = input.messages.at(-1);
+            userContext = typeof last?.content === "string" ? last.content : "";
+            return {
+              choices: [{ message: { role: "assistant", content: "done" } }],
+              usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+            };
+          },
+        },
+      },
+    } as unknown as OpenAI;
+    const engine = new AgentEngine({
+      cwd,
+      client,
+      model: "mock",
+      sessionId: "legacy-memory",
+      permissionMode: "bypass",
+    });
+
+    await engine.submitMessage("写第一章", { save: false });
+
+    expect(userContext).toContain("LG legacy material index");
+    expect(userContext).toContain("世界观/天轮与岁轮.md");
+    expect(userContext).toContain("百岁雷劫");
+    expect(userContext).toContain("卷纲/第一卷.md");
+    expect(userContext).toContain("雷云开始聚");
+  });
+});
+
 describe("AgentEngine compaction", () => {
   it("summarizes old messages and keeps recent messages", async () => {
     const cwd = await tempDir();

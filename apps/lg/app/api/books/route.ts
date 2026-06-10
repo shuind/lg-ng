@@ -7,7 +7,7 @@ export async function GET() {
     return NextResponse.json(books)
   } catch (err) {
     console.error("[api/books] list error:", err)
-    return NextResponse.json([], { status: 200 })
+    return NextResponse.json({ error: "读取书籍失败" }, { status: 500 })
   }
 }
 

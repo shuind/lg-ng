@@ -41,7 +41,7 @@ export const ReadFileTool: Tool = {
 
 export const WriteFileTool: Tool = {
   name: "write_file",
-  description: "Write a UTF-8 text file. Creates parent directories.",
+  description: "Write a UTF-8 text file. Creates parent directories. In novel workspaces, write generated chapter prose to drafts/ by default; use 章节正文/ only when the user explicitly asks to apply/save directly to chapter body.",
   readonly: false,
   parameters: {
     type: "object",
@@ -88,7 +88,7 @@ export const WriteFileTool: Tool = {
 
 export const EditFileTool: Tool = {
   name: "edit_file",
-  description: "Edit a UTF-8 text file by replacing exact text.",
+  description: "Edit a UTF-8 text file by replacing exact text. In novel workspaces, avoid editing 章节正文/ for generated chapter prose unless the user explicitly asks to apply/save directly to chapter body; use drafts/ by default.",
   readonly: false,
   parameters: {
     type: "object",
@@ -139,7 +139,7 @@ export const EditFileTool: Tool = {
 
 export const ProposeFileChangeTool: Tool = {
   name: "propose_file_change",
-  description: "Create a reviewable file-change proposal without modifying the target file. Use in proposal workflows such as /续写 and /改稿.",
+  description: "Create a reviewable file-change proposal without modifying the target file. Use in proposal workflows such as /续写 and /改稿. For generated chapter prose, target drafts/ by default; use 章节正文/ only when the user explicitly asks to apply/save directly to chapter body.",
   readonly: false,
   parameters: {
     type: "object",

@@ -23,8 +23,8 @@ export function EmptyPane({
 }) {
   return (
     <div className="flex h-full items-center justify-center px-10">
-      <div className="paper rounded-2xl border border-border/60 bg-card/60 p-8 text-center backdrop-blur">
-        <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-accent/30 to-transparent ring-1 ring-border/50 animate-breathe-glow text-accent-foreground/80">
+      <div className="paper rounded-lg border border-border/60 bg-card/60 p-8 text-center backdrop-blur">
+        <div className="surface-2 mx-auto flex h-10 w-10 items-center justify-center rounded-lg border animate-breathe-glow text-accent-foreground/80">
           {icon}
         </div>
         <div className="mt-3 font-serif text-[18px] text-foreground">{title}</div>
@@ -41,4 +41,3 @@ export function EmptyPane({
     </div>
   )
 }
-

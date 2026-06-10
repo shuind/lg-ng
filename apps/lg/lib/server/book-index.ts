@@ -7,6 +7,7 @@ import { getBookDir, getIndexRoot } from "@/lib/server/paths"
 
 const INDEX_VERSION = 3
 const INDEX_VALIDATION_MAX_AGE_MS = 60_000
+const MAX_INDEX_ENVELOPE_CACHE_SIZE = 64
 const CHAPTER_ROOTS = new Set(["章节正文", "chapters"])
 const VOLUME_OUTLINE_ROOTS = new Set(["卷纲"])
 const CHAPTER_OUTLINE_ROOTS = new Set(["章节大纲", "章纲", "outlines"])
@@ -55,6 +56,11 @@ type EnsureBookIndexOptions = {
   validateMtimes?: boolean
 }
 
+type CachedIndexEnvelope = {
+  mtimeMs: number
+  envelope: IndexEnvelope<unknown>
+}
+
 export type IndexedBookFile = {
   path: string
   name: string
@@ -63,6 +69,18 @@ export type IndexedBookFile = {
   updatedAt: string
   size: number
   hidden: boolean
+}
+
+const envelopeCache = new Map<string, CachedIndexEnvelope>()
+
+function rememberEnvelope<T>(filePath: string, mtimeMs: number, envelope: IndexEnvelope<T>): void {
+  if (envelopeCache.has(filePath)) envelopeCache.delete(filePath)
+  envelopeCache.set(filePath, { mtimeMs, envelope: envelope as IndexEnvelope<unknown> })
+  while (envelopeCache.size > MAX_INDEX_ENVELOPE_CACHE_SIZE) {
+    const oldestKey = envelopeCache.keys().next().value
+    if (!oldestKey) break
+    envelopeCache.delete(oldestKey)
+  }
 }
 
 function bookIndexDir(bookId: string): string {
@@ -127,10 +145,17 @@ function isHiddenPath(filePath: string): boolean {
 
 async function readEnvelope<T>(filePath: string): Promise<IndexEnvelope<T> | null> {
   try {
+    const stat = await fs.stat(filePath)
+    const cached = envelopeCache.get(filePath)
+    if (cached && cached.mtimeMs === stat.mtimeMs) {
+      return cached.envelope as IndexEnvelope<T>
+    }
     const raw = await fs.readFile(filePath, "utf-8")
     const data = JSON.parse(raw) as Partial<IndexEnvelope<T>>
     if (data.version !== INDEX_VERSION || !data.items) return null
-    return data as IndexEnvelope<T>
+    const envelope = data as IndexEnvelope<T>
+    rememberEnvelope(filePath, stat.mtimeMs, envelope)
+    return envelope
   } catch {
     return null
   }
@@ -145,6 +170,8 @@ async function writeEnvelope<T>(filePath: string, items: T): Promise<void> {
     items,
   }
   await fs.writeFile(filePath, JSON.stringify(body, null, 2), "utf-8")
+  const stat = await fs.stat(filePath).catch(() => null)
+  if (stat) rememberEnvelope(filePath, stat.mtimeMs, body)
 }
 
 async function statIndexedFile(bookId: string, filePath: string): Promise<IndexedBookFile | null> {
@@ -535,7 +562,7 @@ export async function ensureBookIndexes(
   bookId: string,
   options: EnsureBookIndexOptions = {},
 ): Promise<void> {
-  const validateMtimes = options.validateMtimes ?? true
+  const validateMtimes = options.validateMtimes ?? false
   const [fileIndex, chapterIndex, settingCardIndex, termIndex] = await Promise.all([
     readEnvelope<IndexedBookFile[]>(fileIndexPath(bookId)),
     readEnvelope<Chapter[]>(chapterIndexPath(bookId)),

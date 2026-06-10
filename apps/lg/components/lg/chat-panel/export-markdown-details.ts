@@ -1,4 +1,4 @@
-import type { Message } from "@/lib/mock-data"
+﻿import type { Message } from "@/lib/types"
 import { appendBriefMarkdown } from "./export-markdown-brief"
 import { appendEventMarkdown } from "./export-markdown-events"
 

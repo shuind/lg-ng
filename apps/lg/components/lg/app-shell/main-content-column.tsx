@@ -1,8 +1,13 @@
-"use client"
+﻿"use client"
 
-import { ChatPanel } from "@/components/lg/chat-panel"
-import { WritingDesk } from "@/components/lg/writing-desk"
+import dynamic from "next/dynamic"
+import { ChatPanel } from "@/components/lg/chat-panel/index"
 import type { AppShellProps } from "./types"
+
+const WritingDesk = dynamic(
+  () => import("@/components/lg/writing-desk").then((mod) => mod.WritingDesk),
+  { ssr: false },
+)
 
 type MainContentColumnProps = Pick<
   AppShellProps,
@@ -11,11 +16,13 @@ type MainContentColumnProps = Pick<
   | "activeChapterId"
   | "activeThreadId"
   | "selectedTurnId"
+  | "turnBranchNavigation"
   | "reviewing"
   | "messages"
   | "turns"
   | "threads"
   | "cards"
+  | "importedMaterials"
   | "mode"
   | "chatCitations"
   | "responseConstraints"
@@ -37,6 +44,8 @@ type MainContentColumnProps = Pick<
   | "onRenameThread"
   | "onSetThreadStatus"
   | "onForkThread"
+  | "onSelectTurnBranch"
+  | "onSubmitEditedTurn"
   | "onRollbackLedgerEntry"
   | "onApplyProposal"
   | "onDiscardProposal"
@@ -49,11 +58,13 @@ export function MainContentColumn({
   activeChapterId,
   activeThreadId,
   selectedTurnId,
+  turnBranchNavigation,
   reviewing,
   messages,
   turns,
   threads,
   cards,
+  importedMaterials,
   mode,
   chatCitations,
   responseConstraints,
@@ -75,6 +86,8 @@ export function MainContentColumn({
   onRenameThread,
   onSetThreadStatus,
   onForkThread,
+  onSelectTurnBranch,
+  onSubmitEditedTurn,
   onRollbackLedgerEntry,
   onApplyProposal,
   onDiscardProposal,
@@ -91,9 +104,11 @@ export function MainContentColumn({
           threads={threads}
           activeThreadId={activeThreadId}
           selectedTurnId={selectedTurnId}
+          turnBranchNavigation={turnBranchNavigation}
           reviewing={reviewing}
           citations={chatCitations}
           settingCards={cards}
+          importedMaterials={importedMaterials}
           responseConstraints={responseConstraints}
           activeResponseConstraintIds={activeResponseConstraintIds}
           rollingBackLedgerEntryId={rollingBackLedgerEntryId}
@@ -113,6 +128,8 @@ export function MainContentColumn({
           onRenameThread={onRenameThread}
           onSetThreadStatus={onSetThreadStatus}
           onForkThread={onForkThread}
+          onSelectTurnBranch={onSelectTurnBranch}
+          onSubmitEditedTurn={onSubmitEditedTurn}
           onRollbackLedgerEntry={onRollbackLedgerEntry}
           onApplyProposal={onApplyProposal}
           onDiscardProposal={onDiscardProposal}

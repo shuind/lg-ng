@@ -160,11 +160,23 @@ export const SearchCanonTool: Tool = {
     const scope = str(input.scope);
     const patterns = scope ? [scope] : [
       "NOVEL.md",
+      "创作指南.md",
+      "CLAUDE.md",
       "canon/**/*.md",
       "drafts/**/*.md",
       "章节正文/**/*.md",
+      "章节大纲/**/*.md",
+      "章节摘要/**/*.md",
       "人物设定/**/*.md",
       "世界观/**/*.md",
+      "卷纲/**/*.md",
+      "剧情管理/**/*.md",
+      "状态追踪/**/*.md",
+      "读者体验/**/*.md",
+      "写作约束/**/*.md",
+      "检查报告/**/*.md",
+      "skills/**/*.md",
+      "skills/**/*.json",
     ];
     const files = await fg(patterns, {
       cwd: context.cwd,

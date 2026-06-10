@@ -322,8 +322,11 @@ export class AgentEngine {
 }
 
 async function buildProjectMemoryCard(cwd: string): Promise<string> {
-  const novel = await readWorkspaceFile(cwd, "NOVEL.md");
-  if (!novel) return "Project memory: no NOVEL.md found.";
+  const [novel, legacyMaterialIndex] = await Promise.all([
+    readWorkspaceFile(cwd, "NOVEL.md"),
+    summarizeLegacyLgMaterials(cwd),
+  ]);
+  if (!novel) return legacyMaterialIndex || "Project memory: no NOVEL.md found.";
 
   const sections = [
     extractMarkdownSection(novel, "核心实体清单", 1200),
@@ -335,6 +338,7 @@ async function buildProjectMemoryCard(cwd: string): Promise<string> {
     "Project long-term memory (derived from files, not an LLM summary):",
     sections.length > 0 ? sections.join("\n\n") : "NOVEL.md has no populated long-term-memory sections yet.",
     canonFacts,
+    legacyMaterialIndex,
   ].filter(Boolean);
   return body.join("\n\n");
 }
@@ -383,6 +387,79 @@ async function summarizeCanonFacts(cwd: string): Promise<string> {
   return lines.length ? `Canon index:\n${lines.join("\n")}` : "";
 }
 
+const LEGACY_LG_MATERIAL_PATTERNS = [
+  "创作指南.md",
+  "CLAUDE.md",
+  "人物设定/**/*.md",
+  "世界观/**/*.md",
+  "卷纲/**/*.md",
+  "章节大纲/**/*.md",
+  "章节正文/**/*.md",
+  "剧情管理/**/*.md",
+  "状态追踪/**/*.md",
+  "读者体验/**/*.md",
+  "写作约束/**/*.md",
+  "章节摘要/**/*.md",
+  "检查报告/**/*.md",
+  "skills/**/*.md",
+  "skills/**/*.json",
+];
+
+async function summarizeLegacyLgMaterials(cwd: string): Promise<string> {
+  const files = await fg(LEGACY_LG_MATERIAL_PATTERNS, {
+    cwd,
+    onlyFiles: true,
+    dot: false,
+    ignore: ["**/.gitkeep"],
+  }).catch(() => []);
+  if (files.length === 0) return "";
+
+  const lines: string[] = [];
+  for (const file of files.sort((a, b) => a.localeCompare(b, "zh-CN")).slice(0, 80)) {
+    const raw = await readWorkspaceFile(cwd, file);
+    if (!raw) continue;
+    const summary = summarizeMaterialFile(file, raw);
+    if (summary) lines.push(`- ${summary} -> ${file}`);
+  }
+  return lines.length ? `LG legacy material index:\n${lines.join("\n")}` : "";
+}
+
+function summarizeMaterialFile(file: string, content: string): string {
+  const title = content.match(/^#\s+(.+)$/m)?.[1]?.trim()
+    || file.replace(/^.*[\\/]/, "").replace(/\.[^.]+$/i, "");
+  const excerpt = content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#") && !line.startsWith("---"))
+    .filter((line) => !isPlaceholderLine(line))
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .slice(0, 260);
+  return excerpt ? `${title}: ${excerpt}` : title;
+}
+
+function isPlaceholderLine(line: string): boolean {
+  return (
+    line.includes("TODO") ||
+    line.includes("待补充") ||
+    line.includes("请在此写下") ||
+    line.includes("记录主线剧情") ||
+    line.includes("记录各支线剧情") ||
+    line.includes("记录所有已埋设") ||
+    line.includes("记录推动剧情") ||
+    line.includes("按故事内时间记录") ||
+    line.includes("追踪各角色") ||
+    line.includes("记录当前章节") ||
+    line.includes("记录各章节") ||
+    line.includes("追踪读者与角色") ||
+    line.includes("记录对读者") ||
+    line.includes("记录已承诺") ||
+    line.includes("记录写作中") ||
+    line.includes("记录本作品类型") ||
+    line.includes("记录写作质量")
+  );
+}
+
 function extractAliases(content: string): string[] {
   const aliases: string[] = [];
   for (const line of content.split(/\r?\n/)) {
@@ -394,8 +471,12 @@ function extractAliases(content: string): string[] {
 }
 
 function estimateMessagesTokens(messages: ChatCompletionMessageParam[]): number {
-  const chars = messages.reduce((sum, message) => sum + renderMessageForCompaction(message).length, 0);
-  return Math.ceil(chars / 3);
+  return messages.reduce((sum, message) => {
+    const rendered = renderMessageForCompaction(message);
+    const cjkChars = (rendered.match(/[\u3400-\u9fff\uf900-\ufaff]/g) ?? []).length;
+    const otherChars = Math.max(0, rendered.length - cjkChars);
+    return sum + Math.ceil(cjkChars / 1.7 + otherChars / 3.5 + 8);
+  }, 0);
 }
 
 function findSafeRecentStart(messages: ChatCompletionMessageParam[], targetStart: number): number {

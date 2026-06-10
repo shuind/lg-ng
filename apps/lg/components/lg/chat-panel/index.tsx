@@ -1,12 +1,13 @@
-"use client"
+﻿"use client"
 
-import { useCallback, useMemo, useRef } from "react"
-import type { Message, SettingCard, Thread, Turn } from "@/lib/mock-data"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import type { ChatReference, ImportedMaterial, Message, SettingCard, Thread, Turn } from "@/lib/types"
 import type { ResponseConstraint } from "@/lib/types"
+import { ChatCommandPalette } from "./chat-command-palette"
 import { ChatPanelHeader } from "./chat-panel-header"
 import { ChatComposer, type ChatComposerHandle } from "./composer"
 import { ChatTranscript } from "./message-rendering"
-import type { ChatCitation, ChatSendOptions } from "./types"
+import type { ChatCitation, ChatSendOptions, TurnBranchNavigation } from "./types"
 import { useChatTranscriptNavigation } from "./use-chat-transcript-navigation"
 
 interface ChatPanelProps {
@@ -17,9 +18,11 @@ interface ChatPanelProps {
   threads: Thread[]
   activeThreadId: string
   selectedTurnId: string | null
+  turnBranchNavigation: Record<string, TurnBranchNavigation>
   reviewing: boolean
   citations: ChatCitation[]
   settingCards: SettingCard[]
+  importedMaterials: ImportedMaterial[]
   responseConstraints: ResponseConstraint[]
   activeResponseConstraintIds: string[]
   rollingBackLedgerEntryId: string | null
@@ -27,7 +30,7 @@ interface ChatPanelProps {
   onSelectTurn: (turnId: string) => void
   onSend: (text: string, citations: ChatCitation[], options: ChatSendOptions) => Promise<void>
   onReview: () => Promise<void>
-  onAddCitation: (card: SettingCard) => void
+  onAddCitation: (reference: ChatReference) => void
   onRemoveCitation: (cardId: string) => void
   onClearCitations: () => void
   onCreateResponseConstraint: (input: Pick<ResponseConstraint, "title" | "instruction">) => Promise<void>
@@ -39,6 +42,8 @@ interface ChatPanelProps {
   onRenameThread: (threadId: string, title: string) => void
   onSetThreadStatus: (threadId: string, status: Thread["status"]) => void
   onForkThread: (turnId: string) => void
+  onSelectTurnBranch: (turnId: string) => void
+  onSubmitEditedTurn: (turnId: string, content: string) => Promise<void>
   onRollbackLedgerEntry: (entryId: string) => Promise<void>
   onApplyProposal: (proposalId: string, hunkIds?: string[]) => Promise<string | undefined>
   onDiscardProposal: (proposalId: string) => Promise<void>
@@ -52,9 +57,11 @@ export function ChatPanel({
   threads,
   activeThreadId,
   selectedTurnId,
+  turnBranchNavigation,
   reviewing,
   citations,
   settingCards,
+  importedMaterials,
   responseConstraints,
   activeResponseConstraintIds,
   rollingBackLedgerEntryId,
@@ -74,11 +81,14 @@ export function ChatPanel({
   onRenameThread,
   onSetThreadStatus,
   onForkThread,
+  onSelectTurnBranch,
+  onSubmitEditedTurn,
   onRollbackLedgerEntry,
   onApplyProposal,
   onDiscardProposal,
 }: ChatPanelProps) {
   const composerRef = useRef<ChatComposerHandle>(null)
+  const [commandOpen, setCommandOpen] = useState(false)
   const runningTurn = useMemo(() => turns.find((turn) => turn.status === "running"), [turns])
   const activeThread = useMemo(
     () => threads.find((thread) => thread.id === activeThreadId),
@@ -86,6 +96,7 @@ export function ChatPanel({
   )
   const {
     scrollRef,
+    liveTailRef,
     latestUserTurnId,
     highlightedUserTurnId,
     registerUserMessage,
@@ -98,8 +109,19 @@ export function ChatPanel({
     runningTurnId: runningTurn?.id,
   })
 
-  const handleEditLatest = useCallback((text: string) => {
-    composerRef.current?.editLatest(text)
+  const handleFocusComposer = useCallback(() => {
+    composerRef.current?.focus()
+  }, [])
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key.toLowerCase() !== "k" || (!event.metaKey && !event.ctrlKey)) return
+      event.preventDefault()
+      setCommandOpen(true)
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
   }, [])
 
   return (
@@ -110,6 +132,8 @@ export function ChatPanel({
         messages={messages}
         selectedTurnId={selectedTurnId}
         threads={threads}
+        reviewing={reviewing}
+        onReview={onReview}
         onCreateThread={onCreateThread}
         onSelectThread={onSelectThread}
         onRenameThread={onRenameThread}
@@ -118,14 +142,16 @@ export function ChatPanel({
 
       <ChatTranscript
         scrollRef={scrollRef}
+        liveTailRef={liveTailRef}
         messages={messages}
         runningTurn={runningTurn}
         selectedTurnId={selectedTurnId}
-        latestUserTurnId={latestUserTurnId}
         highlightedUserTurnId={highlightedUserTurnId}
+        turnBranchNavigation={turnBranchNavigation}
         onSelectTurn={onSelectTurn}
         onForkThread={onForkThread}
-        onEditLatest={handleEditLatest}
+        onSelectTurnBranch={onSelectTurnBranch}
+        onSubmitEditedTurn={onSubmitEditedTurn}
         registerUserMessage={registerUserMessage}
         rollingBackLedgerEntryId={rollingBackLedgerEntryId}
         applyingProposalId={applyingProposalId}
@@ -139,15 +165,15 @@ export function ChatPanel({
         bookId={bookId}
         activeThreadId={activeThreadId}
         activeThreadTitle={activeThread?.title ?? "任务线程"}
-        reviewing={reviewing}
         citations={citations}
         settingCards={settingCards}
+        importedMaterials={importedMaterials}
         responseConstraints={responseConstraints}
         activeResponseConstraintIds={activeResponseConstraintIds}
         latestUserTurnId={latestUserTurnId}
+        sendBlocked={Boolean(runningTurn)}
         onQuestionJump={handleQuestionJump}
         onSend={onSend}
-        onReview={onReview}
         onAddCitation={onAddCitation}
         onRemoveCitation={onRemoveCitation}
         onClearCitations={onClearCitations}
@@ -155,6 +181,18 @@ export function ChatPanel({
         onUpdateResponseConstraint={onUpdateResponseConstraint}
         onDeleteResponseConstraint={onDeleteResponseConstraint}
         onSetActiveResponseConstraintIds={onSetActiveResponseConstraintIds}
+      />
+
+      <ChatCommandPalette
+        open={commandOpen}
+        onOpenChange={setCommandOpen}
+        activeThreadId={activeThreadId}
+        threads={threads}
+        reviewing={reviewing}
+        onCreateThread={onCreateThread}
+        onSelectThread={onSelectThread}
+        onReview={() => void onReview()}
+        onFocusComposer={handleFocusComposer}
       />
     </section>
   )

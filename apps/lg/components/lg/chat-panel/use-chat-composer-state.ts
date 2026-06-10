@@ -6,12 +6,19 @@ import type { WorkflowAction } from "@/lib/types"
 import { listSkills } from "@/lib/api"
 import type { ChatCitation, ChatSendOptions } from "./types"
 
+type PendingSend = {
+  text: string
+  citations: ChatCitation[]
+  options: Omit<ChatSendOptions, "signal">
+}
+
 export function useChatComposerState({
   bookId,
   activeThreadId,
   citations,
   responseConstraints,
   activeResponseConstraintIds,
+  sendBlocked = false,
   onSend,
   onClearCitations,
   onSetActiveResponseConstraintIds,
@@ -21,6 +28,7 @@ export function useChatComposerState({
   citations: ChatCitation[]
   responseConstraints: ResponseConstraint[]
   activeResponseConstraintIds: string[]
+  sendBlocked?: boolean
   onSend: (text: string, citations: ChatCitation[], options: ChatSendOptions) => Promise<void>
   onClearCitations: () => void
   onSetActiveResponseConstraintIds: (constraintIds: string[]) => Promise<void>
@@ -99,20 +107,13 @@ export function useChatComposerState({
     requestAnimationFrame(() => inputRef.current?.focus())
   }, [])
 
-  const handleSend = useCallback(async () => {
-    const text = input.trim()
-    if (!text || sending) return
+  const startSend = useCallback(async (payload: PendingSend) => {
     const controller = new AbortController()
     abortControllerRef.current = controller
-    setInput("")
     setSending(true)
     try {
-      await onSend(text, citations, {
-        constraintIds: activeResponseConstraintIds,
-        temporaryConstraints,
-        skillIds,
-        readonlyOnly,
-        workflowAction,
+      await onSend(payload.text, payload.citations, {
+        ...payload.options,
         signal: controller.signal,
       })
       onClearCitations()
@@ -123,7 +124,25 @@ export function useChatComposerState({
       abortControllerRef.current = null
       setSending(false)
     }
-  }, [activeResponseConstraintIds, citations, input, onClearCitations, onSend, readonlyOnly, sending, skillIds, temporaryConstraints, workflowAction])
+  }, [onClearCitations, onSend])
+
+  const handleSend = useCallback(async () => {
+    const text = input.trim()
+    if (!text || sending || sendBlocked) return
+    const payload: PendingSend = {
+      text,
+      citations,
+      options: {
+        constraintIds: activeResponseConstraintIds,
+        temporaryConstraints,
+        skillIds,
+        readonlyOnly,
+        workflowAction,
+      },
+    }
+    setInput("")
+    await startSend(payload)
+  }, [activeResponseConstraintIds, citations, input, readonlyOnly, sendBlocked, sending, skillIds, startSend, temporaryConstraints, workflowAction])
 
   const handleCancelSend = useCallback(() => {
     abortControllerRef.current?.abort()
@@ -156,6 +175,10 @@ export function useChatComposerState({
 
   const handleSelectWorkflowAction = useCallback((action: WorkflowAction) => {
     setWorkflowAction((current) => current === action ? undefined : action)
+  }, [])
+
+  const handleClearWorkflowAction = useCallback(() => {
+    setWorkflowAction(undefined)
   }, [])
 
   const handleRemoveConstraint = useCallback((constraintId: string) => {
@@ -204,6 +227,7 @@ export function useChatComposerState({
     handleToggleSkill,
     handleToggleReadonly,
     handleSelectWorkflowAction,
+    handleClearWorkflowAction,
     handleRemoveConstraint,
     handleRemoveTemporaryConstraint,
     handleRemoveSkill,

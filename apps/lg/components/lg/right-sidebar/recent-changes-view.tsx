@@ -16,8 +16,7 @@ export function RecentChangesView({
   onOpenFile: (path: string) => void
   onRollbackEntry: (entryId: string) => void
 }) {
-  const recentEntries = entries.slice(0, 24)
-  const groups = buildRecentChangeGroups(recentEntries)
+  const groups = buildRecentChangeGroups(entries, { itemLimit: 8 })
   const [dateGroupOpenOverrides, setDateGroupOpenOverrides] = useState<Record<string, boolean>>({})
   const [expandedBatchIds, setExpandedBatchIds] = useState<Set<string>>(new Set())
 
@@ -43,7 +42,7 @@ export function RecentChangesView({
     })
   }
 
-  if (recentEntries.length === 0) {
+  if (entries.length === 0) {
     return (
       <div className="mt-14 text-center text-[12px] leading-relaxed text-muted-foreground/65">
         暂无改动记录。
@@ -52,7 +51,7 @@ export function RecentChangesView({
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2.5">
       {groups.map((group) => {
         const groupOpen = dateGroupOpenOverrides[group.key] ?? group.defaultOpen
 

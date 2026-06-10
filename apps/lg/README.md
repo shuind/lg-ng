@@ -47,10 +47,10 @@ DEEPSEEK_API_KEY=your-key
 
 ## 示例数据
 
-`pnpm seed` 生成的数据结构:
+`pnpm seed` 生成的数据结构（默认位于仓库根目录的 `.lg-data/` 下）:
 
 ```
-data/books/demo-guixu/
+.lg-data/books/demo-guixu/
   book.json                 # 书籍元数据
   创作指南.md               # 写作风格要求
   关系图谱.json             # 人物关系
@@ -75,7 +75,9 @@ data/books/demo-guixu/
 
 ## 数据目录
 
-所有书籍数据存储在 `data/books/` 下,每本书一个目录。没有数据库,纯文件系统。
+所有书籍运行时数据默认存储在仓库根目录的 `.lg-data/books/` 下,每本书一个目录。没有数据库,纯文件系统。
+
+可通过 `LG_DATA_DIR` 覆盖数据根目录。旧版 `apps/lg/data/` 目录只用于迁移兼容,运行时代码不再从那里读取。
 
 - `book.json` — 书籍元数据 (id, title, createdAt, updatedAt)
 - `章节正文/*.md` — 每个文件是一章正文

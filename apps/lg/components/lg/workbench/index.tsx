@@ -1,7 +1,7 @@
-"use client"
+﻿"use client"
 
 import { useEffect, useMemo, useState } from "react"
-import type { WorkbenchGroup } from "@/lib/mock-data"
+import type { WorkbenchGroup } from "@/lib/types"
 import { listWorkbenchTree, readWorkbenchFile, writeWorkbenchFile } from "@/lib/api"
 import { EditorPane } from "./editor-pane"
 import { LedgerPane } from "./ledger-pane"
@@ -11,10 +11,11 @@ import { WorkbenchFileSidebar } from "./workbench-file-sidebar"
 import { WorkbenchHeader } from "./workbench-header"
 import { filterWorkbenchTree, findFirstWorkbenchFile, findWorkbenchFile, formatWorkbenchTimestamp } from "./workbench-utils"
 
-export function Workbench({ book, onClose, initialPath }: WorkbenchProps) {
-  const [tab, setTab] = useState<Tab>("editor")
+export function Workbench({ book, onClose, initialPath, initialLine, initialTab, initialLedgerEntryId }: WorkbenchProps) {
+  const [tab, setTab] = useState<Tab>(initialTab ?? "editor")
   const [tree, setTree] = useState<WorkbenchGroup[]>([])
   const [activePath, setActivePath] = useState<string>("")
+  const [activeLine, setActiveLine] = useState<number | undefined>(initialLine)
   const [content, setContent] = useState<string>("")
   const [savedContent, setSavedContent] = useState<string>("")
   const [savedAt, setSavedAt] = useState<string>("")
@@ -24,6 +25,14 @@ export function Workbench({ book, onClose, initialPath }: WorkbenchProps) {
   useEffect(() => {
     if (initialPath) setActivePath(initialPath)
   }, [initialPath])
+
+  useEffect(() => {
+    setActiveLine(initialLine)
+  }, [initialLine])
+
+  useEffect(() => {
+    if (initialTab) setTab(initialTab)
+  }, [initialTab])
 
   // load tree, then auto-select first file if no activePath
   useEffect(() => {
@@ -61,8 +70,15 @@ export function Workbench({ book, onClose, initialPath }: WorkbenchProps) {
     setLedgerKey((k) => k + 1)
   }
 
-  function openFileInEditor(path: string) {
+  function openFileInEditor(path: string, line?: number) {
     setActivePath(path)
+    setActiveLine(line)
+    setTab("editor")
+  }
+
+  function selectFile(path: string) {
+    setActivePath(path)
+    setActiveLine(undefined)
     setTab("editor")
   }
 
@@ -70,11 +86,6 @@ export function Workbench({ book, onClose, initialPath }: WorkbenchProps) {
 
   return (
     <div className="absolute inset-0 z-30 flex flex-col bg-background/98 animate-in fade-in duration-200">
-      <div className="pointer-events-none absolute inset-0 -z-0 overflow-hidden">
-        <div className="absolute -right-32 -top-32 h-[480px] w-[480px] rounded-full bg-[var(--light-warm)] opacity-50 blur-3xl" />
-        <div className="absolute -bottom-40 -left-32 h-[420px] w-[420px] rounded-full bg-[var(--light-cool)] opacity-30 blur-3xl dark:opacity-20" />
-      </div>
-
       <WorkbenchHeader
         bookTitle={book.title}
         tab={tab}
@@ -86,7 +97,10 @@ export function Workbench({ book, onClose, initialPath }: WorkbenchProps) {
       />
 
       {/* 主体 */}
-      <div className="relative z-10 grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_300px]">
+      <div className={tab === "editor"
+        ? "relative z-10 grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_300px]"
+        : "relative z-10 grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)]"
+      }>
         {/* 左:主内容 */}
         <div className="min-h-0 min-w-0 overflow-hidden">
           {tab === "editor" && (
@@ -96,12 +110,14 @@ export function Workbench({ book, onClose, initialPath }: WorkbenchProps) {
               onChange={setContent}
               dirty={dirty}
               savedAt={savedAt}
+              initialLine={activeLine}
             />
           )}
           {tab === "ledger" && (
             <LedgerPane
               key={ledgerKey}
               bookId={book.id}
+              initialEntryId={initialLedgerEntryId}
               onOpenFile={openFileInEditor}
               onChanged={() => {
                 listWorkbenchTree(book.id).then(setTree)
@@ -112,13 +128,15 @@ export function Workbench({ book, onClose, initialPath }: WorkbenchProps) {
           {tab === "skill" && <SkillPane bookId={book.id} onOpenFile={openFileInEditor} />}
         </div>
 
-        <WorkbenchFileSidebar
-          groups={filteredTree}
-          activePath={activePath}
-          query={query}
-          onQueryChange={setQuery}
-          onSelectFile={setActivePath}
-        />
+        {tab === "editor" && (
+          <WorkbenchFileSidebar
+            groups={filteredTree}
+            activePath={activePath}
+            query={query}
+            onQueryChange={setQuery}
+            onSelectFile={selectFile}
+          />
+        )}
       </div>
     </div>
   )

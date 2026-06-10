@@ -26,7 +26,7 @@ export function SkillPane({ bookId, onOpenFile }: { bookId: string; onOpenFile: 
   if (loading) return <LoadingPane />
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin px-10 py-6">
+    <div className="h-full min-h-0 overflow-y-auto scrollbar-thin px-10 py-6">
       <div className="mx-auto max-w-5xl">
         <SkillPaneHeader skillCount={skills.length} onCreateSkill={dialog.openCreateSkillDialog} />
 

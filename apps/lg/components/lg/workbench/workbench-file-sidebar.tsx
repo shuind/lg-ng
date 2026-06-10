@@ -1,7 +1,7 @@
-"use client"
+﻿"use client"
 
 import { Search } from "lucide-react"
-import type { WorkbenchGroup } from "@/lib/mock-data"
+import type { WorkbenchGroup } from "@/lib/types"
 import { FileGroup } from "./file-tree"
 import { countWorkbenchFiles } from "./workbench-utils"
 

@@ -14,6 +14,8 @@ const CHECKPOINT_INTERVAL = 10
 const DEFAULT_LEDGER_LIMIT = 50
 const MAX_LEDGER_LIMIT = 200
 const READ_CHUNK_BYTES = 64 * 1024
+const CHECKPOINT_GC_MIN_INTERVAL_MS = 6 * 60 * 60 * 1000
+const CHECKPOINT_GC_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
 
 type LedgerAppendInput = Omit<
   LedgerEntry,
@@ -53,6 +55,8 @@ type ParsedLedgerLine = {
   entry: LedgerEntry
   offset: number
 }
+
+const lastCheckpointGcByBook = new Map<string, number>()
 
 function ledgerPath(bookId: string): string {
   return path.join(getBookDir(bookId), "ledger.jsonl")
@@ -109,6 +113,86 @@ async function readCheckpoint(bookId: string, hash: string): Promise<string | nu
   } catch {
     return null
   }
+}
+
+async function collectReferencedCheckpointHashes(bookId: string): Promise<Set<string>> {
+  const hashes = new Set<string>()
+  try {
+    const raw = await fs.readFile(ledgerPath(bookId), "utf-8")
+    for (const line of raw.split(/\r?\n/)) {
+      if (!line.trim()) continue
+      try {
+        const entry = JSON.parse(line) as LedgerEntry
+        if (entry.checkpointHash) hashes.add(entry.checkpointHash)
+        if (entry.baseCheckpointHash) hashes.add(entry.baseCheckpointHash)
+      } catch {
+        // Ignore malformed lines; GC only removes unreferenced blobs.
+      }
+    }
+  } catch {
+    // Missing ledger means no references.
+  }
+  return hashes
+}
+
+export async function gcLedgerCheckpoints(bookId: string, options: {
+  retentionMs?: number
+  force?: boolean
+} = {}): Promise<{ removed: number }> {
+  const now = Date.now()
+  const lastRun = lastCheckpointGcByBook.get(bookId) ?? 0
+  if (!options.force && now - lastRun < CHECKPOINT_GC_MIN_INTERVAL_MS) return { removed: 0 }
+  lastCheckpointGcByBook.set(bookId, now)
+
+  const root = checkpointRoot(bookId)
+  const retentionMs = options.retentionMs ?? CHECKPOINT_GC_RETENTION_MS
+  const referencedHashes = await collectReferencedCheckpointHashes(bookId)
+  let removed = 0
+
+  let shardDirs: string[]
+  try {
+    shardDirs = await fs.readdir(root)
+  } catch {
+    return { removed: 0 }
+  }
+
+  for (const shard of shardDirs) {
+    const shardPath = path.join(root, shard)
+    let fileNames: string[]
+    try {
+      fileNames = await fs.readdir(shardPath)
+    } catch {
+      continue
+    }
+
+    for (const fileName of fileNames) {
+      const filePath = path.join(shardPath, fileName)
+      const hash = `sha256:${fileName}`
+      if (referencedHashes.has(hash)) continue
+
+      try {
+        const stat = await fs.stat(filePath)
+        if (now - stat.mtimeMs < retentionMs) continue
+        if (!stat.isFile()) continue
+        await fs.unlink(filePath)
+        removed += 1
+      } catch {
+        // Best effort GC.
+      }
+    }
+
+    try {
+      await fs.rmdir(shardPath)
+    } catch {
+      // Directory is not empty or disappeared.
+    }
+  }
+
+  return { removed }
+}
+
+function scheduleCheckpointGc(bookId: string): void {
+  void gcLedgerCheckpoints(bookId).catch(() => {})
 }
 
 function isContentWrite(entry: Pick<LedgerAppendInput, "targetPath" | "afterSnapshot">): boolean {
@@ -379,6 +463,7 @@ export async function appendLedgerEntry(
   await fs.appendFile(ledgerPath(bookId), JSON.stringify(record) + "\n", "utf-8")
   applyEntryToLedgerState(state, record)
   await writeLedgerState(bookId, state)
+  if (state.entryCount % 50 === 0) scheduleCheckpointGc(bookId)
   return record
 }
 

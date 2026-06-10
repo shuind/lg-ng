@@ -22,8 +22,8 @@ export function SettingCardItem({
   const hasFullContent = Boolean(card.content && card.content.trim() && card.content.trim() !== card.summary.trim())
 
   return (
-    <div className="group rounded-md transition hover:bg-sidebar-accent/25">
-      <div className="flex items-start gap-1.5 px-1 py-2">
+    <div className="group rounded-lg transition hover:bg-sidebar-accent/15 focus-within:bg-sidebar-accent/15">
+      <div className="flex items-start gap-1.5 px-2 py-2">
         <button
           type="button"
           onClick={onToggle}
@@ -39,16 +39,16 @@ export function SettingCardItem({
                 {card.name}
               </span>
               {card.meta && Object.keys(card.meta).length > 0 && (
-                <span className="shrink-0 font-mono text-[10px] text-muted-foreground/55">
+                <span className="shrink-0 font-mono text-[10px] text-muted-foreground/45">
                   {Object.keys(card.meta).length}
                 </span>
               )}
             </div>
-            <p className="mt-0.5 line-clamp-2 text-[11.5px] leading-relaxed text-muted-foreground/85">
+            <p className="mt-0.5 line-clamp-2 text-[11.5px] leading-relaxed text-muted-foreground/75">
               {card.summary}
             </p>
             {card.path && (
-              <div className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground/45">
+              <div className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground/35">
                 {card.path}
               </div>
             )}
@@ -57,7 +57,7 @@ export function SettingCardItem({
         <button
           type="button"
           onClick={() => onCite(card)}
-          className="mt-0.5 rounded-md p-1 text-muted-foreground/65 transition hover:bg-secondary hover:text-foreground"
+          className="mt-0.5 rounded-md p-1 text-muted-foreground/55 transition hover:bg-sidebar-accent hover:text-foreground"
           aria-label="引用到对话"
           title="引用到对话"
         >
@@ -66,7 +66,7 @@ export function SettingCardItem({
       </div>
 
       {open && (
-        <div className="ml-6 border-l border-border/35 px-3 pb-3 pt-1">
+        <div className="ml-7 border-l border-border/25 px-3 pb-3 pt-1">
           {fullContent && card.content ? (
             <pre className="max-h-[42vh] whitespace-pre-wrap break-words overflow-y-auto font-serif text-[12px] leading-relaxed text-foreground/85 scrollbar-thin">
               {card.content}

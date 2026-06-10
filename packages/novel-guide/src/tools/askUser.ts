@@ -18,7 +18,10 @@ export const AskUserTool: Tool = {
     const question = typeof input.question === "string" ? input.question : "Need user input.";
     return {
       ok: true,
-      content: `Question for user: ${question}\nThe CLI will show this in the assistant reply; no hidden answer is available.`,
+      content: [
+        `Question for user: ${question}`,
+        "Present this question to the user in the final assistant reply and wait for their answer. No hidden answer is available.",
+      ].join("\n"),
     };
   },
 };

@@ -4,17 +4,32 @@ import type { Dirent } from "node:fs"
 import type {
   CreateSkillRequest,
   Skill,
-  SkillDraftRequest,
   SkillDraftResponse,
-  SkillResourceKind,
   SkillSummary,
   SkillTextResource,
   UpdateSkillRequest,
 } from "@/lib/types"
 import { readBookFile, getBookFileMtime } from "@/lib/server/book-store"
-import { callChatCompletion, getConfig } from "@/lib/server/llm"
 import { getBookDir } from "@/lib/server/paths"
 import { rebuildBookIndexes, updateIndexedFile } from "@/lib/server/book-index"
+import {
+  RESOURCE_ROOTS,
+  SkillConflictError,
+  SkillNotFoundError,
+  SkillValidationError,
+  isValidSkillName,
+  normalizeSkillName,
+  parseSkillFrontmatter,
+  validateSkillDraft,
+} from "@/lib/server/skill-validation"
+
+export {
+  SkillConflictError,
+  SkillNotFoundError,
+  SkillValidationError,
+  normalizeSkillName,
+  validateSkillDraft,
+} from "@/lib/server/skill-validation"
 
 const SOURCE_FILE = "创作指南.md"
 const SUMMARY_FILE = "skills/style_guide_summary.md"
@@ -22,8 +37,6 @@ const META_FILE = "skills/style_guide.skill.json"
 const CLAUDE_SKILLS_DIR = ".claude/skills"
 
 const SUMMARY_MAX_CHARS = 500
-const MAX_RESOURCE_CHARS = 200_000
-const RESOURCE_ROOTS: SkillResourceKind[] = ["references", "scripts", "assets"]
 
 const KEYWORD_LINES = ["文风", "语感", "禁忌", "人物", "结构", "节奏", "偏好", "塑造", "风格", "写法"]
 
@@ -64,318 +77,6 @@ async function dirExists(dirPath: string): Promise<boolean> {
     return stat.isDirectory()
   } catch {
     return false
-  }
-}
-
-export function normalizeSkillName(input: string): string {
-  return input
-    .trim()
-    .toLowerCase()
-    .replace(/['"]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 64)
-}
-
-export class SkillValidationError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = "SkillValidationError"
-  }
-}
-
-export class SkillConflictError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = "SkillConflictError"
-  }
-}
-
-export class SkillNotFoundError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = "SkillNotFoundError"
-  }
-}
-
-function parseSkillFrontmatter(content: string): Record<string, string> {
-  if (!content.startsWith("---")) return {}
-  const end = content.indexOf("\n---", 3)
-  if (end < 0) return {}
-
-  const raw = content.slice(3, end).trim()
-  const meta: Record<string, string> = {}
-  for (const line of raw.split(/\r?\n/)) {
-    const match = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/)
-    if (!match) continue
-    meta[match[1]] = match[2].trim().replace(/^["']|["']$/g, "")
-  }
-  return meta
-}
-
-function isValidSkillName(name: string): boolean {
-  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name) && name.length <= 64
-}
-
-function safeYamlValue(value: string): string {
-  return JSON.stringify(value.replace(/\r?\n/g, " ").trim())
-}
-
-function normalizeResourceKinds(kinds: unknown): SkillResourceKind[] {
-  if (!Array.isArray(kinds)) return []
-  return RESOURCE_ROOTS.filter((kind) => kinds.includes(kind))
-}
-
-function normalizeResourcePath(rawPath: string): string {
-  const normalized = rawPath.trim().replace(/\\/g, "/")
-  const parts = normalized.split("/").filter(Boolean)
-
-  if (!normalized || parts.length === 0) {
-    throw new SkillValidationError("资源文件路径不能为空。")
-  }
-  if (path.isAbsolute(rawPath) || /^[a-zA-Z]:/.test(rawPath) || normalized.startsWith("/")) {
-    throw new SkillValidationError(`资源文件路径必须是相对路径：${rawPath}`)
-  }
-  if (parts.includes("..")) {
-    throw new SkillValidationError(`资源文件路径不能包含 '..'：${rawPath}`)
-  }
-  if (!RESOURCE_ROOTS.includes(parts[0] as SkillResourceKind)) {
-    throw new SkillValidationError(`资源文件路径必须以 references/、scripts/ 或 assets/ 开头：${rawPath}`)
-  }
-  if (parts.some((part) => part.toLowerCase() === "skill.md")) {
-    throw new SkillValidationError(`资源文件不能指向 SKILL.md：${rawPath}`)
-  }
-
-  return parts.join("/")
-}
-
-function normalizeTextResources(resources: SkillTextResource[] | undefined): SkillTextResource[] {
-  const normalized: SkillTextResource[] = []
-  const seen = new Set<string>()
-
-  for (const resource of resources ?? []) {
-    if (!resource || typeof resource.path !== "string" || typeof resource.content !== "string") {
-      throw new SkillValidationError("每个资源文件都需要 path 和文本 content。")
-    }
-    if (resource.content.length > MAX_RESOURCE_CHARS) {
-      throw new SkillValidationError(`资源文件太大：${resource.path}`)
-    }
-
-    const resourcePath = normalizeResourcePath(resource.path)
-    if (seen.has(resourcePath)) {
-      throw new SkillValidationError(`资源文件路径重复：${resourcePath}`)
-    }
-    seen.add(resourcePath)
-    normalized.push({ path: resourcePath, content: resource.content })
-  }
-
-  return normalized
-}
-
-function validateSkillMd(name: string, skillMd: string): Record<string, string> {
-  if (typeof skillMd !== "string" || !skillMd.trim()) {
-    throw new SkillValidationError("必须填写 SKILL.md 内容。")
-  }
-  if (!skillMd.trimStart().startsWith("---")) {
-    throw new SkillValidationError("SKILL.md 必须以 YAML frontmatter 开头，也就是文件开头要有 ---。")
-  }
-
-  const meta = parseSkillFrontmatter(skillMd.trimStart())
-  if (!meta.name) {
-    throw new SkillValidationError("SKILL.md 开头的 frontmatter 必须包含 name。")
-  }
-  if (!meta.description) {
-    throw new SkillValidationError("SKILL.md 开头的 frontmatter 必须包含 description。")
-  }
-  if (!isValidSkillName(meta.name)) {
-    throw new SkillValidationError("frontmatter 里的 name 只能使用小写英文字母、数字和连字符。")
-  }
-  if (meta.name !== name) {
-    throw new SkillValidationError("frontmatter 里的 name 必须和 Skill 目录短名一致。")
-  }
-
-  return meta
-}
-
-export function validateSkillDraft(input: CreateSkillRequest): {
-  name: string
-  skillMd: string
-  resources: SkillTextResource[]
-  meta: Record<string, string>
-} {
-  const name = normalizeSkillName(input.name)
-  if (!name || !isValidSkillName(name)) {
-    throw new SkillValidationError("Skill 短名只能使用小写英文字母、数字和连字符。")
-  }
-
-  const skillMd = input.skillMd.trimEnd() + "\n"
-  const meta = validateSkillMd(name, skillMd)
-  const resources = normalizeTextResources(input.resources)
-  return { name, skillMd, resources, meta }
-}
-
-function fallbackSkillName(nameHint: string): { name: string; warnings: string[] } {
-  const normalized = normalizeSkillName(nameHint)
-  if (normalized) return { name: normalized, warnings: [] }
-  return {
-    name: "novel-skill",
-    warnings: ["名称无法自动转换成安全的英文短名，请手动确认 Skill 短名。"],
-  }
-}
-
-function createTemplateSkillMd(name: string, input: SkillDraftRequest): string {
-  const goal = input.goal.trim() || "说明这个 Skill 要沉淀哪一种可复用的小说写作能力。"
-  const triggers = input.triggers.trim() || "当用户明确需要这套流程时使用。"
-  const examples = input.examples.trim()
-  const examplesBlock = examples
-    ? `\n## 示例\n\n${examples}\n`
-    : ""
-
-  return `---
-name: ${name}
-description: ${safeYamlValue(goal)}
-when_to_use: ${safeYamlValue(triggers)}
-argument-hint: "[范围或参考材料]"
----
-
-# ${name}
-
-使用这个 Skill 来执行下面这套可复用流程：
-
-${goal}
-
-## 工作流程
-
-1. 先确认用户这次想要的具体产出。
-2. 判断是否需要读取相关书籍文件，不要凭空断言。
-3. 结合项目设定、写作约束和必要参考资料处理。
-4. 输出结果时保持简洁，需要时给出相关文件路径或下一步动作。
-${examplesBlock}`
-}
-
-function createTemplateResources(kinds: SkillResourceKind[]): SkillTextResource[] {
-  const resources: SkillTextResource[] = []
-  if (kinds.includes("references")) {
-    resources.push({
-      path: "references/context.md",
-      content: "# 参考资料\n\n把较长的规则、设定、示例或背景说明放在这里，避免 SKILL.md 过长。\n",
-    })
-  }
-  if (kinds.includes("scripts")) {
-    resources.push({
-      path: "scripts/helper.js",
-      content: "// 如果这个 Skill 需要可重复执行的文本处理逻辑，可以写在这里。\n",
-    })
-  }
-  if (kinds.includes("assets")) {
-    resources.push({
-      path: "assets/template.txt",
-      content: "这里可以放这个 Skill 会反复使用的文本模板或素材说明。\n",
-    })
-  }
-  return resources
-}
-
-function extractJsonObject(content: string): unknown {
-  const trimmed = content.trim()
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)
-  const raw = fenced ? fenced[1].trim() : trimmed
-  const start = raw.indexOf("{")
-  const end = raw.lastIndexOf("}")
-  if (start < 0 || end <= start) throw new Error("没有找到 JSON 对象。")
-  return JSON.parse(raw.slice(start, end + 1))
-}
-
-function normalizeDraftResponse(raw: unknown, fallbackName: string, fallback: SkillDraftResponse): SkillDraftResponse {
-  const data = raw && typeof raw === "object" ? raw as Partial<SkillDraftResponse> : {}
-  const warnings = Array.isArray(data.warnings)
-    ? data.warnings.filter((item): item is string => typeof item === "string")
-    : []
-  const name = normalizeSkillName(typeof data.name === "string" ? data.name : fallbackName) || fallbackName
-  const skillMd = typeof data.skillMd === "string" && data.skillMd.trim()
-    ? data.skillMd.trimEnd() + "\n"
-    : fallback.skillMd
-  const rawResources = Array.isArray(data.resources) ? data.resources : []
-  const resources: SkillTextResource[] = []
-
-  for (const item of rawResources) {
-    if (!item || typeof item !== "object") continue
-    const resource = item as Partial<SkillTextResource>
-    if (typeof resource.path !== "string" || typeof resource.content !== "string") continue
-    try {
-      resources.push({
-        path: normalizeResourcePath(resource.path),
-        content: resource.content,
-      })
-    } catch {
-      warnings.push(`已跳过不合法的资源路径：${resource.path}`)
-    }
-  }
-
-  try {
-    validateSkillDraft({ name, skillMd, resources })
-    return { name, skillMd, resources, warnings }
-  } catch (error) {
-    warnings.push(error instanceof Error ? error.message : "生成的草稿没有通过校验。")
-    return { ...fallback, warnings: [...fallback.warnings, ...warnings] }
-  }
-}
-
-export async function draftClaudeSkill(input: SkillDraftRequest): Promise<SkillDraftResponse> {
-  const resourceKinds = normalizeResourceKinds(input.resourceKinds)
-  const { name, warnings } = fallbackSkillName(input.nameHint)
-  const fallback: SkillDraftResponse = {
-    name,
-    skillMd: createTemplateSkillMd(name, input),
-    resources: createTemplateResources(resourceKinds),
-    warnings,
-  }
-  const config = getConfig()
-  if (!config) {
-    return {
-      ...fallback,
-      warnings: [...fallback.warnings, "当前没有配置可用模型，已先生成可编辑的模板草稿。"],
-    }
-  }
-
-  try {
-    const result = await callChatCompletion(config, [
-      {
-        role: "system",
-        content: [
-          "You create concise project-local Novel Guide skills for Chinese novel projects.",
-          "Return only JSON with keys: name, skillMd, resources, warnings.",
-          "The skill name must use lowercase English letters, digits, and hyphens only.",
-          "SKILL.md must start with YAML frontmatter containing name and description.",
-          "Allowed optional frontmatter keys: when_to_use, argument-hint, user-invocable, disable-model-invocation.",
-          "Keep SKILL.md focused and under 120 lines. Move detailed material into resources.",
-          "Resource paths must start with references/, scripts/, or assets/ and contain text content only.",
-          "Use clear Simplified Chinese for user-facing SKILL.md body, descriptions, resource content, and warnings unless paths, keys, or code require English.",
-        ].join("\n"),
-      },
-      {
-        role: "user",
-        content: JSON.stringify({
-          nameHint: input.nameHint,
-          safeName: name,
-          goal: input.goal,
-          triggers: input.triggers,
-          examples: input.examples,
-          resourceKinds,
-        }, null, 2),
-      },
-    ], { temperature: 0.2, maxTokens: 2400 })
-
-    return normalizeDraftResponse(extractJsonObject(result.content), name, fallback)
-  } catch (error) {
-    return {
-      ...fallback,
-      warnings: [
-        ...fallback.warnings,
-        error instanceof Error ? `模型生成草稿失败：${error.message}` : "模型生成草稿失败。",
-      ],
-    }
   }
 }
 

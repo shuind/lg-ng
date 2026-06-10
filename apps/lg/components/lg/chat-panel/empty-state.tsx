@@ -5,7 +5,7 @@ import { Sparkles } from "lucide-react"
 export function EmptyState() {
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 text-center">
-      <div className="relative h-16 w-16 rounded-2xl bg-gradient-to-br from-accent/30 to-transparent ring-1 ring-border/50 animate-breathe">
+      <div className="surface-2 relative h-16 w-16 rounded-lg border animate-breathe">
         <Sparkles className="absolute inset-0 m-auto h-6 w-6 text-accent-foreground/70" />
       </div>
       <div className="space-y-1.5">

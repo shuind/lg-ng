@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { draftClaudeSkill } from "@/lib/server/skill-service"
+import { draftClaudeSkill } from "@/lib/server/skill-draft-service"
 
 export async function POST(
   request: Request,

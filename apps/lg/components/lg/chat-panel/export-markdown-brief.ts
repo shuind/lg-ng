@@ -1,4 +1,4 @@
-import type { Message } from "@/lib/mock-data"
+﻿import type { Message } from "@/lib/types"
 import { appendListSection, appendNestedList } from "./export-markdown-list-utils"
 
 export function appendBriefMarkdown(lines: string[], brief: NonNullable<Message["brief"]>) {

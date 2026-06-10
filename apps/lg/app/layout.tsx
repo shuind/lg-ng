@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { Inter, Source_Serif_4, Fira_Code } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { ThemeProvider } from "@/components/theme-provider"
+import { Toaster } from "@/components/ui/toaster"
 import "./globals.css"
 
 const inter = Inter({
@@ -38,6 +39,7 @@ export default function RootLayout({
       <body className={`${inter.variable} ${serif.variable} ${mono.variable} font-sans antialiased`}>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange={false}>
           {children}
+          <Toaster />
         </ThemeProvider>
         {process.env.NODE_ENV === "production" && <Analytics />}
       </body>

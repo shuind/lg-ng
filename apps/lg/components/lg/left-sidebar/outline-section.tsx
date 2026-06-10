@@ -1,7 +1,7 @@
-"use client"
+﻿"use client"
 
 import { BookMarked } from "lucide-react"
-import type { OutlineFile } from "@/lib/mock-data"
+import type { OutlineFile } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { SidebarSection } from "./section"
 

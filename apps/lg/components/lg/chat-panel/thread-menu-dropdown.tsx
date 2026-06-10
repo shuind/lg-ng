@@ -1,7 +1,7 @@
-"use client"
+﻿"use client"
 
 import { Archive, Check, Edit3, Plus, Trash2 } from "lucide-react"
-import type { Thread } from "@/lib/mock-data"
+import type { Thread } from "@/lib/types"
 import { ThreadMenuActionButton } from "./thread-menu-action-button"
 
 export function ThreadMenuDropdown({
@@ -26,7 +26,7 @@ export function ThreadMenuDropdown({
   onRestoreThread: (threadId: string) => void
 }) {
   return (
-    <div className="absolute right-0 top-9 z-30 w-72 rounded-xl border border-border/70 bg-popover p-2 text-[12px] text-popover-foreground shadow-lg">
+    <div className="absolute right-0 top-9 z-30 w-72 rounded-lg border border-border/70 bg-popover p-2 text-[12px] text-popover-foreground shadow-lg">
       <div className="mb-1 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
         Active Threads
       </div>

@@ -15,10 +15,12 @@ type LeftSidebarColumnProps = Pick<
   | "collapsed"
   | "onToggleCollapsed"
   | "onSelectBook"
+  | "onPrefetchBook"
   | "onSelectChapter"
   | "onBackToChat"
   | "onNewBook"
   | "onNewChapter"
+  | "onDeleteChapter"
   | "onOpenWorkbench"
   | "onRenameBook"
 >
@@ -33,10 +35,12 @@ export function LeftSidebarColumn({
   collapsed,
   onToggleCollapsed,
   onSelectBook,
+  onPrefetchBook,
   onSelectChapter,
   onBackToChat,
   onNewBook,
   onNewChapter,
+  onDeleteChapter,
   onOpenWorkbench,
   onRenameBook,
 }: LeftSidebarColumnProps) {
@@ -65,10 +69,12 @@ export function LeftSidebarColumn({
         collapsed={collapsed}
         onToggleCollapsed={onToggleCollapsed}
         onSelectBook={onSelectBook}
+        onPrefetchBook={onPrefetchBook}
         onSelectChapter={onSelectChapter}
         onBackToChat={onBackToChat}
         onNewBook={onNewBook}
         onNewChapter={onNewChapter}
+        onDeleteChapter={onDeleteChapter}
         onOpenWorkbench={onOpenWorkbench}
         onRenameBook={onRenameBook}
       />

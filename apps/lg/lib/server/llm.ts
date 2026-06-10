@@ -1,10 +1,10 @@
 import {
   createChatCompletion,
   createOpenAICompatibleClient,
-  getOpenAICompatibleConfig,
   type ModelMessage,
   type OpenAICompatibleConfig,
 } from "novel-guide"
+import { getEffectiveOpenAICompatibleConfig } from "@/lib/server/app-settings-store"
 
 type LlmConfig = OpenAICompatibleConfig
 
@@ -18,7 +18,7 @@ interface ChatResponse {
 }
 
 export function getConfig(): LlmConfig | null {
-  return getOpenAICompatibleConfig()
+  return getEffectiveOpenAICompatibleConfig()
 }
 
 export function isLlmEnabled(): boolean {

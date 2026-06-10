@@ -1,8 +1,8 @@
-"use client"
+﻿"use client"
 
 import { useEffect, useRef, useState } from "react"
 import { Plus } from "lucide-react"
-import type { Book } from "@/lib/mock-data"
+import type { Book } from "@/lib/types"
 import { BookRow } from "./book-row"
 import { SidebarSection } from "./section"
 
@@ -12,6 +12,7 @@ export function BookSection({
   mode,
   onNewBook,
   onSelectBook,
+  onPrefetchBook,
   onOpenWorkbench,
   onRenameBook,
 }: {
@@ -20,6 +21,7 @@ export function BookSection({
   mode: "chat" | "writing" | "workbench"
   onNewBook: () => void
   onSelectBook: (id: string) => void
+  onPrefetchBook: (id: string) => void
   onOpenWorkbench: (bookId: string, path?: string) => void
   onRenameBook: (bookId: string, newTitle: string) => void
 }) {
@@ -73,6 +75,7 @@ export function BookSection({
           onCommitRename={commitRename}
           onCancelRename={() => setEditingBookId(null)}
           onSelectBook={onSelectBook}
+          onPrefetchBook={onPrefetchBook}
           onOpenWorkbench={onOpenWorkbench}
           onStartRename={startRename}
         />

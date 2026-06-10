@@ -1,7 +1,7 @@
-"use client"
+﻿"use client"
 
 import { ChevronDown } from "lucide-react"
-import type { Thread } from "@/lib/mock-data"
+import type { Thread } from "@/lib/types"
 
 export function ThreadMenuTrigger({
   activeThread,

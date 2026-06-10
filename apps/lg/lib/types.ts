@@ -4,6 +4,7 @@ export interface Book {
   createdAt: string
   updatedAt: string
   rootPath: string
+  cover?: string
 }
 
 export interface BookTreeNode {
@@ -20,6 +21,19 @@ export interface BookFile {
   path: string
   content: string
   updatedAt: string
+}
+
+export interface WorkbenchFile {
+  id: string
+  name: string
+  path: string
+  modified?: boolean
+}
+
+export interface WorkbenchGroup {
+  id: string
+  label: string
+  files: WorkbenchFile[]
 }
 
 export interface LedgerEntry {
@@ -77,6 +91,32 @@ export interface RetrievedContext {
   score: number
   updatedAt: string
   excerpt: string
+}
+
+export interface ImportedMaterial {
+  id: string
+  name: string
+  path: string
+  summary: string
+  size: number
+  updatedAt: string
+}
+
+export type ChatReferenceKind = "setting" | "material"
+
+export interface ChatReference {
+  id: string
+  kind: ChatReferenceKind
+  type: string
+  name: string
+  summary: string
+  path?: string
+  content?: string
+  category?: SettingCard["category"]
+  aliases?: string[]
+  meta?: Record<string, string>
+  size?: number
+  updatedAt?: string
 }
 
 export interface Skill {
@@ -191,6 +231,7 @@ export interface ChatChangeEntry {
   targetPath: string
   summary: string
   diffPatch?: string
+  diffOmitted?: boolean
   rollbackable: boolean
 }
 
@@ -287,6 +328,7 @@ export interface Turn {
   parentTurnId?: string
   userMessageId: string
   assistantMessageId?: string
+  agentSessionId?: string
   status: "running" | "done" | "failed" | "cancelled"
   error?: string
   createdAt: string

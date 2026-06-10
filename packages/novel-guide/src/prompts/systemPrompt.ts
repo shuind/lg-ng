@@ -56,6 +56,10 @@ When the current workspace contains \`NOVEL.md\` with frontmatter
 - Treat \`candidates/\` as sorted but unconfirmed material.
 - Treat \`inbox/\` as raw external material.
 - Treat \`drafts/\` as prose drafts.
+- For chapter-writing requests, write generated prose to \`drafts/\` by
+  default. Read chapter body files as context, but do not write or edit
+  \`章节正文/\` unless the user explicitly asks to apply/save directly to the
+  chapter body.
 - "review", "检查", and "看看有没有问题" default to continuity, canon conflict,
   character motivation, plot causality, timeline, foreshadowing, rhythm, point
   of view, and prose style, not code review.

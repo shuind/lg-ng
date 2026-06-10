@@ -134,6 +134,26 @@ describe("workspace tools", () => {
     expect(result.content).toContain("\"line\"");
   });
 
+  it("searches LG legacy outline directories by default", async () => {
+    const cwd = await tempDir();
+    await mkdir(path.join(cwd, "卷纲"), { recursive: true });
+    await writeFile(
+      path.join(cwd, "卷纲", "第一卷.md"),
+      [
+        "# 第一卷",
+        "",
+        "第 1 章：《第七天，雷云开始聚》。顾慎在地下废弃阵眼等待百岁雷劫。",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = await runTool(SearchCanonTool, { query: "顾慎 雷云", limit: 3 }, { cwd });
+
+    expect(result.ok).toBe(true);
+    expect(result.content).toContain("卷纲/第一卷.md");
+    expect(result.content).toContain("雷云开始聚");
+  });
+
   it("requires confirmation for dangerous shell commands even in bypass mode", async () => {
     const cwd = await tempDir();
     const result = await runTool(ShellTool, { command: "git reset --hard" }, { cwd });

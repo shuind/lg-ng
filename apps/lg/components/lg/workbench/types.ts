@@ -1,10 +1,19 @@
-import type { Book } from "@/lib/mock-data"
+﻿import type { Book } from "@/lib/types"
+
+export type Tab = "editor" | "ledger" | "skill"
+
+export interface WorkbenchOpenOptions {
+  path?: string
+  initialLine?: number
+  initialTab?: Tab
+  initialLedgerEntryId?: string
+}
 
 export interface WorkbenchProps {
   book: Book
   onClose: () => void
   initialPath?: string
+  initialLine?: number
+  initialTab?: Tab
+  initialLedgerEntryId?: string
 }
-
-export type Tab = "editor" | "ledger" | "skill"
-

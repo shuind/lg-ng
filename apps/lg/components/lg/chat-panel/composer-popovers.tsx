@@ -1,6 +1,6 @@
-"use client"
+﻿"use client"
 
-import type { SettingCard } from "@/lib/mock-data"
+import type { ChatReference, ImportedMaterial, SettingCard } from "@/lib/types"
 import type { ResponseConstraint, Skill } from "@/lib/types"
 import { PlusPicker, ReferencePicker } from "./pickers"
 import type { ChatCitation } from "./types"
@@ -14,6 +14,7 @@ export function ComposerPopovers({
   skills,
   skillIds,
   settingCards,
+  importedMaterials,
   citations,
   onTabChange,
   onToggleConstraint,
@@ -33,6 +34,7 @@ export function ComposerPopovers({
   skills: Skill[]
   skillIds: string[]
   settingCards: SettingCard[]
+  importedMaterials: ImportedMaterial[]
   citations: ChatCitation[]
   onTabChange: (tab: "constraints" | "skills") => void
   onToggleConstraint: (constraintId: string) => void
@@ -41,7 +43,7 @@ export function ComposerPopovers({
   onDeleteResponseConstraint: (constraintId: string) => Promise<void>
   onAddTemporaryConstraint: (instruction: string) => void
   onToggleSkill: (skillId: string) => void
-  onAddCitation: (card: SettingCard) => void
+  onAddCitation: (reference: ChatReference) => void
   onRemoveCitation: (cardId: string) => void
 }) {
   return (
@@ -65,6 +67,7 @@ export function ComposerPopovers({
       {referencePickerOpen && (
         <ReferencePicker
           cards={settingCards}
+          materials={importedMaterials}
           citations={citations}
           onAddCitation={onAddCitation}
           onRemoveCitation={onRemoveCitation}

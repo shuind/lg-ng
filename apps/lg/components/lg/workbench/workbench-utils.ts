@@ -1,4 +1,4 @@
-import type { WorkbenchFile, WorkbenchGroup } from "@/lib/mock-data"
+﻿import type { WorkbenchFile, WorkbenchGroup } from "@/lib/types"
 
 export function findFirstWorkbenchFile(groups: WorkbenchGroup[]): string {
   for (const group of groups) {
