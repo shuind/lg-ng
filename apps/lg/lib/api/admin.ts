@@ -39,6 +39,7 @@ export type TrialQuotaSettings = {
   enabled: boolean
   totalBudgetCny: number
   perUserBudgetCny: number
+  userBudgetsCny: Record<string, number>
   promptCacheHitPricePerMillionCny: number
   promptCacheMissPricePerMillionCny: number
   outputPricePerMillionCny: number
@@ -61,6 +62,8 @@ export type TrialQuotaSummary = {
   }
   byUser: Array<{
     userId: string
+    budgetCny: number
+    remainingCny: number
     promptTokens: number
     promptCacheHitTokens: number
     promptCacheMissTokens: number

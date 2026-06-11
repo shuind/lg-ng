@@ -13,6 +13,7 @@ export type TrialQuotaSettings = {
   enabled: boolean
   totalBudgetCny: number
   perUserBudgetCny: number
+  userBudgetsCny: Record<string, number>
   promptCacheHitPricePerMillionCny: number
   promptCacheMissPricePerMillionCny: number
   outputPricePerMillionCny: number
@@ -37,6 +38,8 @@ export type TrialQuotaUsageRecord = {
 
 export type TrialQuotaUserUsage = {
   userId: string
+  budgetCny: number
+  remainingCny: number
   promptTokens: number
   promptCacheHitTokens: number
   promptCacheMissTokens: number
@@ -97,6 +100,7 @@ function defaultSettings(): TrialQuotaSettings {
     enabled: process.env.LG_TRIAL_QUOTA_ENABLED === "true",
     totalBudgetCny: numberFromEnv("LG_TRIAL_QUOTA_TOTAL_CNY", 20),
     perUserBudgetCny: numberFromEnv("LG_TRIAL_QUOTA_PER_USER_CNY", 2),
+    userBudgetsCny: {},
     promptCacheHitPricePerMillionCny: numberFromEnv("LG_TRIAL_QUOTA_CACHE_HIT_PRICE_PER_MILLION_CNY", 0),
     promptCacheMissPricePerMillionCny: numberFromEnv(
       "LG_TRIAL_QUOTA_CACHE_MISS_PRICE_PER_MILLION_CNY",
@@ -113,6 +117,18 @@ function normalizeMoney(value: unknown, fallback: number): number {
   return Math.max(0, Math.round(numberValue * 1000000) / 1000000)
 }
 
+function normalizeUserBudgets(value: unknown): Record<string, number> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {}
+  const entries: Array<[string, number]> = []
+  for (const [userId, rawBudget] of Object.entries(value)) {
+    const normalizedUserId = userId.trim()
+    const budget = normalizeMoney(rawBudget, -1)
+    if (!normalizedUserId || budget < 0) continue
+    entries.push([normalizedUserId, budget])
+  }
+  return Object.fromEntries(entries)
+}
+
 function normalizeSettings(value: unknown): TrialQuotaSettings {
   const defaults = defaultSettings()
   const raw = value && typeof value === "object" ? value as Partial<TrialQuotaSettings> : {}
@@ -120,6 +136,7 @@ function normalizeSettings(value: unknown): TrialQuotaSettings {
     enabled: typeof raw.enabled === "boolean" ? raw.enabled : defaults.enabled,
     totalBudgetCny: normalizeMoney(raw.totalBudgetCny, defaults.totalBudgetCny),
     perUserBudgetCny: normalizeMoney(raw.perUserBudgetCny, defaults.perUserBudgetCny),
+    userBudgetsCny: normalizeUserBudgets(raw.userBudgetsCny),
     promptCacheHitPricePerMillionCny: normalizeMoney(
       raw.promptCacheHitPricePerMillionCny,
       defaults.promptCacheHitPricePerMillionCny,
@@ -250,6 +267,8 @@ function summarizeUsage(records: TrialQuotaUsageRecord[]) {
 
     const userUsage = byUser.get(record.userId) ?? {
       userId: record.userId,
+      budgetCny: 0,
+      remainingCny: 0,
       promptTokens: 0,
       promptCacheHitTokens: 0,
       promptCacheMissTokens: 0,
@@ -276,6 +295,24 @@ function summarizeUsage(records: TrialQuotaUsageRecord[]) {
   return { total, byUser: [...byUser.values()] }
 }
 
+export function getTrialQuotaUserBudgetCny(settings: TrialQuotaSettings, userId: string): number {
+  return settings.userBudgetsCny[userId] ?? settings.perUserBudgetCny
+}
+
+function applyUserBudgets(
+  byUser: TrialQuotaUserUsage[],
+  settings: TrialQuotaSettings,
+): TrialQuotaUserUsage[] {
+  return byUser.map((userUsage) => {
+    const budgetCny = getTrialQuotaUserBudgetCny(settings, userUsage.userId)
+    return {
+      ...userUsage,
+      budgetCny,
+      remainingCny: normalizeMoney(Math.max(0, budgetCny - userUsage.estimatedCostCny), 0),
+    }
+  })
+}
+
 function quotaHasPrices(settings: TrialQuotaSettings): boolean {
   return settings.promptCacheHitPricePerMillionCny > 0 ||
     settings.promptCacheMissPricePerMillionCny > 0 ||
@@ -285,6 +322,7 @@ function quotaHasPrices(settings: TrialQuotaSettings): boolean {
 export function getTrialQuotaSummarySync(): TrialQuotaSummary {
   const settings = readTrialQuotaSettingsSync()
   const { total, byUser } = summarizeUsage(readUsageRecordsSync())
+  const byUserWithBudgets = applyUserBudgets(byUser, settings)
   return {
     settings,
     platformApiKeyConfigured: isPlatformDeepSeekKeyConfigured(),
@@ -293,7 +331,7 @@ export function getTrialQuotaSummarySync(): TrialQuotaSummary {
       ...total,
       remainingCny: normalizeMoney(Math.max(0, settings.totalBudgetCny - total.estimatedCostCny), 0),
     },
-    byUser,
+    byUser: byUserWithBudgets,
   }
 }
 
@@ -303,8 +341,9 @@ export function canUsePlatformTrialQuotaSync(userId = getCurrentUserId()): boole
   if (!summary.enforcementEnabled) return false
   if (summary.total.estimatedCostCny >= summary.settings.totalBudgetCny) return false
   const userUsage = summary.byUser.find((item) => item.userId === userId)
-  if (!userUsage) return true
-  return userUsage.estimatedCostCny < summary.settings.perUserBudgetCny
+  const userBudgetCny = getTrialQuotaUserBudgetCny(summary.settings, userId)
+  const userUsedCny = userUsage?.estimatedCostCny ?? 0
+  return userUsedCny < userBudgetCny
 }
 
 export async function getTrialQuotaSummary(): Promise<TrialQuotaSummary> {

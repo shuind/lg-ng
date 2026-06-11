@@ -103,26 +103,43 @@ function StatusPill({
 function UserRow({
   user,
   quotaUsage,
+  quotaDraft,
+  quotaBudgetCny,
+  quotaIsCustom,
+  quotaSaving,
+  quotaCanSave,
+  onQuotaDraftChange,
+  onSaveQuota,
 }: {
   user: AdminUserOverview
   quotaUsage?: { estimatedCostCny: number; requestCount: number }
+  quotaDraft: string
+  quotaBudgetCny: number
+  quotaIsCustom: boolean
+  quotaSaving: boolean
+  quotaCanSave: boolean
+  onQuotaDraftChange: (value: string) => void
+  onSaveQuota: () => void
 }) {
+  const usedCny = quotaUsage?.estimatedCostCny ?? 0
+  const requestCount = quotaUsage?.requestCount ?? 0
+
   return (
-    <div className="grid gap-3 border-t border-border/60 px-4 py-3 text-[13px] md:grid-cols-[minmax(220px,1.4fr)_80px_96px_96px_112px_132px_120px] md:items-center">
+    <div className="grid gap-3 border-t border-border/60 px-4 py-3 text-[13px] lg:grid-cols-[minmax(220px,1.4fr)_72px_88px_96px_132px_176px_116px_112px] lg:items-center">
       <div className="min-w-0">
         <div className="truncate font-medium">{user.email}</div>
         <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">{user.id}</div>
       </div>
       <div>
-        <div className="md:hidden text-[11px] text-muted-foreground">书籍</div>
+        <div className="lg:hidden text-[11px] text-muted-foreground">书籍</div>
         {user.booksCount}
       </div>
       <div>
-        <div className="md:hidden text-[11px] text-muted-foreground">数据</div>
+        <div className="lg:hidden text-[11px] text-muted-foreground">数据</div>
         {formatBytes(user.dataBytes)}
       </div>
       <div>
-        <div className="md:hidden text-[11px] text-muted-foreground">模型 Key</div>
+        <div className="lg:hidden text-[11px] text-muted-foreground">模型 Key</div>
         {user.hasPersonalDeepSeekKey ? (
           <StatusPill tone="good">{user.deepSeekKeyPreview ?? "已配置"}</StatusPill>
         ) : (
@@ -130,21 +147,48 @@ function UserRow({
         )}
       </div>
       <div>
-        <div className="md:hidden text-[11px] text-muted-foreground">平台额度</div>
-        <span>{formatMoney(quotaUsage?.estimatedCostCny ?? 0)}</span>
-        {quotaUsage?.requestCount ? (
-          <span className="ml-1 text-muted-foreground">/ {quotaUsage.requestCount} 次</span>
+        <div className="lg:hidden text-[11px] text-muted-foreground">已用额度</div>
+        <span>{formatMoney(usedCny)} / {formatMoney(quotaBudgetCny)}</span>
+        {requestCount > 0 ? (
+          <span className="ml-1 text-muted-foreground">{requestCount} 次</span>
         ) : null}
       </div>
       <div>
-        <div className="md:hidden text-[11px] text-muted-foreground">Session</div>
+        <div className="lg:hidden text-[11px] text-muted-foreground">用户额度</div>
+        <div className="flex items-center gap-2">
+          <Input
+            className="h-8 w-24 text-[13px]"
+            type="number"
+            min="0"
+            step="0.000001"
+            value={quotaDraft}
+            onChange={(event) => onQuotaDraftChange(event.target.value)}
+          />
+          <Button
+            aria-label={`保存 ${user.email} 的用户额度`}
+            className="h-8 w-8 p-0"
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={!quotaCanSave}
+            onClick={onSaveQuota}
+          >
+            <Save className={cn("h-3.5 w-3.5", quotaSaving && "animate-pulse")} />
+          </Button>
+        </div>
+        <div className="mt-1 text-[11px] text-muted-foreground">
+          {quotaIsCustom ? "单独配置" : "默认额度"}
+        </div>
+      </div>
+      <div>
+        <div className="lg:hidden text-[11px] text-muted-foreground">Session</div>
         <span>{user.activeSessionCount} 活跃</span>
         {user.expiredSessionCount > 0 ? (
           <span className="ml-1 text-muted-foreground">/ {user.expiredSessionCount} 过期</span>
         ) : null}
       </div>
       <div>
-        <div className="md:hidden text-[11px] text-muted-foreground">最近数据</div>
+        <div className="lg:hidden text-[11px] text-muted-foreground">最近数据</div>
         {formatDate(user.dataUpdatedAt)}
       </div>
     </div>
@@ -263,6 +307,17 @@ function createInviteMaxDrafts(invites: AdminInviteOverview[]): Record<string, s
   return Object.fromEntries(invites.map((invite) => [invite.codeHash, String(invite.maxRedemptions)]))
 }
 
+function getUserBudgetCny(settings: TrialQuotaSettings, userId: string): number {
+  return settings.userBudgetsCny[userId] ?? settings.perUserBudgetCny
+}
+
+function createUserQuotaDrafts(
+  users: AdminUserOverview[],
+  settings: TrialQuotaSettings,
+): Record<string, string> {
+  return Object.fromEntries(users.map((user) => [user.id, String(getUserBudgetCny(settings, user.id))]))
+}
+
 function getInviteSlotCount(invites: AdminInviteOverview[]): number {
   return invites
     .filter((invite) => invite.configured)
@@ -296,6 +351,10 @@ export function AdminPanel() {
   const [quotaSaving, setQuotaSaving] = useState(false)
   const [quotaMessage, setQuotaMessage] = useState<string | null>(null)
   const [quotaError, setQuotaError] = useState<string | null>(null)
+  const [userQuotaDrafts, setUserQuotaDrafts] = useState<Record<string, string>>({})
+  const [userQuotaSavingId, setUserQuotaSavingId] = useState<string | null>(null)
+  const [userQuotaMessage, setUserQuotaMessage] = useState<string | null>(null)
+  const [userQuotaError, setUserQuotaError] = useState<string | null>(null)
   const [inviteCreateMax, setInviteCreateMax] = useState(String(DEFAULT_INVITE_MAX_REDEMPTIONS))
   const [inviteMaxDrafts, setInviteMaxDrafts] = useState<Record<string, string>>({})
   const [inviteCreating, setInviteCreating] = useState(false)
@@ -312,6 +371,7 @@ export function AdminPanel() {
       const nextOverview = await getAdminOverview()
       setOverview(nextOverview)
       setQuotaDraft(nextOverview.quota.settings)
+      setUserQuotaDrafts(createUserQuotaDrafts(nextOverview.users, nextOverview.quota.settings))
       setInviteMaxDrafts(createInviteMaxDrafts(nextOverview.auth.invites))
     } catch (err) {
       if (err instanceof AdminApiError && err.status === 403) {
@@ -334,6 +394,7 @@ export function AdminPanel() {
     try {
       const quota = await updateAdminTrialQuotaSettings(quotaDraft)
       setQuotaDraft(quota.settings)
+      setUserQuotaDrafts(createUserQuotaDrafts(overview?.users ?? [], quota.settings))
       setOverview((current) => current ? {
         ...current,
         llm: {
@@ -347,6 +408,46 @@ export function AdminPanel() {
       setQuotaError(getErrorMessage(err))
     } finally {
       setQuotaSaving(false)
+    }
+  }
+
+  async function saveUserQuota(user: AdminUserOverview) {
+    if (!overview || userQuotaSavingId) return
+    const budgetCny = Number(userQuotaDrafts[user.id])
+    if (!Number.isFinite(budgetCny) || budgetCny < 0) {
+      setUserQuotaMessage(null)
+      setUserQuotaError("请输入有效额度")
+      return
+    }
+
+    setUserQuotaSavingId(user.id)
+    setUserQuotaMessage(null)
+    setUserQuotaError(null)
+    try {
+      const quota = await updateAdminTrialQuotaSettings({
+        userBudgetsCny: {
+          ...overview.quota.settings.userBudgetsCny,
+          [user.id]: budgetCny,
+        },
+      })
+      setQuotaDraft(quota.settings)
+      setUserQuotaDrafts((current) => ({
+        ...current,
+        [user.id]: String(getUserBudgetCny(quota.settings, user.id)),
+      }))
+      setOverview((current) => current ? {
+        ...current,
+        llm: {
+          ...current.llm,
+          platformQuotaEnabled: quota.enforcementEnabled,
+        },
+        quota,
+      } : current)
+      setUserQuotaMessage("用户额度已保存")
+    } catch (err) {
+      setUserQuotaError(getErrorMessage(err))
+    } finally {
+      setUserQuotaSavingId(null)
     }
   }
 
@@ -507,7 +608,7 @@ export function AdminPanel() {
           <div>
             <h2 className="text-sm font-semibold tracking-normal">内测额度</h2>
             <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
-              平台 Key 需通过 DEEPSEEK_PLATFORM_API_KEY 配置；用户没有个人 Key 时才会使用平台额度。
+              平台 Key 需通过 DEEPSEEK_PLATFORM_API_KEY 配置；用户没有个人 Key 时才会使用平台额度。默认额度可被用户列表中的单独配置覆盖。
             </p>
           </div>
           <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">
@@ -548,7 +649,7 @@ export function AdminPanel() {
                 onChange={(value) => updateQuotaDraft("totalBudgetCny", value)}
               />
               <QuotaNumberInput
-                label="单用户额度"
+                label="默认用户额度"
                 value={quotaDraft.perUserBudgetCny}
                 suffix="元/人"
                 onChange={(value) => updateQuotaDraft("perUserBudgetCny", value)}
@@ -638,22 +739,52 @@ export function AdminPanel() {
 
       <section className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
         <div className="flex items-center justify-between gap-3 px-4 py-3">
-          <h2 className="text-sm font-semibold tracking-normal">内测用户</h2>
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="text-sm font-semibold tracking-normal">内测用户</h2>
+            {userQuotaMessage ? <span className="text-[12px] text-emerald-700 dark:text-emerald-300">{userQuotaMessage}</span> : null}
+            {userQuotaError ? <span className="text-[12px] text-destructive">{userQuotaError}</span> : null}
+          </div>
           <span className="text-[12px] text-muted-foreground">{sortedUsers.length} 人</span>
         </div>
-        <div className="hidden border-t border-border/60 px-4 py-2 text-[11px] font-medium uppercase tracking-normal text-muted-foreground md:grid md:grid-cols-[minmax(220px,1.4fr)_80px_96px_96px_112px_132px_120px]">
+        <div className="hidden border-t border-border/60 px-4 py-2 text-[11px] font-medium uppercase tracking-normal text-muted-foreground lg:grid lg:grid-cols-[minmax(220px,1.4fr)_72px_88px_96px_132px_176px_116px_112px]">
           <div>账号</div>
           <div>书籍</div>
           <div>数据</div>
           <div>模型 Key</div>
-          <div>平台额度</div>
+          <div>已用额度</div>
+          <div>用户额度</div>
           <div>Session</div>
           <div>最近数据</div>
         </div>
         {sortedUsers.length > 0 ? (
-          sortedUsers.map((user) => (
-            <UserRow key={user.id} user={user} quotaUsage={quotaUsageByUserId.get(user.id)} />
-          ))
+          sortedUsers.map((user) => {
+            const settings = overview.quota.settings
+            const quotaBudgetCny = getUserBudgetCny(settings, user.id)
+            const quotaDraftValue = userQuotaDrafts[user.id] ?? String(quotaBudgetCny)
+            const quotaDraftNumber = Number(quotaDraftValue)
+            const quotaCanSave = userQuotaSavingId === null &&
+              Number.isFinite(quotaDraftNumber) &&
+              quotaDraftNumber >= 0 &&
+              quotaDraftNumber !== quotaBudgetCny
+
+            return (
+              <UserRow
+                key={user.id}
+                user={user}
+                quotaUsage={quotaUsageByUserId.get(user.id)}
+                quotaDraft={quotaDraftValue}
+                quotaBudgetCny={quotaBudgetCny}
+                quotaIsCustom={Object.prototype.hasOwnProperty.call(settings.userBudgetsCny, user.id)}
+                quotaSaving={userQuotaSavingId === user.id}
+                quotaCanSave={quotaCanSave}
+                onQuotaDraftChange={(value) => setUserQuotaDrafts((current) => ({
+                  ...current,
+                  [user.id]: value,
+                }))}
+                onSaveQuota={() => void saveUserQuota(user)}
+              />
+            )
+          })
         ) : (
           <div className="border-t border-border/60 px-4 py-8 text-center text-sm text-muted-foreground">
             暂无用户

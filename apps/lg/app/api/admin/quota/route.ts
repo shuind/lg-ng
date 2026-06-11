@@ -7,14 +7,19 @@ export const GET = withAdminRoute(async () => {
 })
 
 export const PUT = withAdminRoute(async (request: Request) => {
-  const body = await request.json().catch(() => ({}))
-  await updateTrialQuotaSettings({
-    enabled: body.enabled,
-    totalBudgetCny: body.totalBudgetCny,
-    perUserBudgetCny: body.perUserBudgetCny,
-    promptCacheHitPricePerMillionCny: body.promptCacheHitPricePerMillionCny,
-    promptCacheMissPricePerMillionCny: body.promptCacheMissPricePerMillionCny,
-    outputPricePerMillionCny: body.outputPricePerMillionCny,
-  })
+  const rawBody = await request.json().catch(() => ({}))
+  const body = rawBody && typeof rawBody === "object" ? rawBody as Record<string, unknown> : {}
+  const input = Object.fromEntries(
+    [
+      "enabled",
+      "totalBudgetCny",
+      "perUserBudgetCny",
+      "userBudgetsCny",
+      "promptCacheHitPricePerMillionCny",
+      "promptCacheMissPricePerMillionCny",
+      "outputPricePerMillionCny",
+    ].flatMap((key) => body[key] === undefined ? [] : [[key, body[key]]]),
+  )
+  await updateTrialQuotaSettings(input)
   return NextResponse.json(await getTrialQuotaSummary())
 })
