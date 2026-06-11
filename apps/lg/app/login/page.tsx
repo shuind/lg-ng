@@ -8,9 +8,14 @@ import { login, register } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
 type AuthMode = "login" | "register"
+const QQ_EMAIL_DOMAIN = "@qq.com"
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error && error.message ? error.message : "请求失败"
+}
+
+function isQqEmail(email: string): boolean {
+  return email.trim().toLowerCase().endsWith(QQ_EMAIL_DOMAIN)
 }
 
 export default function LoginPage() {
@@ -36,6 +41,10 @@ export default function LoginPage() {
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (disabled || submitting) return
+    if (isRegister && !isQqEmail(email)) {
+      setError("仅支持 QQ 邮箱注册")
+      return
+    }
     setSubmitting(true)
     setError(null)
     try {
@@ -97,7 +106,7 @@ export default function LoginPage() {
               autoComplete="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              placeholder="you@example.com"
+              placeholder={isRegister ? "your@qq.com" : "you@example.com"}
             />
           </label>
 

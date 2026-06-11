@@ -11,6 +11,7 @@ export const SESSION_COOKIE_NAME = "lg_session"
 const AUTH_FILE = "auth.json"
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const MIN_PASSWORD_LENGTH = 8
+const QQ_EMAIL_DOMAIN = "@qq.com"
 
 export type AuthUser = {
   id: string
@@ -78,6 +79,10 @@ function normalizeEmail(email: unknown): string {
 
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+}
+
+function isQqEmail(email: string): boolean {
+  return email.endsWith(QQ_EMAIL_DOMAIN)
 }
 
 function publicUser(user: AuthUser): AuthSessionResult["user"] {
@@ -274,6 +279,7 @@ export async function registerUser(input: {
   const email = normalizeEmail(input.email)
   const password = typeof input.password === "string" ? input.password : ""
   if (!isValidEmail(email)) throw new Error("invalid_email")
+  if (!isQqEmail(email)) throw new Error("qq_email_required")
   if (password.length < MIN_PASSWORD_LENGTH) throw new Error("weak_password")
 
   return withAuthLock(async () => {
