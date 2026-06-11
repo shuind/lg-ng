@@ -6,10 +6,12 @@ import {
   type FileProposal,
   initNovelWorkspace,
   loadSession,
+  type ModelUsage,
 } from "novel-guide"
 import { getBook } from "@/lib/server/book-store"
 import { getEffectiveOpenAICompatibleConfig } from "@/lib/server/app-settings-store"
 import { getBookDir } from "@/lib/server/paths"
+import { recordPlatformTrialQuotaUsage } from "@/lib/server/trial-quota-store"
 import type { AppliedResponseConstraint, ChatReference, Message, SkillSummary, WorkflowAction } from "@/lib/types"
 
 export interface NovelGuideAgentResult {
@@ -17,11 +19,7 @@ export interface NovelGuideAgentResult {
   sessionId: string
   toolTrace: string[]
   failedTools: string[]
-  usage: {
-    promptTokens: number
-    completionTokens: number
-    totalTokens: number
-  }
+  usage: ModelUsage
   workspacePath: string
   fileChanges: FileChange[]
   proposals: FileProposal[]
@@ -32,11 +30,7 @@ export interface NovelGuideReviewResult {
   sessionId: string
   toolTrace: string[]
   failedTools: string[]
-  usage: {
-    promptTokens: number
-    completionTokens: number
-    totalTokens: number
-  }
+  usage: ModelUsage
   workspacePath: string
 }
 
@@ -190,7 +184,7 @@ export async function runNovelGuideAgent(input: {
   const config = getEffectiveOpenAICompatibleConfig()
   if (!config) {
     return {
-      reply: "Novel Guide 还没有配置模型。请设置 DEEPSEEK_API_KEY，或设置 LLM_PROVIDER=mimo 并提供 MIMO_API_KEY。",
+      reply: "Novel Guide 还没有可用模型。请配置个人 DeepSeek API Key，或等待平台内测额度开启。",
       sessionId: input.threadId,
       toolTrace: [],
       failedTools: ["model_config: missing API key"],
@@ -233,6 +227,15 @@ export async function runNovelGuideAgent(input: {
     workflowAction: input.workflowAction,
   }), { signal: input.signal })
 
+  if (config.quotaSource === "platform") {
+    await recordPlatformTrialQuotaUsage({
+      provider: config.provider,
+      model: config.model,
+      usage: result.usage,
+      feature: "agent",
+    })
+  }
+
   return {
     reply: result.text,
     sessionId: result.sessionId,
@@ -264,7 +267,7 @@ export async function* runNovelGuideAgentStream(input: {
     yield {
       type: "done",
       result: {
-        reply: "Novel Guide 还没有配置模型。请设置 DEEPSEEK_API_KEY，或设置 LLM_PROVIDER=mimo 并提供 MIMO_API_KEY。",
+        reply: "Novel Guide 还没有可用模型。请配置个人 DeepSeek API Key，或等待平台内测额度开启。",
         sessionId: input.threadId,
         toolTrace: [],
         failedTools: ["model_config: missing API key"],
@@ -312,6 +315,14 @@ export async function* runNovelGuideAgentStream(input: {
       yield { type: "engine_event", event }
       continue
     }
+    if (config.quotaSource === "platform") {
+      await recordPlatformTrialQuotaUsage({
+        provider: config.provider,
+        model: config.model,
+        usage: event.result.usage,
+        feature: "agent_stream",
+      })
+    }
     yield {
       type: "done",
       result: {
@@ -336,7 +347,7 @@ export async function runNovelGuideReview(input: {
   const config = getEffectiveOpenAICompatibleConfig()
   if (!config) {
     return {
-      reply: "Novel Guide 还没有配置模型。请设置 DEEPSEEK_API_KEY，或设置 LLM_PROVIDER=mimo 并提供 MIMO_API_KEY。",
+      reply: "Novel Guide 还没有可用模型。请配置个人 DeepSeek API Key，或等待平台内测额度开启。",
       sessionId: input.threadId,
       toolTrace: [],
       failedTools: ["model_config: missing API key"],
@@ -409,6 +420,14 @@ export async function runNovelGuideReview(input: {
     completionTokens: sum.completionTokens + result.usage.completionTokens,
     totalTokens: sum.totalTokens + result.usage.totalTokens,
   }), { promptTokens: 0, completionTokens: 0, totalTokens: 0 })
+  if (config.quotaSource === "platform") {
+    await recordPlatformTrialQuotaUsage({
+      provider: config.provider,
+      model: config.model,
+      usage,
+      feature: "review",
+    })
+  }
 
   return {
     reply,

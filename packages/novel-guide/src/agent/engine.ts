@@ -8,7 +8,7 @@ import path from "node:path";
 import type OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import fg from "fast-glob";
-import { createChatCompletion } from "../model/deepseek.js";
+import { createChatCompletion, type ModelUsage } from "../model/deepseek.js";
 import { buildEffectiveSystemPrompt } from "../prompts/systemPrompt.js";
 import { getTools } from "../tools/registry.js";
 import type { FileChange, FileProposal, ToolContext, Tools } from "../tools/tool.js";
@@ -49,11 +49,7 @@ export interface EngineTurnResult {
   failedTools: string[];
   fileChanges: FileChange[];
   proposals: FileProposal[];
-  usage: {
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
-  };
+  usage: ModelUsage;
   sessionId: string;
 }
 

@@ -12,6 +12,8 @@
     "lint": "eslint .",
     "seed": "tsx scripts/seed.ts",
     "data:migrate": "tsx scripts/migrate-data.ts",
+    "migrate:global-user": "tsx scripts/migrate-global-data-to-user.ts",
+    "smoke:auth-settings": "tsx scripts/smoke-auth-settings.ts",
     "smoke:optimization": "pnpm --filter novel-guide build && tsx scripts/smoke-optimization.ts"
   },
   "dependencies": {

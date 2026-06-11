@@ -1,7 +1,8 @@
+import { withAuthRoute } from "@/lib/server/auth-route"
 import { NextResponse } from "next/server"
 import { listBooks, createBook } from "@/lib/server/book-store"
 
-export async function GET() {
+async function GETHandler() {
   try {
     const books = await listBooks()
     return NextResponse.json(books)
@@ -11,7 +12,7 @@ export async function GET() {
   }
 }
 
-export async function POST(request: Request) {
+async function POSTHandler(request: Request) {
   try {
     const body = await request.json().catch(() => ({}))
     const title = body.title ?? "未命名书籍"
@@ -22,3 +23,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "创建书籍失败" }, { status: 500 })
   }
 }
+
+export const GET = withAuthRoute(GETHandler)
+export const POST = withAuthRoute(POSTHandler)

@@ -1,8 +1,9 @@
+import { withAuthRoute } from "@/lib/server/auth-route"
 import { NextResponse } from "next/server"
 import { getThreadBundle, updateThread } from "@/lib/server/thread-store"
 import type { Thread } from "@/lib/types"
 
-export async function GET(
+async function GETHandler(
   _request: Request,
   { params }: { params: Promise<{ bookId: string; threadId: string }> },
 ) {
@@ -17,7 +18,7 @@ export async function GET(
   }
 }
 
-export async function PATCH(
+async function PATCHHandler(
   request: Request,
   { params }: { params: Promise<{ bookId: string; threadId: string }> },
 ) {
@@ -39,3 +40,6 @@ export async function PATCH(
     return NextResponse.json({ error: "更新线程失败" }, { status: 500 })
   }
 }
+
+export const GET = withAuthRoute(GETHandler)
+export const PATCH = withAuthRoute(PATCHHandler)

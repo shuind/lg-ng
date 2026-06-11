@@ -1,7 +1,8 @@
+import { withAuthRoute } from "@/lib/server/auth-route"
 import { NextResponse } from "next/server"
 import { retrieveContext } from "@/lib/server/retrieval"
 
-export async function POST(
+async function POSTHandler(
   request: Request,
   { params }: { params: Promise<{ bookId: string }> },
 ) {
@@ -21,3 +22,5 @@ export async function POST(
     return NextResponse.json([], { status: 200 })
   }
 }
+
+export const POST = withAuthRoute(POSTHandler)

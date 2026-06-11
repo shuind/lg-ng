@@ -24,6 +24,8 @@ export interface ModelUsage {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  promptCacheHitTokens?: number;
+  promptCacheMissTokens?: number;
 }
 
 export interface ModelResponse {
@@ -108,13 +110,10 @@ export async function createChatCompletion(input: {
     ...(input.signal ? { signal: input.signal } : {}),
   }) as ChatCompletion;
   const usage = response.usage;
+  const normalizedUsage = normalizeUsage(usage);
   return {
     message: response.choices[0]?.message ?? { role: "assistant", content: "" },
-    usage: {
-      promptTokens: usage?.prompt_tokens ?? 0,
-      completionTokens: usage?.completion_tokens ?? 0,
-      totalTokens: usage?.total_tokens ?? 0,
-    },
+    usage: normalizedUsage,
   };
 }
 
@@ -128,10 +127,16 @@ type StreamToolCallPart = {
 };
 
 function normalizeUsage(usage: ChatCompletion["usage"] | ChatCompletionChunk["usage"] | null | undefined): ModelUsage {
+  const raw = usage as ({
+    prompt_cache_hit_tokens?: number;
+    prompt_cache_miss_tokens?: number;
+  } | null | undefined);
   return {
     promptTokens: usage?.prompt_tokens ?? 0,
     completionTokens: usage?.completion_tokens ?? 0,
     totalTokens: usage?.total_tokens ?? 0,
+    promptCacheHitTokens: raw?.prompt_cache_hit_tokens ?? 0,
+    promptCacheMissTokens: raw?.prompt_cache_miss_tokens ?? usage?.prompt_tokens ?? 0,
   };
 }
 

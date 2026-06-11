@@ -57,6 +57,10 @@ export function relativeTime(iso: string): string {
 export async function readJsonResponse<T = unknown>(res: Response): Promise<T> {
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
+    if (res.status === 401 && typeof window !== "undefined") {
+      const next = `${window.location.pathname}${window.location.search}`
+      window.location.href = `/login?next=${encodeURIComponent(next)}`
+    }
     const message = data && typeof data === "object" && "error" in data && typeof data.error === "string"
       ? data.error
       : "接口请求失败"

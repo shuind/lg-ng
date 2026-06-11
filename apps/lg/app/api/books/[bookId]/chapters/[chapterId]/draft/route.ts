@@ -1,7 +1,8 @@
+import { withAuthRoute } from "@/lib/server/auth-route"
 import { NextResponse } from "next/server"
 import { generateDraftForChapter } from "@/lib/server/draft-service"
 
-export async function POST(
+async function POSTHandler(
   request: Request,
   { params }: { params: Promise<{ bookId: string; chapterId: string }> },
 ) {
@@ -19,3 +20,5 @@ export async function POST(
     return NextResponse.json({ error: "生成失败" }, { status: 500 })
   }
 }
+
+export const POST = withAuthRoute(POSTHandler)

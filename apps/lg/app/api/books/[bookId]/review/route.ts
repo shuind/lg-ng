@@ -1,7 +1,8 @@
+import { withAuthRoute } from "@/lib/server/auth-route"
 import { NextResponse } from "next/server"
 import { ReviewRequestError, runBookReview } from "@/lib/server/review-service"
 
-export async function POST(
+async function POSTHandler(
   request: Request,
   { params }: { params: Promise<{ bookId: string }> },
 ) {
@@ -17,3 +18,5 @@ export async function POST(
     return NextResponse.json({ error: "体检失败" }, { status: 500 })
   }
 }
+
+export const POST = withAuthRoute(POSTHandler)

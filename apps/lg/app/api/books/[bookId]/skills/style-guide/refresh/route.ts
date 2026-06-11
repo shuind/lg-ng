@@ -1,7 +1,8 @@
+import { withAuthRoute } from "@/lib/server/auth-route"
 import { NextResponse } from "next/server"
 import { refreshStyleGuideSummary } from "@/lib/server/skill-service"
 
-export async function POST(
+async function POSTHandler(
   _request: Request,
   { params }: { params: Promise<{ bookId: string }> },
 ) {
@@ -14,3 +15,5 @@ export async function POST(
     return NextResponse.json({ error: "刷新失败" }, { status: 500 })
   }
 }
+
+export const POST = withAuthRoute(POSTHandler)

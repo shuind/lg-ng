@@ -1,7 +1,8 @@
+import { withAuthRoute } from "@/lib/server/auth-route"
 import { NextResponse } from "next/server"
 import { getDirtyFiles } from "@/lib/server/dirty-index"
 
-export async function GET(request: Request) {
+async function GETHandler(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
     const bookId = searchParams.get("bookId") ?? undefined
@@ -12,3 +13,5 @@ export async function GET(request: Request) {
     return NextResponse.json([], { status: 200 })
   }
 }
+
+export const GET = withAuthRoute(GETHandler)

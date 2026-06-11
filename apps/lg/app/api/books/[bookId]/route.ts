@@ -1,7 +1,8 @@
+import { withAuthRoute } from "@/lib/server/auth-route"
 import { NextRequest, NextResponse } from "next/server"
 import { updateBookTitle } from "@/lib/server/book-store"
 
-export async function PATCH(
+async function PATCHHandler(
   req: NextRequest,
   { params }: { params: Promise<{ bookId: string }> },
 ) {
@@ -20,3 +21,5 @@ export async function PATCH(
 
   return NextResponse.json(book)
 }
+
+export const PATCH = withAuthRoute(PATCHHandler)

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server"
 import { getAppSettings, saveAppSettings } from "@/lib/server/app-settings-store"
+import { withAuthRoute } from "@/lib/server/auth-route"
 
-export async function GET() {
+async function GETHandler() {
   try {
     return NextResponse.json(await getAppSettings())
   } catch (err) {
@@ -10,10 +11,14 @@ export async function GET() {
   }
 }
 
-export async function PATCH(request: Request) {
+async function PATCHHandler(request: Request) {
   try {
     const body = await request.json()
-    return NextResponse.json(await saveAppSettings({ modelId: body.modelId }))
+    return NextResponse.json(await saveAppSettings({
+      modelId: body.modelId,
+      deepSeekApiKey: body.deepSeekApiKey,
+      clearDeepSeekApiKey: body.clearDeepSeekApiKey,
+    }))
   } catch (err) {
     console.error("[api/app-settings] PATCH error:", err)
     const message = err instanceof Error && err.message === "unsupported model"
@@ -23,3 +28,6 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: message }, { status })
   }
 }
+
+export const GET = withAuthRoute(GETHandler)
+export const PATCH = withAuthRoute(PATCHHandler)

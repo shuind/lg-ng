@@ -1,7 +1,8 @@
+import { withAuthRoute } from "@/lib/server/auth-route"
 import { NextResponse } from "next/server"
 import { readBookFile, writeBookFile, getBookFileMtime } from "@/lib/server/book-store"
 
-export async function GET(
+async function GETHandler(
   request: Request,
   { params }: { params: Promise<{ bookId: string }> },
 ) {
@@ -26,7 +27,7 @@ export async function GET(
   }
 }
 
-export async function PUT(
+async function PUTHandler(
   request: Request,
   { params }: { params: Promise<{ bookId: string }> },
 ) {
@@ -51,3 +52,6 @@ export async function PUT(
     return NextResponse.json({ error: "写入失败" }, { status: 500 })
   }
 }
+
+export const GET = withAuthRoute(GETHandler)
+export const PUT = withAuthRoute(PUTHandler)

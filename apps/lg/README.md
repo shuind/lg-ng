@@ -24,33 +24,44 @@ pnpm dev
 ```
 
 - `pnpm seed` 生成一本示例书籍 "归墟之外",包含人物设定、世界观、两章正文和对话记录。
-- `.env` 中配置 LLM API key,否则 AI 功能使用 mock fallback。
+- `.env` 中配置 `APP_ENCRYPTION_KEY`、`LG_INVITE_CODES` 和 `LG_ADMIN_EMAILS`。DeepSeek API Key 登录后在设置页按用户配置。
 
 ## LLM 配置
 
-在 `.env` 中设置:
+DeepSeek API Key 不再写入 `.env`,而是在 `/settings` 中由每个用户自行保存。服务端只保存加密后的密文和末尾预览,不会向前端回显原文。
+
+生产环境需要在 `.env` 中设置:
 
 ```
-LLM_PROVIDER=mimo          # 或 deepseek
-MIMO_API_KEY=your-key
-DEEPSEEK_API_KEY=your-key
+APP_ENCRYPTION_KEY=your-stable-32-byte-key
+LG_INVITE_CODES=invite-one,invite-two
+LG_ADMIN_EMAILS=admin@example.com
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-v4-flash
+DEEPSEEK_PLATFORM_API_KEY=
 ```
 
-支持的 Provider:
+未配置个人 DeepSeek API Key 时,如果后台启用了平台试用额度且额度未用完,AI 请求会使用 `DEEPSEEK_PLATFORM_API_KEY`；否则会提示前往设置页配置个人 Key。
 
-| Provider | 模型 | 环境变量 |
-|----------|------|----------|
-| MiMo | mimo-v2.5-pro | `MIMO_API_KEY`, `MIMO_BASE_URL` |
-| DeepSeek | deepseek-v4-flash | `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL` |
+## 后台
 
-未配置 API key 时,AI 对话和试写功能会返回 fallback 文本,不会报错。
+`/admin` 仅允许 `LG_ADMIN_EMAILS` 中的账号访问。当前后台提供内测用户、邀请码明细、活跃 session、用户数据占用、个人模型 Key 配置状态和平台试用额度设置。
+
+平台额度启用条件:
+
+- `.env` 中配置 `DEEPSEEK_PLATFORM_API_KEY`。
+- 后台开启“启用平台试用额度”。
+- 后台设置总额度、单用户额度、缓存命中输入、缓存未命中输入、输出 token 单价。
+- 用户没有保存个人 DeepSeek API Key。
+
+平台额度配置保存到 `.lg-data/admin/quota-settings.json`,用量记录保存到 `.lg-data/admin/quota-usage.jsonl`。费用按 `prompt_cache_hit_tokens`、`prompt_cache_miss_tokens` 和 `completion_tokens` 分别计价。
 
 ## 示例数据
 
-`pnpm seed` 生成的数据结构（默认位于仓库根目录的 `.lg-data/` 下）:
+`pnpm seed` 生成的数据结构（登录用户运行时默认位于仓库根目录的 `.lg-data/users/<userId>/` 下）:
 
 ```
-.lg-data/books/demo-guixu/
+.lg-data/users/<userId>/books/demo-guixu/
   book.json                 # 书籍元数据
   创作指南.md               # 写作风格要求
   关系图谱.json             # 人物关系
@@ -75,9 +86,15 @@ DEEPSEEK_API_KEY=your-key
 
 ## 数据目录
 
-所有书籍运行时数据默认存储在仓库根目录的 `.lg-data/books/` 下,每本书一个目录。没有数据库,纯文件系统。
+所有书籍运行时数据默认存储在仓库根目录的 `.lg-data/users/<userId>/books/` 下,每个用户独立目录。认证数据存储在 `.lg-data/auth/auth.json`。没有数据库,纯文件系统。
 
-可通过 `LG_DATA_DIR` 覆盖数据根目录。旧版 `apps/lg/data/` 目录只用于迁移兼容,运行时代码不再从那里读取。
+可通过 `LG_DATA_DIR` 覆盖数据根目录。生产部署时应把该目录挂载到持久磁盘。旧版 `apps/lg/data/` 目录只用于迁移兼容,运行时代码不再从那里读取。
+
+从无认证版本升级后,可先注册目标账号,再迁移旧全局数据:
+
+```bash
+pnpm --filter lg migrate:global-user -- --email you@example.com
+```
 
 - `book.json` — 书籍元数据 (id, title, createdAt, updatedAt)
 - `章节正文/*.md` — 每个文件是一章正文
@@ -108,8 +125,10 @@ DEEPSEEK_API_KEY=your-key
 
 ## 当前限制
 
-- 无用户认证,所有数据本地存储。
-- LLM 调用使用 OpenAI 兼容 API,需要自行提供 API key。
+- 内置账号体系适合早期公开上线；注册通过邀请码控制。
+- LLM 调用使用 DeepSeek/OpenAI 兼容接口,需要每个用户在设置页自行提供 API key。
+- 后台已接入邀请码明细和平台额度设置,尚未接入用户删除和数据导出。
+- 文件存储依赖持久磁盘；Serverless/Vercel 部署需要额外改造数据库或对象存储。
 - 对话 Agent 的意图识别基于关键词匹配,复杂语义可能误判。
 - 暂无导出/导入功能。
 - 工具栏按钮(加粗、斜体等)暂未实现实际功能。

@@ -29,7 +29,7 @@ export default function SettingsPage() {
             <div className="min-w-0">
               <h1 className="text-xl font-semibold tracking-normal">设置</h1>
               <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
-                管理全局应用配置。这里的模型设置会影响后续所有书籍和线程的 AI 请求。
+                管理当前账号的模型配置。这里的设置会影响你名下所有书籍和线程的 AI 请求。
               </p>
             </div>
           </div>

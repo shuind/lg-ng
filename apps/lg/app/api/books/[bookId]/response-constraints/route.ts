@@ -1,3 +1,4 @@
+import { withAuthRoute } from "@/lib/server/auth-route"
 import { NextResponse } from "next/server"
 import {
   createResponseConstraint,
@@ -16,7 +17,7 @@ function parseEnabledIds(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === "string")
 }
 
-export async function GET(
+async function GETHandler(
   _request: Request,
   { params }: { params: Promise<{ bookId: string }> },
 ) {
@@ -29,7 +30,7 @@ export async function GET(
   }
 }
 
-export async function POST(
+async function POSTHandler(
   request: Request,
   { params }: { params: Promise<{ bookId: string }> },
 ) {
@@ -48,7 +49,7 @@ export async function POST(
   }
 }
 
-export async function PATCH(
+async function PATCHHandler(
   request: Request,
   { params }: { params: Promise<{ bookId: string }> },
 ) {
@@ -73,7 +74,7 @@ export async function PATCH(
   }
 }
 
-export async function DELETE(
+async function DELETEHandler(
   request: Request,
   { params }: { params: Promise<{ bookId: string }> },
 ) {
@@ -89,3 +90,8 @@ export async function DELETE(
     return NextResponse.json({ error: "删除回复约束失败" }, { status: 500 })
   }
 }
+
+export const GET = withAuthRoute(GETHandler)
+export const POST = withAuthRoute(POSTHandler)
+export const PATCH = withAuthRoute(PATCHHandler)
+export const DELETE = withAuthRoute(DELETEHandler)

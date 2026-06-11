@@ -2,11 +2,14 @@ import {
   createChatCompletion,
   createOpenAICompatibleClient,
   type ModelMessage,
-  type OpenAICompatibleConfig,
 } from "novel-guide"
-import { getEffectiveOpenAICompatibleConfig } from "@/lib/server/app-settings-store"
+import {
+  getEffectiveOpenAICompatibleConfig,
+  type EffectiveOpenAICompatibleConfig,
+} from "@/lib/server/app-settings-store"
+import { recordPlatformTrialQuotaUsage } from "@/lib/server/trial-quota-store"
 
-type LlmConfig = OpenAICompatibleConfig
+type LlmConfig = EffectiveOpenAICompatibleConfig
 
 type ChatMessage = {
   role: string
@@ -42,6 +45,14 @@ export async function callChatCompletion(
     maxTokens: options?.maxTokens ?? 2000,
     timeoutMs: 60000,
   })
+  if (config.quotaSource === "platform") {
+    await recordPlatformTrialQuotaUsage({
+      provider: config.provider,
+      model: config.model,
+      usage: response.usage,
+      feature: "chat_completion",
+    })
+  }
 
   return { content: stringifyContent(response.message.content) }
 }

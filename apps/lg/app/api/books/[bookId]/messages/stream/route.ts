@@ -1,6 +1,7 @@
+import { withAuthRoute } from "@/lib/server/auth-route"
 import { ChatRequestError, createThreadMessageStream } from "@/lib/server/chat-service"
 
-export async function POST(
+async function POSTHandler(
   request: Request,
   { params }: { params: Promise<{ bookId: string }> },
 ) {
@@ -22,3 +23,5 @@ export async function POST(
     return Response.json({ error: "处理失败" }, { status: 500 })
   }
 }
+
+export const POST = withAuthRoute(POSTHandler)

@@ -1,7 +1,8 @@
+import { withAuthRoute } from "@/lib/server/auth-route"
 import { NextResponse } from "next/server"
 import { draftClaudeSkill } from "@/lib/server/skill-draft-service"
 
-export async function POST(
+async function POSTHandler(
   request: Request,
   { params }: { params: Promise<{ bookId: string }> },
 ) {
@@ -15,3 +16,5 @@ export async function POST(
     return NextResponse.json({ error: "生成 Skill 草稿失败。" }, { status: 500 })
   }
 }
+
+export const POST = withAuthRoute(POSTHandler)

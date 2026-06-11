@@ -1,3 +1,4 @@
+import { withAuthRoute } from "@/lib/server/auth-route"
 import { NextResponse } from "next/server"
 import { listChapters } from "@/lib/server/chapter-store"
 import { listSettingCards } from "@/lib/server/setting-card-store"
@@ -6,7 +7,7 @@ import { listImportedMaterials } from "@/lib/server/import-store"
 import { getResponseConstraintStore } from "@/lib/server/response-constraint-store"
 import { ensureDefaultThread, getThreadBundle, listThreads } from "@/lib/server/thread-store"
 
-export async function GET(
+async function GETHandler(
   _request: Request,
   { params }: { params: Promise<{ bookId: string }> },
 ) {
@@ -39,3 +40,5 @@ export async function GET(
     return NextResponse.json({ error: "初始化失败" }, { status: 500 })
   }
 }
+
+export const GET = withAuthRoute(GETHandler)

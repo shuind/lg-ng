@@ -1,7 +1,8 @@
+import { withAuthRoute } from "@/lib/server/auth-route"
 import { NextResponse } from "next/server"
 import { getBookTree } from "@/lib/server/book-store"
 
-export async function GET(
+async function GETHandler(
   _request: Request,
   { params }: { params: Promise<{ bookId: string }> },
 ) {
@@ -14,3 +15,5 @@ export async function GET(
     return NextResponse.json([], { status: 200 })
   }
 }
+
+export const GET = withAuthRoute(GETHandler)

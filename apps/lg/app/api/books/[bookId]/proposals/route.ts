@@ -1,7 +1,8 @@
+import { withAuthRoute } from "@/lib/server/auth-route"
 import { NextResponse } from "next/server"
 import { createProposal, listProposals, ProposalError, summarizeProposals } from "@/lib/server/proposal-service"
 
-export async function GET(
+async function GETHandler(
   _request: Request,
   { params }: { params: Promise<{ bookId: string }> },
 ) {
@@ -15,7 +16,7 @@ export async function GET(
   }
 }
 
-export async function POST(
+async function POSTHandler(
   request: Request,
   { params }: { params: Promise<{ bookId: string }> },
 ) {
@@ -45,3 +46,6 @@ export async function POST(
     return NextResponse.json({ error: "创建 proposal 失败" }, { status: 500 })
   }
 }
+
+export const GET = withAuthRoute(GETHandler)
+export const POST = withAuthRoute(POSTHandler)

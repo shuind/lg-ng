@@ -16,14 +16,22 @@ export type AppModelId = (typeof APP_MODEL_OPTIONS)[number]["id"]
 export interface AppSettings {
   modelId: AppModelId
   updatedAt: string
+  deepSeekKeyUpdatedAt?: string
 }
 
 export interface AppSettingsPayload extends AppSettings {
   saved: boolean
-  activeProvider: "deepseek" | "mimo" | "none"
+  activeProvider: "deepseek" | "none"
   activeModel: string | null
   deepSeekConfigured: boolean
+  deepSeekKeyPreview: string | null
   modelOptions: typeof APP_MODEL_OPTIONS
+}
+
+export type UpdateAppSettingsInput = {
+  modelId?: unknown
+  deepSeekApiKey?: unknown
+  clearDeepSeekApiKey?: unknown
 }
 
 export function isAppModelId(value: unknown): value is AppModelId {

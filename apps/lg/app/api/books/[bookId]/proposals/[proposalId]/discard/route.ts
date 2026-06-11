@@ -1,7 +1,8 @@
+import { withAuthRoute } from "@/lib/server/auth-route"
 import { NextResponse } from "next/server"
 import { discardProposal, ProposalError, summarizeProposals } from "@/lib/server/proposal-service"
 
-export async function POST(
+async function POSTHandler(
   _request: Request,
   { params }: { params: Promise<{ bookId: string; proposalId: string }> },
 ) {
@@ -17,3 +18,5 @@ export async function POST(
     return NextResponse.json({ error: "丢弃 proposal 失败" }, { status: 500 })
   }
 }
+
+export const POST = withAuthRoute(POSTHandler)
