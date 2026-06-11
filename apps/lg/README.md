@@ -24,7 +24,7 @@ pnpm dev
 ```
 
 - `pnpm seed` 生成一本示例书籍 "归墟之外",包含人物设定、世界观、两章正文和对话记录。
-- `.env` 中配置 `APP_ENCRYPTION_KEY`、`LG_INVITE_CODES` 和 `LG_ADMIN_EMAILS`。DeepSeek API Key 登录后在设置页按用户配置。
+- `.env` 中配置 `APP_ENCRYPTION_KEY` 和 `LG_ADMIN_EMAILS`。邀请码可在 `/admin` 生成并单独设置人数上限；`LG_INVITE_CODES` 仅作为旧环境变量邀请码兼容入口。DeepSeek API Key 登录后在设置页按用户配置。
 
 ## LLM 配置
 
@@ -34,6 +34,7 @@ DeepSeek API Key 不再写入 `.env`,而是在 `/settings` 中由每个用户自
 
 ```
 APP_ENCRYPTION_KEY=your-stable-32-byte-key
+# 可选：旧环境变量邀请码；新邀请码建议在 /admin 生成
 LG_INVITE_CODES=invite-one,invite-two
 LG_ADMIN_EMAILS=admin@example.com
 DEEPSEEK_BASE_URL=https://api.deepseek.com
@@ -45,7 +46,7 @@ DEEPSEEK_PLATFORM_API_KEY=
 
 ## 后台
 
-`/admin` 仅允许 `LG_ADMIN_EMAILS` 中的账号访问。当前后台提供内测用户、邀请码明细、活跃 session、用户数据占用、个人模型 Key 配置状态和平台试用额度设置。
+`/admin` 仅允许 `LG_ADMIN_EMAILS` 中的账号访问。当前后台提供内测用户、邀请码生成与人数上限配置、活跃 session、用户数据占用、个人模型 Key 配置状态和平台试用额度设置。
 
 平台额度启用条件:
 
@@ -125,9 +126,9 @@ pnpm --filter lg migrate:global-user -- --email you@example.com
 
 ## 当前限制
 
-- 内置账号体系适合早期公开上线；注册通过邀请码控制。
+- 内置账号体系适合早期公开上线；注册限制为 QQ 邮箱，并通过后台生成的邀请码控制。
 - LLM 调用使用 DeepSeek/OpenAI 兼容接口,需要每个用户在设置页自行提供 API key。
-- 后台已接入邀请码明细和平台额度设置,尚未接入用户删除和数据导出。
+- 后台已接入邀请码生成、人数上限配置和平台额度设置,尚未接入用户删除和数据导出。
 - 文件存储依赖持久磁盘；Serverless/Vercel 部署需要额外改造数据库或对象存储。
 - 对话 Agent 的意图识别基于关键词匹配,复杂语义可能误判。
 - 暂无导出/导入功能。

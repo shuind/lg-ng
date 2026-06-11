@@ -10,7 +10,7 @@ function authErrorMessage(error: unknown): string {
   if (error.message === "email_exists") return "这个邮箱已经注册"
   if (error.message === "invite_not_configured") return "服务器未配置邀请码"
   if (error.message === "invalid_invite") return "邀请码无效"
-  if (error.message === "invite_redeemed") return "邀请码已被使用"
+  if (error.message === "invite_limit_reached") return "邀请码名额已满"
   return "注册失败"
 }
 

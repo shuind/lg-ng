@@ -25,6 +25,7 @@ export type AdminOverviewPayload = {
   auth: {
     userCount: number
     inviteCodeCount: number
+    inviteSlotCount: number
     redeemedInviteCount: number
     activeSessionCount: number
     expiredSessionCount: number
@@ -171,6 +172,7 @@ export async function getAdminOverview(): Promise<AdminOverviewPayload> {
     auth: {
       userCount: snapshot.users.length,
       inviteCodeCount: snapshot.inviteCodeCount,
+      inviteSlotCount: snapshot.inviteSlotCount,
       redeemedInviteCount: snapshot.redeemedInvites.length,
       activeSessionCount,
       expiredSessionCount,

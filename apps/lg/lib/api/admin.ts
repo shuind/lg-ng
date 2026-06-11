@@ -17,10 +17,22 @@ export type AdminInviteOverview = {
   code: string | null
   codeHash: string
   configured: boolean
+  source: "managed" | "env" | "removed"
+  editable: boolean
   redeemed: boolean
   redeemedByUserId: string | null
   redeemedByEmail: string | null
   redeemedAt: string | null
+  redeemedCount: number
+  maxRedemptions: number
+  remainingRedemptions: number
+  redeemedUsers: Array<{
+    userId: string
+    email: string | null
+    redeemedAt: string
+  }>
+  createdAt: string | null
+  updatedAt: string | null
 }
 
 export type TrialQuotaSettings = {
@@ -65,6 +77,7 @@ export type AdminOverviewPayload = {
   auth: {
     userCount: number
     inviteCodeCount: number
+    inviteSlotCount: number
     redeemedInviteCount: number
     activeSessionCount: number
     expiredSessionCount: number
@@ -92,8 +105,7 @@ export class AdminApiError extends Error {
   }
 }
 
-export async function getAdminOverview(): Promise<AdminOverviewPayload> {
-  const res = await fetch("/api/admin/overview", { cache: "no-store" })
+async function readAdminResponse<T>(res: Response, fallbackMessage: string): Promise<T> {
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
     if (res.status === 401 && typeof window !== "undefined") {
@@ -102,10 +114,15 @@ export async function getAdminOverview(): Promise<AdminOverviewPayload> {
     }
     const message = data && typeof data === "object" && "error" in data && typeof data.error === "string"
       ? data.error
-      : "后台数据加载失败"
+      : fallbackMessage
     throw new AdminApiError(res.status, message)
   }
-  return data as AdminOverviewPayload
+  return data as T
+}
+
+export async function getAdminOverview(): Promise<AdminOverviewPayload> {
+  const res = await fetch("/api/admin/overview", { cache: "no-store" })
+  return readAdminResponse<AdminOverviewPayload>(res, "后台数据加载失败")
 }
 
 export async function updateAdminTrialQuotaSettings(
@@ -116,12 +133,28 @@ export async function updateAdminTrialQuotaSettings(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    const message = data && typeof data === "object" && "error" in data && typeof data.error === "string"
-      ? data.error
-      : "额度设置保存失败"
-    throw new AdminApiError(res.status, message)
-  }
-  return data as TrialQuotaSummary
+  return readAdminResponse<TrialQuotaSummary>(res, "额度设置保存失败")
+}
+
+export async function createAdminInvite(input: {
+  maxRedemptions: number
+}): Promise<AdminInviteOverview> {
+  const res = await fetch("/api/admin/invites", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  })
+  return readAdminResponse<AdminInviteOverview>(res, "邀请码生成失败")
+}
+
+export async function updateAdminInvite(
+  codeHash: string,
+  input: { maxRedemptions: number },
+): Promise<AdminInviteOverview> {
+  const res = await fetch(`/api/admin/invites/${encodeURIComponent(codeHash)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  })
+  return readAdminResponse<AdminInviteOverview>(res, "邀请码保存失败")
 }

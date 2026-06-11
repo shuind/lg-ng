@@ -9,26 +9,48 @@ async function main() {
   process.env.APP_ENCRYPTION_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
   process.env.LG_INVITE_CODES = "unit-code"
 
-  const { registerUser, loginUser, getUserBySessionToken, deleteSessionToken } = await import("@/lib/server/auth-store")
+  const {
+    createInviteCode,
+    deleteSessionToken,
+    getAuthAdminSnapshot,
+    getUserBySessionToken,
+    loginUser,
+    registerUser,
+    updateInviteCode,
+  } = await import("@/lib/server/auth-store")
   const { runWithRequestContext } = await import("@/lib/server/request-context")
   const { decryptSecret, encryptSecret, maskSecret } = await import("@/lib/server/secret-crypto")
   const { getDataRoot } = await import("@/lib/server/paths")
 
   try {
+    const invite = await createInviteCode({ maxRedemptions: 2 })
+    assert.ok(invite.code)
+    assert.equal(invite.maxRedemptions, 2)
+
     const registered = await registerUser({
-      email: "unit@example.com",
+      email: "unit@qq.com",
       password: "password123",
-      inviteCode: "unit-code",
+      inviteCode: invite.code,
     })
-    assert.equal(registered.user.email, "unit@example.com")
+    assert.equal(registered.user.email, "unit@qq.com")
     assert.ok(registered.token)
 
+    await registerUser({ email: "other@qq.com", password: "password123", inviteCode: invite.code })
     await assert.rejects(
-      () => registerUser({ email: "other@example.com", password: "password123", inviteCode: "unit-code" }),
-      /invite_redeemed/,
+      () => registerUser({ email: "third@qq.com", password: "password123", inviteCode: invite.code }),
+      /invite_limit_reached/,
     )
 
-    const loggedIn = await loginUser({ email: "unit@example.com", password: "password123" })
+    const updatedInvite = await updateInviteCode({ codeHash: invite.codeHash, maxRedemptions: 3 })
+    assert.equal(updatedInvite.maxRedemptions, 3)
+    await registerUser({ email: "third@qq.com", password: "password123", inviteCode: invite.code })
+
+    const snapshot = await getAuthAdminSnapshot()
+    const managedInvite = snapshot.invites.find((item) => item.codeHash === invite.codeHash)
+    assert.equal(managedInvite?.redeemedCount, 3)
+    assert.equal(managedInvite?.remainingRedemptions, 0)
+
+    const loggedIn = await loginUser({ email: "unit@qq.com", password: "password123" })
     assert.equal((await getUserBySessionToken(loggedIn.token))?.id, registered.user.id)
     await deleteSessionToken(loggedIn.token)
     assert.equal(await getUserBySessionToken(loggedIn.token), null)

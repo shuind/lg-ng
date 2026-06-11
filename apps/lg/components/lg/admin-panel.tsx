@@ -3,12 +3,14 @@
 import type { FormEvent, ReactNode } from "react"
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { AlertTriangle, Coins, Database, HardDrive, KeyRound, RefreshCw, Save, Ticket, Users } from "lucide-react"
+import { AlertTriangle, Coins, Database, HardDrive, KeyRound, Plus, RefreshCw, Save, Ticket, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
   AdminApiError,
+  createAdminInvite,
   getAdminOverview,
+  updateAdminInvite,
   updateAdminTrialQuotaSettings,
   type AdminInviteOverview,
   type AdminOverviewPayload,
@@ -16,6 +18,8 @@ import {
   type TrialQuotaSettings,
 } from "@/lib/api"
 import { cn } from "@/lib/utils"
+
+const DEFAULT_INVITE_MAX_REDEMPTIONS = 10
 
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B"
@@ -147,31 +151,81 @@ function UserRow({
   )
 }
 
-function InviteRow({ invite }: { invite: AdminInviteOverview }) {
+function InviteRow({
+  invite,
+  maxDraft,
+  saving,
+  onMaxDraftChange,
+  onSaveMax,
+}: {
+  invite: AdminInviteOverview
+  maxDraft: string
+  saving: boolean
+  onMaxDraftChange: (value: string) => void
+  onSaveMax: () => void
+}) {
+  const latestRedemption = invite.redeemedUsers[invite.redeemedUsers.length - 1] ?? null
+  const redeemedLabel = latestRedemption
+    ? `${latestRedemption.email ?? latestRedemption.userId}${invite.redeemedCount > 1 ? ` 等 ${invite.redeemedCount} 人` : ""}`
+    : "-"
+  const maxDraftNumber = Number(maxDraft)
+  const canSaveMax = invite.editable
+    && Number.isFinite(maxDraftNumber)
+    && maxDraftNumber >= 1
+    && Math.floor(maxDraftNumber) !== invite.maxRedemptions
+    && !saving
+
   return (
-    <div className="grid gap-3 border-t border-border/60 px-4 py-3 text-[13px] md:grid-cols-[minmax(180px,1fr)_96px_minmax(180px,1fr)_120px] md:items-center">
+    <div className="grid gap-3 border-t border-border/60 px-4 py-3 text-[13px] md:grid-cols-[minmax(180px,1fr)_168px_minmax(200px,1fr)_120px] md:items-center">
       <div className="min-w-0">
         <div className="truncate font-mono">{invite.code ?? "已移除的邀请码"}</div>
         <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">{invite.codeHash.slice(0, 16)}...</div>
       </div>
       <div>
-        <div className="md:hidden text-[11px] text-muted-foreground">状态</div>
-        {invite.redeemed ? (
-          <StatusPill tone="warning">已使用</StatusPill>
+        <div className="md:hidden text-[11px] text-muted-foreground">名额</div>
+        {!invite.configured ? (
+          <StatusPill tone="warning">已移除</StatusPill>
+        ) : invite.remainingRedemptions <= 0 ? (
+          <StatusPill tone="warning">{invite.redeemedCount}/{invite.maxRedemptions}</StatusPill>
         ) : (
-          <StatusPill tone="good">未使用</StatusPill>
+          <StatusPill tone="good">{invite.redeemedCount}/{invite.maxRedemptions}</StatusPill>
         )}
+        {invite.editable ? (
+          <div className="mt-2 flex items-center gap-2">
+            <Input
+              className="h-8 w-20 text-[13px]"
+              type="number"
+              min="1"
+              step="1"
+              value={maxDraft}
+              onChange={(event) => onMaxDraftChange(event.target.value)}
+            />
+            <Button
+              aria-label="保存邀请码名额"
+              className="h-8 w-8 p-0"
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!canSaveMax}
+              onClick={onSaveMax}
+            >
+              <Save className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        ) : invite.source === "env" ? (
+          <div className="mt-1 text-[11px] text-muted-foreground">环境变量</div>
+        ) : null}
       </div>
       <div className="min-w-0">
-        <div className="md:hidden text-[11px] text-muted-foreground">兑换用户</div>
-        <div className="truncate">{invite.redeemedByEmail ?? "-"}</div>
+        <div className="md:hidden text-[11px] text-muted-foreground">最近兑换用户</div>
+        <div className="truncate">{redeemedLabel}</div>
         {invite.configured ? null : (
           <div className="mt-1 text-[11px] text-muted-foreground">当前环境变量未配置此码</div>
         )}
       </div>
       <div>
-        <div className="md:hidden text-[11px] text-muted-foreground">兑换时间</div>
-        {formatDate(invite.redeemedAt)}
+        <div className="md:hidden text-[11px] text-muted-foreground">最近兑换</div>
+        {formatDate(latestRedemption?.redeemedAt ?? null)}
       </div>
     </div>
   )
@@ -205,6 +259,33 @@ function QuotaNumberInput({
   )
 }
 
+function createInviteMaxDrafts(invites: AdminInviteOverview[]): Record<string, string> {
+  return Object.fromEntries(invites.map((invite) => [invite.codeHash, String(invite.maxRedemptions)]))
+}
+
+function getInviteSlotCount(invites: AdminInviteOverview[]): number {
+  return invites
+    .filter((invite) => invite.configured)
+    .reduce((sum, invite) => sum + invite.maxRedemptions, 0)
+}
+
+function replaceInviteInOverview(
+  overview: AdminOverviewPayload,
+  updatedInvite: AdminInviteOverview,
+): AdminOverviewPayload {
+  const invites = overview.auth.invites.map((invite) =>
+    invite.codeHash === updatedInvite.codeHash ? updatedInvite : invite
+  )
+  return {
+    ...overview,
+    auth: {
+      ...overview.auth,
+      inviteSlotCount: getInviteSlotCount(invites),
+      invites,
+    },
+  }
+}
+
 export function AdminPanel() {
   const [overview, setOverview] = useState<AdminOverviewPayload | null>(null)
   const [loading, setLoading] = useState(true)
@@ -215,6 +296,12 @@ export function AdminPanel() {
   const [quotaSaving, setQuotaSaving] = useState(false)
   const [quotaMessage, setQuotaMessage] = useState<string | null>(null)
   const [quotaError, setQuotaError] = useState<string | null>(null)
+  const [inviteCreateMax, setInviteCreateMax] = useState(String(DEFAULT_INVITE_MAX_REDEMPTIONS))
+  const [inviteMaxDrafts, setInviteMaxDrafts] = useState<Record<string, string>>({})
+  const [inviteCreating, setInviteCreating] = useState(false)
+  const [inviteUpdatingHash, setInviteUpdatingHash] = useState<string | null>(null)
+  const [inviteMessage, setInviteMessage] = useState<string | null>(null)
+  const [inviteError, setInviteError] = useState<string | null>(null)
 
   async function loadOverview(isRefresh = false) {
     if (isRefresh) setRefreshing(true)
@@ -225,6 +312,7 @@ export function AdminPanel() {
       const nextOverview = await getAdminOverview()
       setOverview(nextOverview)
       setQuotaDraft(nextOverview.quota.settings)
+      setInviteMaxDrafts(createInviteMaxDrafts(nextOverview.auth.invites))
     } catch (err) {
       if (err instanceof AdminApiError && err.status === 403) {
         setAccessDenied(true)
@@ -262,6 +350,57 @@ export function AdminPanel() {
     }
   }
 
+  async function createInvite(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (inviteCreating) return
+    setInviteCreating(true)
+    setInviteMessage(null)
+    setInviteError(null)
+    try {
+      const invite = await createAdminInvite({ maxRedemptions: Number(inviteCreateMax) })
+      setOverview((current) => current ? {
+        ...current,
+        auth: {
+          ...current.auth,
+          inviteCodeCount: current.auth.inviteCodeCount + 1,
+          inviteSlotCount: current.auth.inviteSlotCount + invite.maxRedemptions,
+          invites: [invite, ...current.auth.invites],
+        },
+      } : current)
+      setInviteMaxDrafts((current) => ({
+        ...current,
+        [invite.codeHash]: String(invite.maxRedemptions),
+      }))
+      setInviteMessage(`已生成 ${invite.code}`)
+    } catch (err) {
+      setInviteError(getErrorMessage(err))
+    } finally {
+      setInviteCreating(false)
+    }
+  }
+
+  async function saveInviteMax(invite: AdminInviteOverview) {
+    if (inviteUpdatingHash) return
+    setInviteUpdatingHash(invite.codeHash)
+    setInviteMessage(null)
+    setInviteError(null)
+    try {
+      const updatedInvite = await updateAdminInvite(invite.codeHash, {
+        maxRedemptions: Number(inviteMaxDrafts[invite.codeHash] ?? invite.maxRedemptions),
+      })
+      setOverview((current) => current ? replaceInviteInOverview(current, updatedInvite) : current)
+      setInviteMaxDrafts((current) => ({
+        ...current,
+        [updatedInvite.codeHash]: String(updatedInvite.maxRedemptions),
+      }))
+      setInviteMessage("邀请码名额已保存")
+    } catch (err) {
+      setInviteError(getErrorMessage(err))
+    } finally {
+      setInviteUpdatingHash(null)
+    }
+  }
+
   function updateQuotaDraft<K extends keyof Omit<TrialQuotaSettings, "updatedAt">>(
     key: K,
     value: TrialQuotaSettings[K],
@@ -279,6 +418,7 @@ export function AdminPanel() {
   const quotaUsageByUserId = useMemo(() => {
     return new Map((overview?.quota.byUser ?? []).map((usage) => [usage.userId, usage]))
   }, [overview?.quota.byUser])
+  const inviteSlotCount = overview?.auth.inviteSlotCount ?? 0
 
   if (loading) {
     return (
@@ -343,7 +483,7 @@ export function AdminPanel() {
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryTile icon={Users} label="用户" value={`${overview.auth.userCount}`} />
-        <SummaryTile icon={Ticket} label="邀请码" value={`${overview.auth.redeemedInviteCount}/${overview.auth.inviteCodeCount}`} />
+        <SummaryTile icon={Ticket} label="邀请码名额" value={`${overview.auth.redeemedInviteCount}/${inviteSlotCount}`} />
         <SummaryTile icon={KeyRound} label="活跃 Session" value={`${overview.auth.activeSessionCount}`} />
         <SummaryTile icon={HardDrive} label="用户数据" value={formatBytes(overview.storage.totalUserDataBytes)} />
       </section>
@@ -450,14 +590,45 @@ export function AdminPanel() {
           <h2 className="text-sm font-semibold tracking-normal">邀请码</h2>
           <span className="text-[12px] text-muted-foreground">{overview.auth.invites.length} 个</span>
         </div>
-        <div className="hidden border-t border-border/60 px-4 py-2 text-[11px] font-medium uppercase tracking-normal text-muted-foreground md:grid md:grid-cols-[minmax(180px,1fr)_96px_minmax(180px,1fr)_120px]">
+        <form className="flex flex-wrap items-end gap-3 border-t border-border/60 px-4 py-3" onSubmit={createInvite}>
+          <label className="block space-y-1.5">
+            <span className="text-[12px] font-medium text-muted-foreground">人数上限</span>
+            <Input
+              className="w-28"
+              type="number"
+              min="1"
+              step="1"
+              value={inviteCreateMax}
+              onChange={(event) => setInviteCreateMax(event.target.value)}
+            />
+          </label>
+          <Button type="submit" size="sm" disabled={inviteCreating}>
+            <Plus className="h-4 w-4" />
+            {inviteCreating ? "生成中..." : "生成邀请码"}
+          </Button>
+          {inviteMessage ? <span className="text-[12px] text-emerald-700 dark:text-emerald-300">{inviteMessage}</span> : null}
+          {inviteError ? <span className="text-[12px] text-destructive">{inviteError}</span> : null}
+        </form>
+        <div className="hidden border-t border-border/60 px-4 py-2 text-[11px] font-medium uppercase tracking-normal text-muted-foreground md:grid md:grid-cols-[minmax(180px,1fr)_168px_minmax(200px,1fr)_120px]">
           <div>邀请码</div>
-          <div>状态</div>
-          <div>兑换用户</div>
-          <div>兑换时间</div>
+          <div>名额</div>
+          <div>最近兑换用户</div>
+          <div>最近兑换</div>
         </div>
         {overview.auth.invites.length > 0 ? (
-          overview.auth.invites.map((invite) => <InviteRow key={`${invite.codeHash}-${invite.configured}`} invite={invite} />)
+          overview.auth.invites.map((invite) => (
+            <InviteRow
+              key={`${invite.codeHash}-${invite.configured}`}
+              invite={invite}
+              maxDraft={inviteMaxDrafts[invite.codeHash] ?? String(invite.maxRedemptions)}
+              saving={inviteUpdatingHash === invite.codeHash}
+              onMaxDraftChange={(value) => setInviteMaxDrafts((current) => ({
+                ...current,
+                [invite.codeHash]: value,
+              }))}
+              onSaveMax={() => void saveInviteMax(invite)}
+            />
+          ))
         ) : (
           <div className="border-t border-border/60 px-4 py-8 text-center text-sm text-muted-foreground">
             暂无邀请码

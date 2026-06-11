@@ -12,6 +12,8 @@ const AUTH_FILE = "auth.json"
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const MIN_PASSWORD_LENGTH = 8
 const QQ_EMAIL_DOMAIN = "@qq.com"
+const DEFAULT_INVITE_REDEMPTION_LIMIT = 10
+const MAX_INVITE_REDEMPTION_LIMIT = 10000
 
 export type AuthUser = {
   id: string
@@ -36,10 +38,20 @@ type RedeemedInvite = {
   redeemedAt: string
 }
 
+type ManagedInviteCode = {
+  id: string
+  code: string
+  codeHash: string
+  maxRedemptions: number
+  createdAt: string
+  updatedAt: string
+}
+
 type AuthDatabase = {
   users: AuthUser[]
   sessions: AuthSession[]
   redeemedInvites: RedeemedInvite[]
+  inviteCodes: ManagedInviteCode[]
 }
 
 export type AuthSessionResult = {
@@ -54,17 +66,32 @@ export type AuthAdminSnapshot = {
   redeemedInvites: Array<Pick<RedeemedInvite, "userId" | "redeemedAt">>
   invites: AuthInviteOverview[]
   inviteCodeCount: number
+  inviteSlotCount: number
   adminEmailCount: number
+}
+
+export type AuthInviteRedemptionOverview = {
+  userId: string
+  email: string | null
+  redeemedAt: string
 }
 
 export type AuthInviteOverview = {
   code: string | null
   codeHash: string
   configured: boolean
+  source: "managed" | "env" | "removed"
+  editable: boolean
   redeemed: boolean
   redeemedByUserId: string | null
   redeemedByEmail: string | null
   redeemedAt: string | null
+  redeemedCount: number
+  maxRedemptions: number
+  remainingRedemptions: number
+  redeemedUsers: AuthInviteRedemptionOverview[]
+  createdAt: string | null
+  updatedAt: string | null
 }
 
 let authLock: Promise<void> = Promise.resolve()
@@ -93,12 +120,49 @@ function publicUser(user: AuthUser): AuthSessionResult["user"] {
   }
 }
 
+function normalizeInviteRedemptionLimit(value: unknown, fallback = DEFAULT_INVITE_REDEMPTION_LIMIT): number {
+  const limit = typeof value === "number" ? value : Number(value)
+  if (!Number.isFinite(limit)) return fallback
+  return Math.min(MAX_INVITE_REDEMPTION_LIMIT, Math.max(1, Math.floor(limit)))
+}
+
+function parseInviteRedemptionLimit(value: unknown, fallback = DEFAULT_INVITE_REDEMPTION_LIMIT): number {
+  const limit = value === undefined ? fallback : Number(value)
+  if (!Number.isFinite(limit) || limit < 1 || limit > MAX_INVITE_REDEMPTION_LIMIT) {
+    throw new Error("invalid_invite_limit")
+  }
+  return Math.floor(limit)
+}
+
+function normalizeInviteCodes(value: unknown): ManagedInviteCode[] {
+  if (!Array.isArray(value)) return []
+  const seenHashes = new Set<string>()
+  return value.flatMap((item) => {
+    const raw = item && typeof item === "object" ? item as Partial<ManagedInviteCode> : {}
+    const code = typeof raw.code === "string" ? raw.code.trim() : ""
+    if (!code) return []
+    const codeHash = typeof raw.codeHash === "string" && raw.codeHash ? raw.codeHash : hashSecret(code)
+    if (seenHashes.has(codeHash)) return []
+    seenHashes.add(codeHash)
+    const createdAt = typeof raw.createdAt === "string" ? raw.createdAt : new Date(0).toISOString()
+    return [{
+      id: typeof raw.id === "string" && raw.id ? raw.id : crypto.randomUUID(),
+      code,
+      codeHash,
+      maxRedemptions: normalizeInviteRedemptionLimit(raw.maxRedemptions),
+      createdAt,
+      updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : createdAt,
+    }]
+  })
+}
+
 function normalizeDatabase(data: unknown): AuthDatabase {
   const raw = data && typeof data === "object" ? data as Partial<AuthDatabase> : {}
   return {
     users: Array.isArray(raw.users) ? raw.users : [],
     sessions: Array.isArray(raw.sessions) ? raw.sessions : [],
     redeemedInvites: Array.isArray(raw.redeemedInvites) ? raw.redeemedInvites : [],
+    inviteCodes: normalizeInviteCodes(raw.inviteCodes),
   }
 }
 
@@ -107,7 +171,7 @@ async function readDatabase(): Promise<AuthDatabase> {
     const raw = await fs.readFile(authPath(), "utf8")
     return normalizeDatabase(JSON.parse(raw))
   } catch {
-    return { users: [], sessions: [], redeemedInvites: [] }
+    return { users: [], sessions: [], redeemedInvites: [], inviteCodes: [] }
   }
 }
 
@@ -145,7 +209,17 @@ async function verifyPassword(password: string, user: AuthUser): Promise<boolean
   return left.length === right.length && crypto.timingSafeEqual(left, right)
 }
 
-function configuredInviteCodes(): string[] {
+type InviteConfig = {
+  code: string
+  codeHash: string
+  maxRedemptions: number
+  source: AuthInviteOverview["source"]
+  editable: boolean
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+function configuredEnvInviteCodes(): string[] {
   const codes = (process.env.LG_INVITE_CODES ?? "")
     .split(",")
     .map((item) => item.trim())
@@ -154,6 +228,32 @@ function configuredInviteCodes(): string[] {
   if (codes.length > 0) return codes
   if (process.env.NODE_ENV !== "production") return ["dev-invite"]
   return []
+}
+
+function configuredInviteCodes(db: AuthDatabase): InviteConfig[] {
+  const managedInvites = db.inviteCodes.map((invite): InviteConfig => ({
+    code: invite.code,
+    codeHash: invite.codeHash,
+    maxRedemptions: invite.maxRedemptions,
+    source: "managed",
+    editable: true,
+    createdAt: invite.createdAt,
+    updatedAt: invite.updatedAt,
+  }))
+  const configuredHashes = new Set(managedInvites.map((invite) => invite.codeHash))
+  const envInvites = configuredEnvInviteCodes()
+    .map((code): InviteConfig => ({
+      code,
+      codeHash: hashSecret(code),
+      maxRedemptions: DEFAULT_INVITE_REDEMPTION_LIMIT,
+      source: "env",
+      editable: false,
+      createdAt: null,
+      updatedAt: null,
+    }))
+    .filter((invite) => !configuredHashes.has(invite.codeHash))
+
+  return [...managedInvites, ...envInvites]
 }
 
 function configuredAdminEmails(): string[] {
@@ -169,58 +269,196 @@ export function isAdminEmail(email: string): boolean {
 
 function validateInviteCode(db: AuthDatabase, inviteCode: unknown): string {
   const code = typeof inviteCode === "string" ? inviteCode.trim() : ""
-  const validCodes = configuredInviteCodes()
+  const validCodes = configuredInviteCodes(db)
   if (validCodes.length === 0) throw new Error("invite_not_configured")
   const codeBuffer = Buffer.from(code)
-  if (!code || !validCodes.some((item) => {
-    const itemBuffer = Buffer.from(item)
+  const invite = !code ? null : validCodes.find((item) => {
+    const itemBuffer = Buffer.from(item.code)
     return itemBuffer.length === codeBuffer.length && crypto.timingSafeEqual(itemBuffer, codeBuffer)
-  })) {
+  })
+  if (!invite) {
     throw new Error("invalid_invite")
   }
 
-  const codeHash = hashSecret(code)
-  if (db.redeemedInvites.some((invite) => invite.codeHash === codeHash)) {
-    throw new Error("invite_redeemed")
+  const redeemedCount = db.redeemedInvites.filter((item) => item.codeHash === invite.codeHash).length
+  if (redeemedCount >= invite.maxRedemptions) {
+    throw new Error("invite_limit_reached")
   }
-  return codeHash
+  return invite.codeHash
+}
+
+function createInviteOverview({
+  code,
+  codeHash,
+  configured,
+  source,
+  editable,
+  maxRedemptions,
+  redemptions,
+  usersById,
+  createdAt,
+  updatedAt,
+}: {
+  code: string | null
+  codeHash: string
+  configured: boolean
+  source: AuthInviteOverview["source"]
+  editable: boolean
+  maxRedemptions: number
+  redemptions: RedeemedInvite[]
+  usersById: Map<string, AuthUser>
+  createdAt: string | null
+  updatedAt: string | null
+}): AuthInviteOverview {
+  const redeemedUsers = [...redemptions]
+    .sort((left, right) => left.redeemedAt.localeCompare(right.redeemedAt))
+    .map((invite) => ({
+      userId: invite.userId,
+      email: usersById.get(invite.userId)?.email ?? null,
+      redeemedAt: invite.redeemedAt,
+    }))
+  const latest = redeemedUsers[redeemedUsers.length - 1] ?? null
+  const remainingRedemptions = configured
+    ? Math.max(0, maxRedemptions - redeemedUsers.length)
+    : 0
+
+  return {
+    code,
+    codeHash,
+    configured,
+    source,
+    editable,
+    redeemed: redeemedUsers.length > 0,
+    redeemedByUserId: latest?.userId ?? null,
+    redeemedByEmail: latest?.email ?? null,
+    redeemedAt: latest?.redeemedAt ?? null,
+    redeemedCount: redeemedUsers.length,
+    maxRedemptions,
+    remainingRedemptions,
+    redeemedUsers,
+    createdAt,
+    updatedAt,
+  }
+}
+
+function createInviteCodeValue(): string {
+  return `lg-${crypto.randomBytes(12).toString("base64url")}`
+}
+
+export async function createInviteCode(input: {
+  maxRedemptions?: unknown
+} = {}): Promise<AuthInviteOverview> {
+  const maxRedemptions = parseInviteRedemptionLimit(input.maxRedemptions)
+
+  return withAuthLock(async () => {
+    const db = await readDatabase()
+    const existingHashes = new Set(configuredInviteCodes(db).map((invite) => invite.codeHash))
+    let code = createInviteCodeValue()
+    let codeHash = hashSecret(code)
+    for (let attempt = 0; existingHashes.has(codeHash) && attempt < 5; attempt += 1) {
+      code = createInviteCodeValue()
+      codeHash = hashSecret(code)
+    }
+    if (existingHashes.has(codeHash)) throw new Error("invite_generation_failed")
+
+    const now = new Date().toISOString()
+    const invite: ManagedInviteCode = {
+      id: crypto.randomUUID(),
+      code,
+      codeHash,
+      maxRedemptions,
+      createdAt: now,
+      updatedAt: now,
+    }
+    db.inviteCodes.push(invite)
+    await writeDatabase(db)
+
+    return createInviteOverview({
+      code: invite.code,
+      codeHash: invite.codeHash,
+      configured: true,
+      source: "managed",
+      editable: true,
+      maxRedemptions: invite.maxRedemptions,
+      redemptions: [],
+      usersById: new Map(db.users.map((user) => [user.id, user])),
+      createdAt: invite.createdAt,
+      updatedAt: invite.updatedAt,
+    })
+  })
+}
+
+export async function updateInviteCode(input: {
+  codeHash: unknown
+  maxRedemptions: unknown
+}): Promise<AuthInviteOverview> {
+  if (typeof input.codeHash !== "string" || !input.codeHash) throw new Error("invite_not_found")
+  if (input.maxRedemptions === undefined) throw new Error("invalid_invite_limit")
+  const maxRedemptions = parseInviteRedemptionLimit(input.maxRedemptions)
+
+  return withAuthLock(async () => {
+    const db = await readDatabase()
+    const invite = db.inviteCodes.find((item) => item.codeHash === input.codeHash)
+    if (!invite) throw new Error("invite_not_found")
+
+    invite.maxRedemptions = maxRedemptions
+    invite.updatedAt = new Date().toISOString()
+    await writeDatabase(db)
+
+    return createInviteOverview({
+      code: invite.code,
+      codeHash: invite.codeHash,
+      configured: true,
+      source: "managed",
+      editable: true,
+      maxRedemptions: invite.maxRedemptions,
+      redemptions: db.redeemedInvites.filter((item) => item.codeHash === invite.codeHash),
+      usersById: new Map(db.users.map((user) => [user.id, user])),
+      createdAt: invite.createdAt,
+      updatedAt: invite.updatedAt,
+    })
+  })
 }
 
 export async function getAuthAdminSnapshot(): Promise<AuthAdminSnapshot> {
   return withAuthLock(async () => {
     const db = await readDatabase()
     const usersById = new Map(db.users.map((user) => [user.id, user]))
-    const redeemedByCodeHash = new Map(db.redeemedInvites.map((invite) => [invite.codeHash, invite]))
-    const inviteCodes = configuredInviteCodes()
-    const configuredInvites = inviteCodes.map((code): AuthInviteOverview => {
-      const codeHash = hashSecret(code)
-      const redeemed = redeemedByCodeHash.get(codeHash)
-      const user = redeemed ? usersById.get(redeemed.userId) : null
-      return {
-        code,
-        codeHash,
+    const inviteCodes = configuredInviteCodes(db)
+    const configuredInvites = inviteCodes.map((invite): AuthInviteOverview => {
+      return createInviteOverview({
+        code: invite.code,
+        codeHash: invite.codeHash,
         configured: true,
-        redeemed: Boolean(redeemed),
-        redeemedByUserId: redeemed?.userId ?? null,
-        redeemedByEmail: user?.email ?? null,
-        redeemedAt: redeemed?.redeemedAt ?? null,
-      }
+        source: invite.source,
+        editable: invite.editable,
+        maxRedemptions: invite.maxRedemptions,
+        redemptions: db.redeemedInvites.filter((item) => item.codeHash === invite.codeHash),
+        usersById,
+        createdAt: invite.createdAt,
+        updatedAt: invite.updatedAt,
+      })
     })
     const configuredHashes = new Set(configuredInvites.map((invite) => invite.codeHash))
-    const removedRedeemedInvites = db.redeemedInvites
-      .filter((invite) => !configuredHashes.has(invite.codeHash))
-      .map((invite): AuthInviteOverview => {
-        const user = usersById.get(invite.userId)
-        return {
-          code: null,
-          codeHash: invite.codeHash,
-          configured: false,
-          redeemed: true,
-          redeemedByUserId: invite.userId,
-          redeemedByEmail: user?.email ?? null,
-          redeemedAt: invite.redeemedAt,
-        }
+    const removedInviteHashes = Array.from(new Set(
+      db.redeemedInvites
+        .map((invite) => invite.codeHash)
+        .filter((codeHash) => !configuredHashes.has(codeHash)),
+    ))
+    const removedRedeemedInvites = removedInviteHashes.map((codeHash): AuthInviteOverview => (
+      createInviteOverview({
+        code: null,
+        codeHash,
+        configured: false,
+        source: "removed",
+        editable: false,
+        maxRedemptions: db.redeemedInvites.filter((invite) => invite.codeHash === codeHash).length,
+        redemptions: db.redeemedInvites.filter((invite) => invite.codeHash === codeHash),
+        usersById,
+        createdAt: null,
+        updatedAt: null,
       })
+    ))
 
     return {
       users: db.users.map((user) => ({
@@ -240,6 +478,7 @@ export async function getAuthAdminSnapshot(): Promise<AuthAdminSnapshot> {
       })),
       invites: [...configuredInvites, ...removedRedeemedInvites],
       inviteCodeCount: inviteCodes.length,
+      inviteSlotCount: configuredInvites.reduce((sum, invite) => sum + invite.maxRedemptions, 0),
       adminEmailCount: configuredAdminEmails().length,
     }
   })
