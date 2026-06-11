@@ -10,7 +10,6 @@ const scrypt = promisify(crypto.scrypt)
 export const SESSION_COOKIE_NAME = "lg_session"
 const AUTH_FILE = "auth.json"
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000
-const MIN_PASSWORD_LENGTH = 8
 const QQ_EMAIL_DOMAIN = "@qq.com"
 const DEFAULT_INVITE_REDEMPTION_LIMIT = 10
 const MAX_INVITE_REDEMPTION_LIMIT = 10000
@@ -519,7 +518,7 @@ export async function registerUser(input: {
   const password = typeof input.password === "string" ? input.password : ""
   if (!isValidEmail(email)) throw new Error("invalid_email")
   if (!isQqEmail(email)) throw new Error("qq_email_required")
-  if (password.length < MIN_PASSWORD_LENGTH) throw new Error("weak_password")
+  if (!password) throw new Error("invalid_password")
 
   return withAuthLock(async () => {
     const db = await readDatabase()

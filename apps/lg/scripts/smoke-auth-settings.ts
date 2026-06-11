@@ -29,7 +29,7 @@ async function main() {
 
     const registered = await registerUser({
       email: "unit@qq.com",
-      password: "password123",
+      password: "1",
       inviteCode: invite.code,
     })
     assert.equal(registered.user.email, "unit@qq.com")
@@ -50,7 +50,7 @@ async function main() {
     assert.equal(managedInvite?.redeemedCount, 3)
     assert.equal(managedInvite?.remainingRedemptions, 0)
 
-    const loggedIn = await loginUser({ email: "unit@qq.com", password: "password123" })
+    const loggedIn = await loginUser({ email: "unit@qq.com", password: "1" })
     assert.equal((await getUserBySessionToken(loggedIn.token))?.id, registered.user.id)
     await deleteSessionToken(loggedIn.token)
     assert.equal(await getUserBySessionToken(loggedIn.token), null)

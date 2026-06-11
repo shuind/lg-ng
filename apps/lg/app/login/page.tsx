@@ -117,7 +117,7 @@ export default function LoginPage() {
               autoComplete={isRegister ? "new-password" : "current-password"}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              placeholder={isRegister ? "至少 8 位" : "请输入密码"}
+              placeholder="请输入密码"
             />
           </label>
 

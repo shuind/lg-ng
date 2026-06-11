@@ -6,7 +6,7 @@ function authErrorMessage(error: unknown): string {
   if (!(error instanceof Error)) return "注册失败"
   if (error.message === "invalid_email") return "请输入有效邮箱"
   if (error.message === "qq_email_required") return "仅支持 QQ 邮箱注册"
-  if (error.message === "weak_password") return "密码至少需要 8 位"
+  if (error.message === "invalid_password") return "请输入密码"
   if (error.message === "email_exists") return "这个邮箱已经注册"
   if (error.message === "invite_not_configured") return "服务器未配置邀请码"
   if (error.message === "invalid_invite") return "邀请码无效"
