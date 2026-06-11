@@ -50,19 +50,63 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy over SSH
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_KEY }}
-          script: |
-            set -e
-            cd /opt/lg-ng
-            git pull --ff-only origin main
-            corepack enable
-            corepack prepare pnpm@10.27.0 --activate
-            pnpm install --frozen-lockfile
-            pnpm build
-            sudo systemctl restart lg-ng
-            curl -Ik --max-time 10 https://zhihuo.art
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+        run: |
+          set -e
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Prepare rsync
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          set -e
+          sudo apt-get update
+          sudo apt-get install -y rsync
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
+            'command -v rsync >/dev/null || (sudo apt-get update && sudo apt-get install -y rsync)'
+
+      - name: Sync source to server
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          set -e
+          rsync -az --delete \
+            --exclude '.git/' \
+            --exclude '.dev-logs/' \
+            --exclude '.lg-data/' \
+            --exclude '.playwright-mcp/' \
+            --exclude 'node_modules/' \
+            --exclude 'apps/lg/.env' \
+            --exclude 'apps/lg/.next/' \
+            --exclude 'packages/novel-guide/dist/' \
+            --exclude '*.tsbuildinfo' \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes" \
+            ./ "$DEPLOY_USER@$DEPLOY_HOST:/opt/lg-ng/"
+
+      - name: Build and restart
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          set -e
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" <<'EOF'
+          set -e
+          cd /opt/lg-ng
+          corepack enable
+          corepack prepare pnpm@10.27.0 --activate
+          pnpm install --frozen-lockfile
+          pnpm build
+          sudo systemctl restart lg-ng
+          curl -Ik --max-time 10 https://zhihuo.art
+          EOF
