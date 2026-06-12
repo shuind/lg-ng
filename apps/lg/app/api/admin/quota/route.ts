@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server"
 import { withAdminRoute } from "@/lib/server/auth-route"
 import { getTrialQuotaSummary, updateTrialQuotaSettings } from "@/lib/server/trial-quota-store"
-import { syncBillingSettingsFromTrialQuota } from "@/lib/server/billing-store"
 
 export const GET = withAdminRoute(async () => {
   return NextResponse.json(await getTrialQuotaSummary())
@@ -22,6 +21,5 @@ export const PUT = withAdminRoute(async (request: Request) => {
     ].flatMap((key) => body[key] === undefined ? [] : [[key, body[key]]]),
   )
   await updateTrialQuotaSettings(input)
-  await syncBillingSettingsFromTrialQuota()
   return NextResponse.json(await getTrialQuotaSummary())
 })

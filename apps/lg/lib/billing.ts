@@ -32,6 +32,20 @@ export interface BillingSettings {
   updatedAt: string
 }
 
+export interface BillingSettingsUpdateInput {
+  platformEnabled?: boolean
+  pricing?: Partial<BillingPricing>
+}
+
+export type BillingPlatformKeySource = "environment" | "admin" | "none"
+
+export interface BillingPlatformKeyStatus {
+  platformApiKeyConfigured: boolean
+  platformKeySource: BillingPlatformKeySource
+  platformKeyPreview: string | null
+  platformKeyUpdatedAt: string | null
+}
+
 export interface BillingUsageDetails {
   paymentSource: PaymentSource
   promptTokens: number
@@ -99,6 +113,9 @@ export interface BillingUsageRangePayload {
 export interface BillingAdminSummary {
   settings: BillingSettings
   platformApiKeyConfigured: boolean
+  platformKeySource: BillingPlatformKeySource
+  platformKeyPreview: string | null
+  platformKeyUpdatedAt: string | null
   total: Omit<BillingUserSummary, "userId" | "recentEntries" | "canUseBalance" | "platformApiKeyConfigured" | "platformEnabled">
   byUser: BillingUserSummary[]
 }

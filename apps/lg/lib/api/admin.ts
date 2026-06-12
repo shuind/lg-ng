@@ -1,4 +1,9 @@
-import type { BillingAdminSummary, BillingUserSummary } from "@/lib/billing"
+import type {
+  BillingAdminSummary,
+  BillingPlatformKeyStatus,
+  BillingSettingsUpdateInput,
+  BillingUserSummary,
+} from "@/lib/billing"
 
 export type AdminUserOverview = {
   id: string
@@ -153,6 +158,42 @@ export async function adjustAdminBillingBalance(input: {
     body: JSON.stringify(input),
   })
   return readAdminResponse<BillingUserSummary>(res, "余额调整失败")
+}
+
+export async function updateAdminBillingSettings(input: BillingSettingsUpdateInput): Promise<BillingAdminSummary> {
+  const res = await fetch("/api/admin/billing", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  })
+  return readAdminResponse<BillingAdminSummary>(res, "余额设置保存失败")
+}
+
+export async function saveAdminPlatformKey(input: {
+  apiKey: string
+}): Promise<BillingPlatformKeyStatus> {
+  const res = await fetch("/api/admin/billing/platform-key", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  })
+  return readAdminResponse<BillingPlatformKeyStatus>(res, "平台 API Key 保存失败")
+}
+
+export async function testAdminPlatformKey(input: {
+  apiKey?: string
+} = {}): Promise<{ ok: true; model: string }> {
+  const res = await fetch("/api/admin/billing/platform-key", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  })
+  return readAdminResponse<{ ok: true; model: string }>(res, "平台 API Key 测试失败")
+}
+
+export async function clearAdminPlatformKey(): Promise<BillingPlatformKeyStatus> {
+  const res = await fetch("/api/admin/billing/platform-key", { method: "DELETE" })
+  return readAdminResponse<BillingPlatformKeyStatus>(res, "平台 API Key 清除失败")
 }
 
 export async function createAdminInvite(input: {

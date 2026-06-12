@@ -6,8 +6,10 @@ import {
   BILLING_SUBSCRIPTION_PLANS,
   type BillingAdminSummary,
   type BillingLedgerEntry,
+  type BillingPlatformKeyStatus,
   type BillingPricing,
   type BillingSettings,
+  type BillingSettingsUpdateInput,
   type BillingUsageRangePayload,
   type BillingUsageDetails,
   type BillingUserSummary,
@@ -15,9 +17,11 @@ import {
 } from "@/lib/billing"
 import { getCurrentUserId } from "@/lib/server/request-context"
 import { getGlobalDataRoot } from "@/lib/server/paths"
+import { decryptSecret, encryptSecret, maskSecret } from "@/lib/server/secret-crypto"
 
 const BILLING_SETTINGS_FILE = "billing-settings.json"
 const BILLING_LEDGER_FILE = "billing-ledger.jsonl"
+const PLATFORM_LLM_SETTINGS_FILE = "platform-llm-settings.json"
 const QUOTA_SETTINGS_FILE = "quota-settings.json"
 const QUOTA_USAGE_FILE = "quota-usage.jsonl"
 const AUTH_FILE = "auth.json"
@@ -54,6 +58,13 @@ type TrialQuotaUsageRecordShape = {
   feature: string
 }
 
+type StoredPlatformLlmSettings = {
+  deepSeekApiKeyEncrypted?: string
+  deepSeekKeyPreview?: string
+  deepSeekKeyUpdatedAt?: string
+  updatedAt: string
+}
+
 let billingLock: Promise<void> = Promise.resolve()
 
 function adminDir(): string {
@@ -66,6 +77,10 @@ function billingSettingsPath(): string {
 
 function billingLedgerPath(): string {
   return path.join(adminDir(), BILLING_LEDGER_FILE)
+}
+
+function platformLlmSettingsPath(): string {
+  return path.join(adminDir(), PLATFORM_LLM_SETTINGS_FILE)
 }
 
 function quotaSettingsPath(): string {
@@ -198,6 +213,70 @@ function normalizeBillingSettings(value: unknown): BillingSettings {
     subscriptionPlans: BILLING_SUBSCRIPTION_PLANS,
     migratedTrialQuotaAt: typeof raw.migratedTrialQuotaAt === "string" ? raw.migratedTrialQuotaAt : undefined,
     updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : defaults.updatedAt,
+  }
+}
+
+function normalizePlatformLlmSettings(value: unknown): StoredPlatformLlmSettings {
+  const raw = value && typeof value === "object" ? value as Partial<StoredPlatformLlmSettings> : {}
+  return {
+    deepSeekApiKeyEncrypted: typeof raw.deepSeekApiKeyEncrypted === "string"
+      ? raw.deepSeekApiKeyEncrypted
+      : undefined,
+    deepSeekKeyPreview: typeof raw.deepSeekKeyPreview === "string" ? raw.deepSeekKeyPreview : undefined,
+    deepSeekKeyUpdatedAt: typeof raw.deepSeekKeyUpdatedAt === "string" ? raw.deepSeekKeyUpdatedAt : undefined,
+    updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : DEFAULT_UPDATED_AT,
+  }
+}
+
+function readPlatformLlmSettingsSync(): StoredPlatformLlmSettings {
+  try {
+    return normalizePlatformLlmSettings(JSON.parse(fs.readFileSync(platformLlmSettingsPath(), "utf8")))
+  } catch {
+    return { updatedAt: DEFAULT_UPDATED_AT }
+  }
+}
+
+function getEnvironmentPlatformApiKey(): string | null {
+  return process.env.DEEPSEEK_PLATFORM_API_KEY || process.env.DEEPSEEK_API_KEY || null
+}
+
+function getStoredPlatformApiKey(settings = readPlatformLlmSettingsSync()): string | null {
+  if (!settings.deepSeekApiKeyEncrypted) return null
+  try {
+    return decryptSecret(settings.deepSeekApiKeyEncrypted)
+  } catch (error) {
+    console.error("[billing-store] Failed to decrypt platform API key:", error)
+    return null
+  }
+}
+
+function getPlatformKeyStatus(): BillingPlatformKeyStatus {
+  const settings = readPlatformLlmSettingsSync()
+  const storedKey = getStoredPlatformApiKey(settings)
+  if (storedKey) {
+    return {
+      platformApiKeyConfigured: true,
+      platformKeySource: "admin",
+      platformKeyPreview: settings.deepSeekKeyPreview ?? maskSecret(storedKey),
+      platformKeyUpdatedAt: settings.deepSeekKeyUpdatedAt ?? settings.updatedAt,
+    }
+  }
+
+  const environmentKey = getEnvironmentPlatformApiKey()
+  if (environmentKey) {
+    return {
+      platformApiKeyConfigured: true,
+      platformKeySource: "environment",
+      platformKeyPreview: null,
+      platformKeyUpdatedAt: null,
+    }
+  }
+
+  return {
+    platformApiKeyConfigured: false,
+    platformKeySource: "none",
+    platformKeyPreview: null,
+    platformKeyUpdatedAt: null,
   }
 }
 
@@ -409,12 +488,16 @@ async function appendBillingEntry(entry: BillingLedgerEntry): Promise<void> {
   await fsp.appendFile(billingLedgerPath(), `${JSON.stringify(entry)}\n`, "utf8")
 }
 
-function isPlatformApiKeyConfigured(): boolean {
-  return Boolean(process.env.DEEPSEEK_PLATFORM_API_KEY || process.env.DEEPSEEK_API_KEY)
+export function getPlatformBillingApiKey(): string | null {
+  return getStoredPlatformApiKey() || getEnvironmentPlatformApiKey()
 }
 
-export function getPlatformBillingApiKey(): string | null {
-  return process.env.DEEPSEEK_PLATFORM_API_KEY || process.env.DEEPSEEK_API_KEY || null
+export function getBillingPlatformKeyStatus(): BillingPlatformKeyStatus {
+  return getPlatformKeyStatus()
+}
+
+function isPlatformApiKeyConfigured(): boolean {
+  return getPlatformKeyStatus().platformApiKeyConfigured
 }
 
 export function readBillingSettingsSync(): BillingSettings {
@@ -425,13 +508,56 @@ export async function readBillingSettings(): Promise<BillingSettings> {
   return readBillingSettingsSyncRaw()
 }
 
+export async function updateBillingSettings(input: BillingSettingsUpdateInput): Promise<BillingSettings> {
+  return withBillingLock(async () => {
+    const existing = readBillingSettingsSyncRaw()
+    const next: BillingSettings = {
+      ...existing,
+      platformEnabled: typeof input.platformEnabled === "boolean" ? input.platformEnabled : existing.platformEnabled,
+      pricing: input.pricing ? normalizePricing(input.pricing, existing.pricing) : existing.pricing,
+      updatedAt: new Date().toISOString(),
+    }
+    await fsp.mkdir(adminDir(), { recursive: true })
+    await fsp.writeFile(billingSettingsPath(), `${JSON.stringify(next, null, 2)}\n`, "utf8")
+    return next
+  })
+}
+
+export async function savePlatformBillingApiKey(apiKeyInput: string): Promise<BillingPlatformKeyStatus> {
+  const apiKey = apiKeyInput.trim()
+  if (!apiKey) throw new Error("missing_api_key")
+
+  return withBillingLock(async () => {
+    const now = new Date().toISOString()
+    const settings: StoredPlatformLlmSettings = {
+      deepSeekApiKeyEncrypted: encryptSecret(apiKey),
+      deepSeekKeyPreview: maskSecret(apiKey),
+      deepSeekKeyUpdatedAt: now,
+      updatedAt: now,
+    }
+    await fsp.mkdir(adminDir(), { recursive: true })
+    await fsp.writeFile(platformLlmSettingsPath(), `${JSON.stringify(settings, null, 2)}\n`, "utf8")
+    return getPlatformKeyStatus()
+  })
+}
+
+export async function clearPlatformBillingApiKey(): Promise<BillingPlatformKeyStatus> {
+  return withBillingLock(async () => {
+    const settings: StoredPlatformLlmSettings = {
+      updatedAt: new Date().toISOString(),
+    }
+    await fsp.mkdir(adminDir(), { recursive: true })
+    await fsp.writeFile(platformLlmSettingsPath(), `${JSON.stringify(settings, null, 2)}\n`, "utf8")
+    return getPlatformKeyStatus()
+  })
+}
+
 export async function syncBillingSettingsFromTrialQuota(): Promise<BillingSettings> {
   return withBillingLock(async () => {
     const trialSettings = readTrialQuotaSettingsSync()
     const existing = readBillingSettingsSyncRaw()
     const next: BillingSettings = {
       ...existing,
-      platformEnabled: trialSettings.enabled,
       pricing: pricingFromTrialQuota(trialSettings),
       updatedAt: new Date().toISOString(),
     }
@@ -535,6 +661,7 @@ function createTotalSummary(byUser: BillingUserSummary[]): BillingAdminSummary["
 export function getBillingAdminSummarySync(userIds: string[] = []): BillingAdminSummary {
   const settings = readBillingSettingsSyncRaw()
   const entries = readBillingEntriesSync()
+  const platformKeyStatus = getPlatformKeyStatus()
   const allUserIds = [...new Set([
     ...userIds,
     ...entries.map((entry) => entry.userId),
@@ -543,7 +670,10 @@ export function getBillingAdminSummarySync(userIds: string[] = []): BillingAdmin
 
   return {
     settings,
-    platformApiKeyConfigured: isPlatformApiKeyConfigured(),
+    platformApiKeyConfigured: platformKeyStatus.platformApiKeyConfigured,
+    platformKeySource: platformKeyStatus.platformKeySource,
+    platformKeyPreview: platformKeyStatus.platformKeyPreview,
+    platformKeyUpdatedAt: platformKeyStatus.platformKeyUpdatedAt,
     total: createTotalSummary(byUser),
     byUser,
   }

@@ -3,14 +3,18 @@
 import type { FormEvent, ReactNode } from "react"
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { AlertTriangle, Coins, Database, HardDrive, KeyRound, Plus, RefreshCw, Save, Ticket, Users } from "lucide-react"
+import { AlertTriangle, Coins, Database, HardDrive, KeyRound, Plus, PlugZap, RefreshCw, Save, Ticket, Trash2, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
   AdminApiError,
   adjustAdminBillingBalance,
+  clearAdminPlatformKey,
   createAdminInvite,
   getAdminOverview,
+  saveAdminPlatformKey,
+  testAdminPlatformKey,
+  updateAdminBillingSettings,
   updateAdminInvite,
   updateAdminTrialQuotaSettings,
   type AdminInviteOverview,
@@ -18,7 +22,7 @@ import {
   type AdminUserOverview,
   type TrialQuotaSettings,
 } from "@/lib/api"
-import type { BillingUserSummary } from "@/lib/billing"
+import type { BillingPricing, BillingUserSummary } from "@/lib/billing"
 import { cn } from "@/lib/utils"
 
 const DEFAULT_INVITE_MAX_REDEMPTIONS = 10
@@ -369,6 +373,14 @@ function createBillingAdjustmentDrafts(users: AdminUserOverview[]): Record<strin
   return Object.fromEntries(users.map((user) => [user.id, "0"]))
 }
 
+function createBillingPricingDraft(pricing: BillingPricing): BillingPricing {
+  return {
+    promptCacheHitPricePerMillionCny: pricing.promptCacheHitPricePerMillionCny,
+    promptCacheMissPricePerMillionCny: pricing.promptCacheMissPricePerMillionCny,
+    outputPricePerMillionCny: pricing.outputPricePerMillionCny,
+  }
+}
+
 function getInviteSlotCount(invites: AdminInviteOverview[]): number {
   return invites
     .filter((invite) => invite.configured)
@@ -398,6 +410,17 @@ export function AdminPanel() {
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [accessDenied, setAccessDenied] = useState(false)
+  const [billingPlatformEnabledDraft, setBillingPlatformEnabledDraft] = useState(false)
+  const [billingPricingDraft, setBillingPricingDraft] = useState<BillingPricing | null>(null)
+  const [billingSettingsSaving, setBillingSettingsSaving] = useState(false)
+  const [billingSettingsMessage, setBillingSettingsMessage] = useState<string | null>(null)
+  const [billingSettingsError, setBillingSettingsError] = useState<string | null>(null)
+  const [platformKeyDraft, setPlatformKeyDraft] = useState("")
+  const [platformKeySaving, setPlatformKeySaving] = useState(false)
+  const [platformKeyTesting, setPlatformKeyTesting] = useState(false)
+  const [platformKeyClearing, setPlatformKeyClearing] = useState(false)
+  const [platformKeyMessage, setPlatformKeyMessage] = useState<string | null>(null)
+  const [platformKeyError, setPlatformKeyError] = useState<string | null>(null)
   const [quotaDraft, setQuotaDraft] = useState<TrialQuotaSettings | null>(null)
   const [quotaSaving, setQuotaSaving] = useState(false)
   const [quotaMessage, setQuotaMessage] = useState<string | null>(null)
@@ -425,6 +448,8 @@ export function AdminPanel() {
     try {
       const nextOverview = await getAdminOverview()
       setOverview(nextOverview)
+      setBillingPlatformEnabledDraft(nextOverview.billing.settings.platformEnabled)
+      setBillingPricingDraft(createBillingPricingDraft(nextOverview.billing.settings.pricing))
       setQuotaDraft(nextOverview.quota.settings)
       setUserQuotaDrafts(createUserQuotaDrafts(nextOverview.users, nextOverview.quota.settings))
       setBillingAdjustmentDrafts(createBillingAdjustmentDrafts(nextOverview.users))
@@ -453,10 +478,6 @@ export function AdminPanel() {
       setUserQuotaDrafts(createUserQuotaDrafts(overview?.users ?? [], quota.settings))
       setOverview((current) => current ? {
         ...current,
-        llm: {
-          ...current.llm,
-          platformQuotaEnabled: quota.enforcementEnabled,
-        },
         quota,
       } : current)
       setQuotaMessage("额度设置已保存")
@@ -464,6 +485,85 @@ export function AdminPanel() {
       setQuotaError(getErrorMessage(err))
     } finally {
       setQuotaSaving(false)
+    }
+  }
+
+  async function saveBillingSettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!billingPricingDraft || billingSettingsSaving) return
+    setBillingSettingsSaving(true)
+    setBillingSettingsError(null)
+    setBillingSettingsMessage(null)
+    try {
+      const billing = await updateAdminBillingSettings({
+        platformEnabled: billingPlatformEnabledDraft,
+        pricing: billingPricingDraft,
+      })
+      setBillingPlatformEnabledDraft(billing.settings.platformEnabled)
+      setBillingPricingDraft(createBillingPricingDraft(billing.settings.pricing))
+      setOverview((current) => current ? {
+        ...current,
+        llm: {
+          ...current.llm,
+          platformQuotaEnabled: billing.platformApiKeyConfigured && billing.settings.platformEnabled,
+        },
+        billing,
+      } : current)
+      setBillingSettingsMessage("余额设置已保存")
+    } catch (err) {
+      setBillingSettingsError(getErrorMessage(err))
+    } finally {
+      setBillingSettingsSaving(false)
+    }
+  }
+
+  async function savePlatformKey() {
+    const apiKey = platformKeyDraft.trim()
+    if (!apiKey || platformKeySaving) return
+    setPlatformKeySaving(true)
+    setPlatformKeyError(null)
+    setPlatformKeyMessage(null)
+    try {
+      await saveAdminPlatformKey({ apiKey })
+      setPlatformKeyDraft("")
+      setPlatformKeyMessage("平台 API Key 已保存")
+      await loadOverview(true)
+    } catch (err) {
+      setPlatformKeyError(getErrorMessage(err))
+    } finally {
+      setPlatformKeySaving(false)
+    }
+  }
+
+  async function testPlatformKey() {
+    if (platformKeyTesting) return
+    setPlatformKeyTesting(true)
+    setPlatformKeyError(null)
+    setPlatformKeyMessage(null)
+    try {
+      const result = await testAdminPlatformKey(platformKeyDraft.trim() ? { apiKey: platformKeyDraft.trim() } : {})
+      setPlatformKeyMessage(`平台 API Key 测试通过：${result.model}`)
+    } catch (err) {
+      setPlatformKeyError(getErrorMessage(err))
+    } finally {
+      setPlatformKeyTesting(false)
+    }
+  }
+
+  async function clearPlatformKey() {
+    if (platformKeyClearing) return
+    setPlatformKeyClearing(true)
+    setPlatformKeyError(null)
+    setPlatformKeyMessage(null)
+    try {
+      await clearAdminPlatformKey()
+      setPlatformKeyDraft("")
+      setPlatformKeyMessage("后台保存的平台 API Key 已清除")
+      await loadOverview(true)
+    } catch (err) {
+      setPlatformKeyError(getErrorMessage(err))
+    } finally {
+      setPlatformKeyClearing(false)
     }
   }
 
@@ -493,10 +593,6 @@ export function AdminPanel() {
       }))
       setOverview((current) => current ? {
         ...current,
-        llm: {
-          ...current.llm,
-          platformQuotaEnabled: quota.enforcementEnabled,
-        },
         quota,
       } : current)
       setUserQuotaMessage("用户额度已保存")
@@ -593,6 +689,13 @@ export function AdminPanel() {
     setQuotaDraft((current) => current ? { ...current, [key]: value } : current)
   }
 
+  function updateBillingPricingDraft<K extends keyof BillingPricing>(
+    key: K,
+    value: BillingPricing[K],
+  ) {
+    setBillingPricingDraft((current) => current ? { ...current, [key]: value } : current)
+  }
+
   useEffect(() => {
     void loadOverview()
   }, [])
@@ -657,6 +760,20 @@ export function AdminPanel() {
 
   if (!overview) return null
 
+  const billingSettingsCanSave = Boolean(billingPricingDraft) &&
+    !billingSettingsSaving &&
+    (
+      billingPlatformEnabledDraft !== overview.billing.settings.platformEnabled ||
+      billingPricingDraft?.promptCacheHitPricePerMillionCny !== overview.billing.settings.pricing.promptCacheHitPricePerMillionCny ||
+      billingPricingDraft?.promptCacheMissPricePerMillionCny !== overview.billing.settings.pricing.promptCacheMissPricePerMillionCny ||
+      billingPricingDraft?.outputPricePerMillionCny !== overview.billing.settings.pricing.outputPricePerMillionCny
+    )
+  const platformKeySourceLabel = overview.billing.platformKeySource === "environment"
+    ? "环境变量"
+    : overview.billing.platformKeySource === "admin"
+      ? `后台保存 ${overview.billing.platformKeyPreview ?? ""}`.trim()
+      : "未配置"
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -689,6 +806,109 @@ export function AdminPanel() {
         <div className="mt-3 flex items-start gap-2 text-[12px] leading-relaxed text-muted-foreground">
           <Database className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span className="break-all font-mono">{overview.dataRoot}</span>
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-border/70 bg-card/75 p-4">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold tracking-normal">平台余额</h2>
+            <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+              管理余额调用的全局开关、平台 DeepSeek API Key 和扣费单价。用户仍在下方列表中逐个调账。
+            </p>
+          </div>
+          <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">
+            <KeyRound className="h-4 w-4" />
+          </span>
+        </div>
+
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <StatusPill tone={overview.billing.settings.platformEnabled ? "good" : "warning"}>
+            {overview.billing.settings.platformEnabled ? "余额通道已启用" : "余额通道未启用"}
+          </StatusPill>
+          <StatusPill tone={overview.billing.platformApiKeyConfigured ? "good" : "warning"}>
+            平台 Key：{platformKeySourceLabel}
+          </StatusPill>
+          <StatusPill>余额总计 {formatMoney(overview.billing.total.balanceCny)} 元</StatusPill>
+          <StatusPill>余额已扣 {formatMoney(overview.billing.total.usedBalanceCny)} 元</StatusPill>
+          <StatusPill tone={overview.llm.platformQuotaEnabled ? "good" : "warning"}>
+            {overview.llm.platformQuotaEnabled ? "余额调用可用" : "余额调用不可用"}
+          </StatusPill>
+        </div>
+
+        {billingPricingDraft ? (
+          <form className="space-y-4" onSubmit={saveBillingSettings}>
+            <label className="flex items-center gap-2 text-[13px]">
+              <input
+                type="checkbox"
+                checked={billingPlatformEnabledDraft}
+                onChange={(event) => setBillingPlatformEnabledDraft(event.target.checked)}
+                className="h-4 w-4"
+              />
+              启用平台余额调用
+            </label>
+
+            <div className="grid gap-3 md:grid-cols-3">
+              <QuotaNumberInput
+                label="缓存命中输入单价"
+                value={billingPricingDraft.promptCacheHitPricePerMillionCny}
+                suffix="元 / 百万"
+                onChange={(value) => updateBillingPricingDraft("promptCacheHitPricePerMillionCny", value)}
+              />
+              <QuotaNumberInput
+                label="缓存未命中输入单价"
+                value={billingPricingDraft.promptCacheMissPricePerMillionCny}
+                suffix="元 / 百万"
+                onChange={(value) => updateBillingPricingDraft("promptCacheMissPricePerMillionCny", value)}
+              />
+              <QuotaNumberInput
+                label="输出 token 单价"
+                value={billingPricingDraft.outputPricePerMillionCny}
+                suffix="元 / 百万"
+                onChange={(value) => updateBillingPricingDraft("outputPricePerMillionCny", value)}
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <Button type="submit" size="sm" disabled={!billingSettingsCanSave}>
+                <Save className="h-4 w-4" />
+                {billingSettingsSaving ? "保存中..." : "保存余额设置"}
+              </Button>
+              {billingSettingsMessage ? <span className="text-[12px] text-emerald-700 dark:text-emerald-300">{billingSettingsMessage}</span> : null}
+              {billingSettingsError ? <span className="text-[12px] text-destructive">{billingSettingsError}</span> : null}
+            </div>
+          </form>
+        ) : null}
+
+        <div className="mt-5 grid gap-3 border-t border-border/60 pt-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+          <label className="block space-y-1.5">
+            <span className="text-[12px] font-medium text-muted-foreground">平台 DeepSeek API Key</span>
+            <Input
+              type="password"
+              autoComplete="off"
+              value={platformKeyDraft}
+              onChange={(event) => setPlatformKeyDraft(event.target.value)}
+              placeholder="sk-..."
+            />
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" size="sm" disabled={!platformKeyDraft.trim() || platformKeySaving} onClick={() => void savePlatformKey()}>
+              <Save className={cn("h-4 w-4", platformKeySaving && "animate-pulse")} />
+              保存 Key
+            </Button>
+            <Button type="button" size="sm" variant="outline" disabled={platformKeyTesting || (!platformKeyDraft.trim() && !overview.billing.platformApiKeyConfigured)} onClick={() => void testPlatformKey()}>
+              <PlugZap className={cn("h-4 w-4", platformKeyTesting && "animate-pulse")} />
+              测试
+            </Button>
+            <Button type="button" size="sm" variant="ghost" disabled={platformKeyClearing || overview.billing.platformKeySource !== "admin"} onClick={() => void clearPlatformKey()}>
+              <Trash2 className={cn("h-4 w-4", platformKeyClearing && "animate-pulse")} />
+              清除后台 Key
+            </Button>
+          </div>
+        </div>
+        <div className="mt-2 min-h-5 text-[12px] leading-relaxed">
+          {platformKeyMessage ? <span className="text-emerald-700 dark:text-emerald-300">{platformKeyMessage}</span> : null}
+          {platformKeyError ? <span className="text-destructive">{platformKeyError}</span> : null}
         </div>
       </section>
 
