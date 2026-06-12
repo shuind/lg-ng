@@ -18,6 +18,8 @@ import { findAgent, loadAgentsDir } from "../agents/loadAgentsDir.js";
 import { loadSkillsDir } from "../skills/loadSkillsDir.js";
 
 const COMPACTION_PREFIX = "NG_COMPACTION_MEMO:";
+const PROJECT_CONTEXT_PREFIX = "NG_PROJECT_CONTEXT:";
+const CHANGE_MEMO_PREFIX = "NG_CHANGE_MEMO:";
 const DEFAULT_CONTEXT_BUDGET_TOKENS = 64000;
 const DEFAULT_COMPACTION_TRIGGER_RATIO = 0.8;
 const DEFAULT_RECENT_MESSAGE_COUNT = 16;
@@ -32,6 +34,7 @@ export interface EngineConfig {
   initialMessages?: ChatCompletionMessageParam[];
   initialCompaction?: SessionCompactionState;
   appendSystemPrompt?: string;
+  projectContext?: string;
   askConfirmation?: (question: string) => Promise<boolean>;
   permissionMode?: "bypass" | "confirm";
   maxLoops?: number;
@@ -77,16 +80,16 @@ export class AgentEngine {
 
   constructor(private readonly config: EngineConfig) {
     this.sessionId = config.sessionId ?? createSessionId();
-    this.messages = config.initialMessages ?? [];
+    this.messages = stripProjectContextMessages(config.initialMessages ?? []);
     this.compaction = config.initialCompaction;
     this.tools = getTools({ readonlyOnly: config.readonlyOnly, proposalOnly: config.proposalOnly });
   }
 
-  private async buildUserContext(): Promise<string> {
+  private async buildProjectContext(): Promise<string> {
     const [skills, agents, memoryCard] = await Promise.all([
       loadSkillsDir(this.config.cwd),
       loadAgentsDir(this.config.cwd),
-      buildProjectMemoryCard(this.config.cwd),
+      this.config.projectContext?.trim() || buildProjectMemoryCard(this.config.cwd),
     ]);
     const skillSummary = skills
       .filter((skill) => !skill.disableModelInvocation)
@@ -96,7 +99,9 @@ export class AgentEngine {
       .map((agent) => `- ${agent.name}: ${agent.description}`)
       .join("\n");
     return [
+      PROJECT_CONTEXT_PREFIX,
       `Workspace: ${this.config.cwd}`,
+      "Project facts live in workspace files. The index below is navigation, not complete truth. When a task depends on a specific character, setting, chapter, prose passage, foreshadowing hook, or rule, use read_file on the listed path before making claims or edits.",
       memoryCard,
       skillSummary ? `Available skills:\n${skillSummary}` : "Available skills: none",
       agentSummary ? `Available agents:\n${agentSummary}` : "Available agents: none",
@@ -181,12 +186,12 @@ export class AgentEngine {
     await this.ensureSystemPrompt();
     await this.compactMessagesIfNeeded(options.signal);
 
-    const userContext = await this.buildUserContext();
+    const projectContext = await this.buildProjectContext();
     const content = options.systemMeta
-      ? `${userContext}\n\n${prompt}`
-      : `${userContext}\n\nUser request:\n${prompt}`;
+      ? prompt
+      : `User request:\n${prompt}`;
     const turnMessages: ChatCompletionMessageParam[] = [
-      ...this.messages,
+      ...withProjectContext(this.messages, projectContext),
       { role: "user", content },
     ];
 
@@ -215,7 +220,10 @@ export class AgentEngine {
         proposals: [],
       };
     }
-    this.messages = result.messages;
+    this.messages = appendChangeMemo(
+      stripProjectContextMessages(result.messages),
+      buildChangeMemo(result.fileChanges, result.proposals),
+    );
 
     if (options.save !== false) {
       const state: SessionState = {
@@ -241,12 +249,12 @@ export class AgentEngine {
   }
 
   private async ensureSystemPrompt(): Promise<void> {
-    if (this.messages.length > 0) return;
+    if (isPrimarySystemMessage(this.messages[0])) return;
     const systemPrompt = await buildEffectiveSystemPrompt({
       cwd: this.config.cwd,
       appendSystemPrompt: this.config.appendSystemPrompt,
     });
-    this.messages.push({ role: "system", content: systemPrompt });
+    this.messages.unshift({ role: "system", content: systemPrompt });
   }
 
   private async compactMessagesIfNeeded(signal?: AbortSignal): Promise<void> {
@@ -317,6 +325,83 @@ export class AgentEngine {
   }
 }
 
+function isGeneratedSystemMessage(message: ChatCompletionMessageParam | undefined): boolean {
+  if (!message || message.role !== "system") return false;
+  const content = stringifyMessageContent(message.content);
+  return (
+    content.startsWith(PROJECT_CONTEXT_PREFIX) ||
+    content.startsWith(COMPACTION_PREFIX) ||
+    content.startsWith(CHANGE_MEMO_PREFIX)
+  );
+}
+
+function isPrimarySystemMessage(message: ChatCompletionMessageParam | undefined): boolean {
+  return Boolean(message && message.role === "system" && !isGeneratedSystemMessage(message));
+}
+
+function isProjectContextMessage(message: ChatCompletionMessageParam): boolean {
+  return message.role === "system" && stringifyMessageContent(message.content).startsWith(PROJECT_CONTEXT_PREFIX);
+}
+
+function stripProjectContextMessages(messages: ChatCompletionMessageParam[]): ChatCompletionMessageParam[] {
+  return messages.filter((message) => !isProjectContextMessage(message));
+}
+
+function withProjectContext(
+  messages: ChatCompletionMessageParam[],
+  projectContext: string,
+): ChatCompletionMessageParam[] {
+  const cleanMessages = stripProjectContextMessages(messages);
+  const contextMessage: ChatCompletionMessageParam = { role: "system", content: projectContext };
+  if (cleanMessages.length === 0) return [contextMessage];
+  if (isPrimarySystemMessage(cleanMessages[0])) {
+    return [cleanMessages[0], contextMessage, ...cleanMessages.slice(1)];
+  }
+  return [contextMessage, ...cleanMessages];
+}
+
+function buildChangeMemo(
+  fileChanges: FileChange[],
+  proposals: FileProposal[],
+): ChatCompletionMessageParam | null {
+  const lines: string[] = [];
+  const seenChanges = new Set<string>();
+  for (const change of fileChanges) {
+    if (!change.path || seenChanges.has(change.path)) continue;
+    seenChanges.add(change.path);
+    const charCount = change.charCount ?? change.afterContent?.length ?? 0;
+    lines.push(`- ${change.operation} ${change.path} (${charCount} chars)`);
+  }
+
+  const seenProposals = new Set<string>();
+  for (const proposal of proposals) {
+    if (!proposal.path || seenProposals.has(proposal.path)) continue;
+    seenProposals.add(proposal.path);
+    lines.push(`- proposed ${proposal.path} (${proposal.afterContent.length} chars)`);
+  }
+
+  if (lines.length === 0) return null;
+  const visible = lines.slice(0, 20);
+  if (lines.length > visible.length) visible.push(`- ${lines.length - visible.length} more change(s) omitted`);
+  return {
+    role: "system",
+    content: [
+      CHANGE_MEMO_PREFIX,
+      `updated_at: ${new Date().toISOString()}`,
+      "",
+      "Workspace changes completed in the preceding assistant turn:",
+      ...visible,
+    ].join("\n"),
+  };
+}
+
+function appendChangeMemo(
+  messages: ChatCompletionMessageParam[],
+  memo: ChatCompletionMessageParam | null,
+): ChatCompletionMessageParam[] {
+  return memo ? [...messages, memo] : messages;
+}
+
 async function buildProjectMemoryCard(cwd: string): Promise<string> {
   const [novel, legacyMaterialIndex] = await Promise.all([
     readWorkspaceFile(cwd, "NOVEL.md"),
@@ -331,7 +416,7 @@ async function buildProjectMemoryCard(cwd: string): Promise<string> {
   ].filter(Boolean);
   const canonFacts = await summarizeCanonFacts(cwd);
   const body = [
-    "Project long-term memory (derived from files, not an LLM summary):",
+    "Project index (derived from files, not an LLM summary):",
     sections.length > 0 ? sections.join("\n\n") : "NOVEL.md has no populated long-term-memory sections yet.",
     canonFacts,
     legacyMaterialIndex,
@@ -415,7 +500,7 @@ async function summarizeLegacyLgMaterials(cwd: string): Promise<string> {
     const raw = await readWorkspaceFile(cwd, file);
     if (!raw) continue;
     const summary = summarizeMaterialFile(file, raw);
-    if (summary) lines.push(`- ${summary} -> ${file}`);
+    if (summary) lines.push(`- ${summary} | path=${file}`);
   }
   return lines.length ? `LG legacy material index:\n${lines.join("\n")}` : "";
 }
@@ -430,7 +515,7 @@ function summarizeMaterialFile(file: string, content: string): string {
     .filter((line) => !isPlaceholderLine(line))
     .join(" ")
     .replace(/\s+/g, " ")
-    .slice(0, 260);
+    .slice(0, 140);
   return excerpt ? `${title}: ${excerpt}` : title;
 }
 

@@ -34,7 +34,6 @@ export function AppShell(props: AppShellProps) {
             onNewBook={props.onNewBook}
             onNewChapter={props.onNewChapter}
             onDeleteChapter={props.onDeleteChapter}
-            onOpenWorkbench={props.onOpenWorkbench}
             onRenameBook={props.onRenameBook}
           />
 

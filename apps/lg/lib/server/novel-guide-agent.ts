@@ -10,6 +10,7 @@ import {
 } from "novel-guide"
 import { getBook } from "@/lib/server/book-store"
 import { getEffectiveOpenAICompatibleConfig } from "@/lib/server/app-settings-store"
+import { listIndexedFiles, listIndexedSettingCards, type IndexedBookFile } from "@/lib/server/book-index"
 import { getBookDir } from "@/lib/server/paths"
 import { recordBillingUsage } from "@/lib/server/billing-store"
 import type { BillingLedgerEntry } from "@/lib/billing"
@@ -123,6 +124,55 @@ function formatWorkflowAction(action?: WorkflowAction): string {
   return `Selected workflow:\n${instructions[action]}`
 }
 
+const PROJECT_CONTEXT_CARD_LIMIT = 60
+const PROJECT_CONTEXT_FILE_LIMIT = 80
+const PROJECT_CONTEXT_SUMMARY_LIMIT = 160
+const PROJECT_CONTEXT_FILE_EXTENSIONS = new Set([".md", ".json", ".txt"])
+
+function clipProjectContextText(value: string, maxLength = PROJECT_CONTEXT_SUMMARY_LIMIT): string {
+  const normalized = value.replace(/\s+/g, " ").trim()
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength).trim()}...` : normalized
+}
+
+function compareIndexedPaths(a: { path?: string }, b: { path?: string }): number {
+  return (a.path ?? "").localeCompare(b.path ?? "", "zh-CN", { numeric: true })
+}
+
+function formatIndexedFile(file: IndexedBookFile): string {
+  const label = file.name.replace(/\.[^.]+$/i, "")
+  return `- ${label} | ${file.root || "root"} | path=${file.path}`
+}
+
+async function buildStableProjectContext(bookId: string): Promise<string> {
+  const [settingCards, files] = await Promise.all([
+    listIndexedSettingCards(bookId).catch(() => []),
+    listIndexedFiles(bookId).catch(() => []),
+  ])
+  const cardPaths = new Set(settingCards.flatMap((card) => card.path ? [card.path] : []))
+  const cardLines = [...settingCards]
+    .sort(compareIndexedPaths)
+    .slice(0, PROJECT_CONTEXT_CARD_LIMIT)
+    .map((card) => [
+      `- ${card.name}`,
+      card.category,
+      clipProjectContextText(card.summary || ""),
+      card.path ? `path=${card.path}` : "",
+    ].filter(Boolean).join(" | "))
+
+  const fileLines = [...files]
+    .filter((file) => PROJECT_CONTEXT_FILE_EXTENSIONS.has(file.extension))
+    .filter((file) => !cardPaths.has(file.path))
+    .sort(compareIndexedPaths)
+    .slice(0, PROJECT_CONTEXT_FILE_LIMIT)
+    .map(formatIndexedFile)
+
+  return [
+    "LG stable project index (short summaries and paths; not complete facts):",
+    cardLines.length > 0 ? `Setting cards:\n${cardLines.join("\n")}` : "Setting cards: none",
+    fileLines.length > 0 ? `Workspace files:\n${fileLines.join("\n")}` : "Workspace files: none",
+  ].join("\n\n")
+}
+
 function isProposalWorkflow(action?: WorkflowAction): boolean {
   return action === "continue" || action === "revise"
 }
@@ -203,10 +253,12 @@ export async function runNovelGuideAgent(input: {
   const workspacePath = getBookDir(input.bookId)
   const bookTitle = book?.title ?? input.bookId
   await initNovelWorkspace(workspacePath, bookTitle)
+  const projectContext = await buildStableProjectContext(input.bookId)
 
   const agentSessionId = input.agentSessionId ?? input.threadId
   const baseAgentSessionId = input.baseAgentSessionId ?? agentSessionId
   const session = await loadSession(workspacePath, baseAgentSessionId)
+  const promptThreadMessages = session ? [] : input.threadMessages ?? []
   const engine = new AgentEngine({
     cwd: workspacePath,
     client: createOpenAICompatibleClient(config),
@@ -215,6 +267,7 @@ export async function runNovelGuideAgent(input: {
     initialMessages: session?.messages,
     initialCompaction: session?.compaction,
     appendSystemPrompt: LG_LEGACY_PROMPT,
+    projectContext,
     permissionMode: "bypass",
     readonlyOnly: input.readonlyOnly,
     proposalOnly: isProposalWorkflow(input.workflowAction) && !input.readonlyOnly,
@@ -227,7 +280,7 @@ export async function runNovelGuideAgent(input: {
     references: input.references ?? [],
     responseConstraints: input.responseConstraints ?? [],
     skills: input.skills ?? [],
-    threadMessages: input.threadMessages ?? [],
+    threadMessages: promptThreadMessages,
     workflowAction: input.workflowAction,
   }), { signal: input.signal })
 
@@ -289,10 +342,12 @@ export async function* runNovelGuideAgentStream(input: {
   const workspacePath = getBookDir(input.bookId)
   const bookTitle = book?.title ?? input.bookId
   await initNovelWorkspace(workspacePath, bookTitle)
+  const projectContext = await buildStableProjectContext(input.bookId)
 
   const agentSessionId = input.agentSessionId ?? input.threadId
   const baseAgentSessionId = input.baseAgentSessionId ?? agentSessionId
   const session = await loadSession(workspacePath, baseAgentSessionId)
+  const promptThreadMessages = session ? [] : input.threadMessages ?? []
   const engine = new AgentEngine({
     cwd: workspacePath,
     client: createOpenAICompatibleClient(config),
@@ -301,6 +356,7 @@ export async function* runNovelGuideAgentStream(input: {
     initialMessages: session?.messages,
     initialCompaction: session?.compaction,
     appendSystemPrompt: LG_LEGACY_PROMPT,
+    projectContext,
     permissionMode: "bypass",
     readonlyOnly: input.readonlyOnly,
     proposalOnly: isProposalWorkflow(input.workflowAction) && !input.readonlyOnly,
@@ -313,7 +369,7 @@ export async function* runNovelGuideAgentStream(input: {
     references: input.references ?? [],
     responseConstraints: input.responseConstraints ?? [],
     skills: input.skills ?? [],
-    threadMessages: input.threadMessages ?? [],
+    threadMessages: promptThreadMessages,
     workflowAction: input.workflowAction,
   }), { signal: input.signal })) {
     if (event.type !== "done") {
@@ -366,6 +422,7 @@ export async function runNovelGuideReview(input: {
   const workspacePath = getBookDir(input.bookId)
   const bookTitle = book?.title ?? input.bookId
   await initNovelWorkspace(workspacePath, bookTitle)
+  const projectContext = await buildStableProjectContext(input.bookId)
 
   const engine = new AgentEngine({
     cwd: workspacePath,
@@ -373,6 +430,7 @@ export async function runNovelGuideReview(input: {
     model: config.model,
     sessionId: input.threadId,
     appendSystemPrompt: LG_LEGACY_PROMPT,
+    projectContext,
     permissionMode: "bypass",
     maxLoops: 32,
   })

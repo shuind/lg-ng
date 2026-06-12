@@ -1,7 +1,7 @@
 ﻿"use client"
 
 import { useEffect, useRef, type RefObject } from "react"
-import { LayoutGrid, Pencil } from "lucide-react"
+import { Pencil } from "lucide-react"
 import type { Book } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -16,7 +16,6 @@ export function BookRow({
   onCancelRename,
   onSelectBook,
   onPrefetchBook,
-  onOpenWorkbench,
   onStartRename,
 }: {
   book: Book
@@ -29,7 +28,6 @@ export function BookRow({
   onCancelRename: () => void
   onSelectBook: (bookId: string) => void
   onPrefetchBook: (bookId: string) => void
-  onOpenWorkbench: (bookId: string) => void
   onStartRename: (bookId: string, currentTitle: string) => void
 }) {
   const prefetchTimerRef = useRef<number | null>(null)
@@ -78,23 +76,6 @@ export function BookRow({
       ) : (
         <>
           <div className="flex shrink-0 items-center gap-0.5 pl-1.5">
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation()
-                onOpenWorkbench(book.id)
-              }}
-              className={cn(
-                "rounded-md p-1 transition",
-                active
-                  ? "text-muted-foreground opacity-100 hover:bg-background/40 hover:text-foreground"
-                  : "text-muted-foreground/0 group-hover:text-muted-foreground group-hover:opacity-100 hover:bg-sidebar-accent hover:text-foreground",
-              )}
-              aria-label="打开工作台"
-              title="打开这本书的工作台"
-            >
-              <LayoutGrid className="h-3.5 w-3.5" />
-            </button>
             <button
               type="button"
               onClick={(event) => {

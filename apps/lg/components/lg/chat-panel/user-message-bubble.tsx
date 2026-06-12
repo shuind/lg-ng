@@ -1,7 +1,8 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { ChevronLeft, ChevronRight, Copy, Edit3 } from "lucide-react"
+import { Check, ChevronLeft, ChevronRight, Copy, Edit3 } from "lucide-react"
+import { toast } from "@/hooks/use-toast"
 import type { Message } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import type { TurnBranchNavigation } from "./types"
@@ -27,7 +28,9 @@ export function UserMessageBubble({
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(message.content)
+  const [copied, setCopied] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const copyResetRef = useRef<number | null>(null)
   const userMessageRef = useCallback((element: HTMLDivElement | null) => {
     registerUserMessage(message.turnId, element)
   }, [message.turnId, registerUserMessage])
@@ -35,6 +38,12 @@ export function UserMessageBubble({
   useEffect(() => {
     if (!editing) setDraft(message.content)
   }, [editing, message.content])
+
+  useEffect(() => {
+    return () => {
+      if (copyResetRef.current) window.clearTimeout(copyResetRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     if (!editing) return
@@ -49,6 +58,19 @@ export function UserMessageBubble({
     if (!text) return
     setEditing(false)
     void onSubmitEditedTurn(message.turnId, text)
+  }
+
+  function handleCopy() {
+    navigator.clipboard?.writeText(message.content).then(() => {
+      setCopied(true)
+      toast({
+        title: "已复制",
+        description: "消息内容已复制到剪贴板",
+        duration: 1200,
+      })
+      if (copyResetRef.current) window.clearTimeout(copyResetRef.current)
+      copyResetRef.current = window.setTimeout(() => setCopied(false), 1200)
+    }).catch(() => {})
   }
 
   return (
@@ -138,13 +160,13 @@ export function UserMessageBubble({
               type="button"
               onClick={(event) => {
                 event.stopPropagation()
-                navigator.clipboard?.writeText(message.content).catch(() => {})
+                handleCopy()
               }}
               className="flex h-7 w-7 items-center justify-center rounded-md transition hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               title="复制"
               aria-label="复制"
             >
-              <Copy className="h-3.5 w-3.5" />
+              {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
             </button>
             <button
               type="button"

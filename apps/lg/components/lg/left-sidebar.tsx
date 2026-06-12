@@ -24,7 +24,6 @@ interface LeftSidebarProps {
   onNewBook: () => void
   onNewChapter: () => void
   onDeleteChapter: (chapterId: string) => Promise<void>
-  onOpenWorkbench: (bookId: string, path?: string) => void
   onRenameBook: (bookId: string, newTitle: string) => void
 }
 
@@ -44,7 +43,6 @@ export function LeftSidebar({
   onNewBook,
   onNewChapter,
   onDeleteChapter,
-  onOpenWorkbench,
   onRenameBook,
 }: LeftSidebarProps) {
   if (collapsed) {
@@ -73,16 +71,11 @@ export function LeftSidebar({
           onNewBook={onNewBook}
           onSelectBook={onSelectBook}
           onPrefetchBook={onPrefetchBook}
-          onOpenWorkbench={onOpenWorkbench}
           onRenameBook={onRenameBook}
         />
 
         <div className="mt-4">
-          <OutlineSection
-            outlines={outlines}
-            activeBookId={activeBookId}
-            onOpenWorkbench={onOpenWorkbench}
-          />
+          <OutlineSection outlines={outlines} />
         </div>
 
         <div className="mt-4">

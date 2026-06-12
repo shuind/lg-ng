@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Check, CheckCheck, ChevronDown, Copy, ExternalLink, GitBranch, MessageCircleQuestionMark, Sparkles, Trash2, Undo2 } from "lucide-react"
 import { useWorkbenchOpen } from "@/components/lg/workbench-open-context"
+import { toast } from "@/hooks/use-toast"
 import type { AgentEvent, Message } from "@/lib/types"
 import type { ProposalSummary } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -62,6 +63,11 @@ export function AssistantMessageBubble({
   function handleCopyAssistant() {
     navigator.clipboard?.writeText(message.content).then(() => {
       setAssistantCopied(true)
+      toast({
+        title: "已复制",
+        description: "回复内容已复制到剪贴板",
+        duration: 1200,
+      })
       if (copyResetRef.current) window.clearTimeout(copyResetRef.current)
       copyResetRef.current = window.setTimeout(() => setAssistantCopied(false), 1200)
     }).catch(() => {})

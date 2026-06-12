@@ -43,18 +43,18 @@ export function RightSidebar({
   return (
     <aside className="relative flex h-full min-h-0 w-full flex-col bg-sidebar/70 paper-soft">
       <div className="shrink-0 px-4 pb-2 pt-5">
-        <div className="flex items-center gap-1">
+        <div className="flex min-w-0 items-center gap-1">
           <TabBtn active={tab === "recent"} onClick={() => setTab("recent")} icon={<Clock3 className="h-3.5 w-3.5" />}>
             最近改动
           </TabBtn>
           <TabBtn active={tab === "settings"} onClick={() => setTab("settings")} icon={<Library className="h-3.5 w-3.5" />}>
             设定卡
           </TabBtn>
-          <TabBtn active={tab === "import"} onClick={() => setTab("import")} icon={<UploadCloud className="h-3.5 w-3.5" />}>
-            导入
-          </TabBtn>
           <TabBtn active={tab === "status"} onClick={() => setTab("status")} icon={<BookOpenCheck className="h-3.5 w-3.5" />}>
             书状态
+          </TabBtn>
+          <TabBtn active={tab === "import"} onClick={() => setTab("import")} icon={<UploadCloud className="h-3.5 w-3.5" />}>
+            导入
           </TabBtn>
         </div>
       </div>
@@ -100,7 +100,7 @@ function TabBtn({
     <button
       onClick={onClick}
       className={cn(
-        "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] transition",
+        "flex h-7 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-[12px] transition",
         active ? "bg-sidebar-accent/70 text-foreground shadow-sm" : "text-muted-foreground/80 hover:bg-sidebar-accent/30 hover:text-foreground",
       )}
     >

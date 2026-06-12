@@ -17,7 +17,7 @@ function mockClient(seenTools: string[]): OpenAI {
         create: async (input: { tools?: { function?: { name?: string } }[] }) => {
           seenTools.push(...(input.tools ?? []).map((tool) => tool.function?.name ?? ""));
           return {
-            choices: [{ message: { role: "assistant", content: "## 摘要\nok" } }],
+            choices: [{ message: { role: "assistant", content: "ok" } }],
             usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
           };
         },
@@ -66,44 +66,39 @@ describe("AgentEngine subagents", () => {
   });
 });
 
-describe("AgentEngine project memory", () => {
-  it("surfaces LG legacy material index in the user context", async () => {
+describe("AgentEngine project context", () => {
+  it("surfaces project memory as a stable system context, not in the user message", async () => {
     const cwd = await tempDir();
-    await mkdir(path.join(cwd, "世界观"), { recursive: true });
-    await mkdir(path.join(cwd, "卷纲"), { recursive: true });
+    await mkdir(path.join(cwd, "skills"), { recursive: true });
     await writeFile(
       path.join(cwd, "NOVEL.md"),
       [
         "---",
-        "project: 长生",
+        "project: test",
         "type: novel-workspace",
         "---",
         "",
-        "# 长生",
-        "",
-        "## 核心实体清单",
-        "- TODO",
+        "# Test Novel",
       ].join("\n"),
       "utf8",
     );
     await writeFile(
-      path.join(cwd, "世界观", "天轮与岁轮.md"),
-      "# 天轮与岁轮\n\n顾慎的百岁雷劫被瞒天佩延迟。",
+      path.join(cwd, "CLAUDE.md"),
+      "# Project Guide\n\nUse the hundred year storm as a recurring omen.",
       "utf8",
     );
     await writeFile(
-      path.join(cwd, "卷纲", "第一卷.md"),
-      "# 第一卷\n\n第 1 章：《第七天，雷云开始聚》。",
+      path.join(cwd, "skills", "style.md"),
+      "# Style\n\nKeep chapter endings sharp and unresolved.",
       "utf8",
     );
 
-    let userContext = "";
+    let modelMessages: { role?: string; content?: unknown }[] = [];
     const client = {
       chat: {
         completions: {
           create: async (input: { messages: { role?: string; content?: unknown }[] }) => {
-            const last = input.messages.at(-1);
-            userContext = typeof last?.content === "string" ? last.content : "";
+            modelMessages = input.messages.map((message) => ({ ...message }));
             return {
               choices: [{ message: { role: "assistant", content: "done" } }],
               usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
@@ -120,13 +115,107 @@ describe("AgentEngine project memory", () => {
       permissionMode: "bypass",
     });
 
-    await engine.submitMessage("写第一章", { save: false });
+    await engine.submitMessage("write chapter one", { save: false });
 
-    expect(userContext).toContain("LG legacy material index");
-    expect(userContext).toContain("世界观/天轮与岁轮.md");
-    expect(userContext).toContain("百岁雷劫");
-    expect(userContext).toContain("卷纲/第一卷.md");
-    expect(userContext).toContain("雷云开始聚");
+    const projectContext = modelMessages.find((message) =>
+      message.role === "system" &&
+      typeof message.content === "string" &&
+      message.content.startsWith("NG_PROJECT_CONTEXT:")
+    )?.content;
+    const lastUser = modelMessages.at(-1)?.content;
+    expect(projectContext).toContain("LG legacy material index");
+    expect(projectContext).toContain("CLAUDE.md");
+    expect(projectContext).toContain("hundred year storm");
+    expect(projectContext).toContain("skills/style.md");
+    expect(projectContext).toContain("chapter endings");
+    expect(lastUser).toBe("User request:\nwrite chapter one");
+  });
+
+  it("uses configured project context and does not persist it into session history", async () => {
+    const cwd = await tempDir();
+    let calls = 0;
+    const client = {
+      chat: {
+        completions: {
+          create: async () => {
+            calls += 1;
+            if (calls === 1) {
+              return {
+                choices: [{
+                  message: {
+                    role: "assistant",
+                    content: "",
+                    tool_calls: [{
+                      id: "tc1",
+                      type: "function",
+                      function: {
+                        name: "write_file",
+                        arguments: "{\"path\":\"notes.md\",\"content\":\"new notes\"}",
+                      },
+                    }],
+                  },
+                }],
+                usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+              };
+            }
+            return {
+              choices: [{ message: { role: "assistant", content: "done" } }],
+              usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+            };
+          },
+        },
+      },
+    } as unknown as OpenAI;
+    const engine = new AgentEngine({
+      cwd,
+      client,
+      model: "mock",
+      sessionId: "change-memo",
+      projectContext: "Stable index:\n- Notes | path=notes.md",
+      permissionMode: "bypass",
+    });
+
+    const result = await engine.submitMessage("write notes", { save: false });
+    const rendered = JSON.stringify(result.messages);
+
+    expect(calls).toBe(2);
+    expect(rendered).not.toContain("NG_PROJECT_CONTEXT");
+    expect(rendered).toContain("NG_CHANGE_MEMO");
+    expect(rendered).toContain("write notes.md");
+    expect(rendered).toContain("User request:\\nwrite notes");
+  });
+
+  it("repairs preloaded sessions that are missing a primary system prompt", async () => {
+    const cwd = await tempDir();
+    let modelMessages: { role?: string; content?: unknown }[] = [];
+    const client = {
+      chat: {
+        completions: {
+          create: async (input: { messages: { role?: string; content?: unknown }[] }) => {
+            modelMessages = input.messages.map((message) => ({ ...message }));
+            return {
+              choices: [{ message: { role: "assistant", content: "done" } }],
+              usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+            };
+          },
+        },
+      },
+    } as unknown as OpenAI;
+    const engine = new AgentEngine({
+      cwd,
+      client,
+      model: "mock",
+      sessionId: "missing-system",
+      initialMessages: [{ role: "user", content: "previous request" }],
+      projectContext: "Stable index",
+    });
+
+    const result = await engine.submitMessage("new request", { save: false });
+
+    expect(modelMessages[0]?.role).toBe("system");
+    expect(modelMessages[1]?.content).toContain("NG_PROJECT_CONTEXT");
+    expect(result.messages[0]?.role).toBe("system");
+    expect(JSON.stringify(result.messages)).not.toContain("NG_PROJECT_CONTEXT");
   });
 });
 
@@ -179,5 +268,6 @@ describe("AgentEngine compaction", () => {
     expect(rendered).toContain("summary memo");
     expect(rendered).toContain("old-19");
     expect(rendered).not.toContain("old-0");
+    expect(rendered).not.toContain("NG_PROJECT_CONTEXT");
   });
 });

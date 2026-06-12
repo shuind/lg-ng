@@ -5,6 +5,7 @@ import type { WorkbenchOpenOptions } from "./workbench/types"
 
 interface WorkbenchOpenContextValue {
   activeBookId: string
+  open: () => void
   openPath: (path?: string, options?: Pick<WorkbenchOpenOptions, "initialLine">) => void
   openLedger: (entryId: string, path?: string) => void
 }
@@ -22,6 +23,10 @@ export function WorkbenchOpenProvider({
 }) {
   const value = useMemo<WorkbenchOpenContextValue>(() => ({
     activeBookId,
+    open() {
+      if (!activeBookId) return
+      onOpenWorkbench(activeBookId)
+    },
     openPath(path, options) {
       if (!activeBookId) return
       onOpenWorkbench(activeBookId, {

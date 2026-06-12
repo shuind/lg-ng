@@ -1,26 +1,25 @@
 ﻿"use client"
 
 import { BookMarked } from "lucide-react"
+import { useWorkbenchOpen } from "@/components/lg/workbench-open-context"
 import type { OutlineFile } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { SidebarSection } from "./section"
 
 export function OutlineSection({
   outlines,
-  activeBookId,
-  onOpenWorkbench,
 }: {
   outlines: OutlineFile[]
-  activeBookId: string
-  onOpenWorkbench: (bookId: string, path?: string) => void
 }) {
+  const workbenchOpen = useWorkbenchOpen()
+
   return (
     <SidebarSection title="大纲">
       {outlines.length > 0 ? (
         outlines.map((outline) => (
           <button
             key={outline.id}
-            onClick={() => onOpenWorkbench(activeBookId, outline.path)}
+            onClick={() => workbenchOpen?.openPath(outline.path)}
             className="group flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] text-muted-foreground transition hover:bg-sidebar-accent/60 hover:text-foreground"
           >
             <span

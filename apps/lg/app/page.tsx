@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AppShell, type AppMode } from "@/components/lg/app-shell"
 import type { ChatCitation, ChatSendOptions } from "@/components/lg/chat-panel/types"
 import type { WorkbenchOpenOptions } from "@/components/lg/workbench/types"
@@ -61,6 +61,9 @@ function getErrorMessage(err: unknown, fallback = "请稍后重试。"): string 
   return err instanceof Error && err.message ? err.message : fallback
 }
 
+const AUTO_CHAT_BOOK_TITLE = "默认对话"
+const AUTO_CHAT_THREAD_TITLE = "默认任务线程"
+
 export default function Page() {
   const [books, setBooks] = useState<Book[]>([])
   const [chapters, setChapters] = useState<Chapter[]>([])
@@ -88,6 +91,7 @@ export default function Page() {
   const [newBookDialogOpen, setNewBookDialogOpen] = useState(false)
   const [newBookTitle, setNewBookTitle] = useState("")
   const [creatingBook, setCreatingBook] = useState(false)
+  const skipNextBookInitLoadRef = useRef<string | null>(null)
   const {
     getSnapshot,
     hasSnapshot,
@@ -159,6 +163,10 @@ export default function Page() {
 
   useEffect(() => {
     if (!activeBookId) return
+    if (skipNextBookInitLoadRef.current === activeBookId) {
+      skipNextBookInitLoadRef.current = null
+      return
+    }
     let cancelled = false
     const cached = getSnapshot(activeBookId)
     if (cached) {
@@ -186,20 +194,55 @@ export default function Page() {
     }
   }, [activeBookId])
 
+  async function ensureBookContext(): Promise<string> {
+    if (activeBookId) return activeBookId
+
+    const book = await createBook(AUTO_CHAT_BOOK_TITLE)
+    setBooks((current) => upsertById(current, book))
+    skipNextBookInitLoadRef.current = book.id
+    setActiveBookId(book.id)
+    setActiveChapterId(null)
+    setMode("chat")
+    workbench.close()
+    return book.id
+  }
+
+  async function ensureChatContext(): Promise<{ bookId: string; threadId: string }> {
+    const bookId = await ensureBookContext()
+    const existingThreadId = bookId === activeBookId
+      ? activeThreadId || threads.find((thread) => thread.status === "active")?.id
+      : undefined
+
+    if (existingThreadId) return { bookId, threadId: existingThreadId }
+
+    const bundle = await createThread(bookId, AUTO_CHAT_THREAD_TITLE)
+    applyThreadBundle(bundle, true, bookId)
+    return { bookId, threadId: bundle.thread.id }
+  }
+
   async function handleSend(
     text: string,
     citations: ChatCitation[],
     options: ChatSendOptions,
   ) {
-    if (!activeBookId) return
-    const fallbackThreadId = activeThreadId || threads.find((thread) => thread.status === "active")?.id
-    if (!fallbackThreadId) return
-    await handleSendWithThread(text, fallbackThreadId, citations, {
+    let context: { bookId: string; threadId: string }
+    try {
+      context = await ensureChatContext()
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "初始化对话失败",
+        description: getErrorMessage(err),
+      })
+      return
+    }
+
+    await handleSendWithThread(text, context.threadId, citations, {
       ...options,
       parentTurnId: options.parentTurnId === undefined
-        ? chatThreadView.activeLeafTurnId ?? null
+        ? (context.threadId === activeThreadId ? chatThreadView.activeLeafTurnId ?? null : null)
         : options.parentTurnId,
-    })
+    }, context.bookId)
   }
 
   function handleNewBook() {
@@ -233,10 +276,10 @@ export default function Page() {
   }
 
   async function handleCreateThread() {
-    if (!activeBookId) return
     try {
-      const bundle = await createThread(activeBookId)
-      applyThreadBundle(bundle, true)
+      const bookId = await ensureBookContext()
+      const bundle = await createThread(bookId)
+      applyThreadBundle(bundle, true, bookId)
     } catch (err) {
       toast({
         variant: "destructive",
@@ -373,7 +416,7 @@ export default function Page() {
     })
   }
 
-  function applyThreadBundle(bundle: ThreadBundle, selectThread: boolean) {
+  function applyThreadBundle(bundle: ThreadBundle, selectThread: boolean, bookId = activeBookId) {
     setThreads((current) => upsertById(current, bundle.thread))
     if (selectThread) setActiveThreadId(bundle.thread.id)
     setTurns(bundle.turns)
@@ -381,9 +424,9 @@ export default function Page() {
     const latestTurnId = findLatestSelectableTurnId(bundle.turns, bundle.messages)
     setSelectedTurnId(latestTurnId)
     setActiveLeafTurnId(latestTurnId)
-    if (activeBookId) {
-      const cached = getSnapshot(activeBookId)
-      updateSnapshot(activeBookId, {
+    if (bookId) {
+      const cached = getSnapshot(bookId)
+      updateSnapshot(bookId, {
         threads: cached ? upsertById(cached.threads, bundle.thread) : [bundle.thread],
         activeThreadId: selectThread ? bundle.thread.id : cached?.activeThreadId ?? activeThreadId,
         turns: bundle.turns,
@@ -415,11 +458,11 @@ export default function Page() {
     }
   }, [activeBookId, activeThreadId, visibleRunningTurnId])
 
-  async function refreshThreadBundle(threadId: string, selectThread: boolean) {
-    if (!activeBookId) return null
-    const bundle = await getThread(activeBookId, threadId)
+  async function refreshThreadBundle(threadId: string, selectThread: boolean, bookId = activeBookId) {
+    if (!bookId) return null
+    const bundle = await getThread(bookId, threadId)
     if (!bundle) return null
-    applyThreadBundle(bundle, selectThread)
+    applyThreadBundle(bundle, selectThread, bookId)
     return bundle
   }
 
@@ -583,19 +626,19 @@ export default function Page() {
     }
   }
 
-  async function refreshBookDerivedData() {
-    if (!activeBookId) return
+  async function refreshBookDerivedData(bookId = activeBookId) {
+    if (!bookId) return
     const [ledgerResponse, freshCards, freshChapters, freshMaterials] = await Promise.all([
-      listLedgerEntries(activeBookId, { limit: 24 }).catch(() => ({ entries: [] })),
-      listSettingCards(activeBookId).catch(() => cards),
-      listChapters(activeBookId).catch(() => chapters),
-      listImportedMaterials(activeBookId).catch(() => importedMaterials),
+      listLedgerEntries(bookId, { limit: 24 }).catch(() => ({ entries: [] })),
+      listSettingCards(bookId).catch(() => cards),
+      listChapters(bookId).catch(() => chapters),
+      listImportedMaterials(bookId).catch(() => importedMaterials),
     ])
     setLedgerEntries(ledgerResponse.entries)
     setCards(freshCards)
     setChapters(freshChapters)
     setImportedMaterials(freshMaterials)
-    updateSnapshot(activeBookId, {
+    updateSnapshot(bookId, {
       ledgerEntries: ledgerResponse.entries,
       cards: freshCards,
       chapters: freshChapters,
@@ -767,11 +810,14 @@ export default function Page() {
     threadId: string,
     citations: ChatCitation[] = [],
     options: Partial<ChatSendOptions> = {},
+    bookId = activeBookId,
   ) {
-    if (!activeBookId) return
-    const targetThread = threads.find((thread) => thread.id === threadId)
+    if (!bookId) return
+    const targetThread = bookId === activeBookId
+      ? threads.find((thread) => thread.id === threadId)
+      : undefined
     if (targetThread && targetThread.status !== "active") return
-    if (turns.some((turn) => turn.threadId === threadId && turn.status === "running")) {
+    if (bookId === activeBookId && turns.some((turn) => turn.threadId === threadId && turn.status === "running")) {
       toast({
         title: "上一轮还在运行",
         description: "等当前回复完成后再发送下一条。",
@@ -780,7 +826,7 @@ export default function Page() {
     }
 
     const requestParentTurnId = options.parentTurnId === undefined
-      ? chatThreadView.activeLeafTurnId ?? null
+      ? (bookId === activeBookId ? chatThreadView.activeLeafTurnId ?? null : null)
       : options.parentTurnId
     const optimisticTurnId = `turn-local-${Date.now()}`
     const optimisticConstraints = buildAppliedConstraints(
@@ -908,7 +954,7 @@ export default function Page() {
     }
 
     try {
-      await sendMessageStream(activeBookId, text, threadId, citations, {
+      await sendMessageStream(bookId, text, threadId, citations, {
         constraintIds: options.constraintIds ?? threadConstraintIds[threadId] ?? [],
         temporaryConstraints: options.temporaryConstraints ?? [],
         skillIds: options.skillIds ?? [],
@@ -979,8 +1025,8 @@ export default function Page() {
           setActiveLeafTurnId(payload.turn.id)
         },
       })
-      await refreshThreadBundle(threadId, true).catch(() => null)
-      void refreshBookDerivedData()
+      await refreshThreadBundle(threadId, true, bookId).catch(() => null)
+      void refreshBookDerivedData(bookId)
     } catch (err) {
       if (options.signal?.aborted) {
         cancelAssistantFlush()
@@ -996,7 +1042,7 @@ export default function Page() {
         setMessages((current) => current.filter((message) => message.id !== assistantPlaceholderId))
         setSelectedTurnId(cancelledTurn.id)
         setActiveLeafTurnId(cancelledTurn.id)
-        if (hasServerTurn) void refreshThreadBundle(threadId, true).catch(() => null)
+        if (hasServerTurn) void refreshThreadBundle(threadId, true, bookId).catch(() => null)
         return
       }
       cancelAssistantFlush()
@@ -1028,7 +1074,7 @@ export default function Page() {
       }
       setTurns((current) => upsertTurnById(current, failedTurn))
       setMessages((current) => [...current, assistantMessage])
-      if (hasServerTurn) void refreshThreadBundle(threadId, true).catch(() => null)
+      if (hasServerTurn) void refreshThreadBundle(threadId, true, bookId).catch(() => null)
     }
   }
 

@@ -21,7 +21,6 @@ type LeftSidebarColumnProps = Pick<
   | "onNewBook"
   | "onNewChapter"
   | "onDeleteChapter"
-  | "onOpenWorkbench"
   | "onRenameBook"
 >
 
@@ -41,7 +40,6 @@ export function LeftSidebarColumn({
   onNewBook,
   onNewChapter,
   onDeleteChapter,
-  onOpenWorkbench,
   onRenameBook,
 }: LeftSidebarColumnProps) {
   return (
@@ -75,7 +73,6 @@ export function LeftSidebarColumn({
         onNewBook={onNewBook}
         onNewChapter={onNewChapter}
         onDeleteChapter={onDeleteChapter}
-        onOpenWorkbench={onOpenWorkbench}
         onRenameBook={onRenameBook}
       />
     </div>
