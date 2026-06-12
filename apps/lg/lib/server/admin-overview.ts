@@ -3,6 +3,8 @@ import path from "node:path"
 import { getAuthAdminSnapshot, type AuthInviteOverview } from "@/lib/server/auth-store"
 import { getGlobalDataRoot } from "@/lib/server/paths"
 import { getTrialQuotaSummary, type TrialQuotaSummary } from "@/lib/server/trial-quota-store"
+import { getBillingAdminSummary } from "@/lib/server/billing-store"
+import type { BillingAdminSummary } from "@/lib/billing"
 
 export type AdminUserOverview = {
   id: string
@@ -40,6 +42,7 @@ export type AdminOverviewPayload = {
     platformQuotaEnabled: boolean
   }
   quota: TrialQuotaSummary
+  billing: BillingAdminSummary
   users: AdminUserOverview[]
 }
 
@@ -121,6 +124,7 @@ export async function getAdminOverview(): Promise<AdminOverviewPayload> {
     getAuthAdminSnapshot(),
     getTrialQuotaSummary(),
   ])
+  const billing = await getBillingAdminSummary(snapshot.users.map((user) => user.id))
   const now = Date.now()
   const dataRoot = getGlobalDataRoot()
   const invitesByUserId = new Map(snapshot.redeemedInvites.map((invite) => [invite.userId, invite]))
@@ -184,9 +188,10 @@ export async function getAdminOverview(): Promise<AdminOverviewPayload> {
     },
     llm: {
       userKeyModeEnabled: true,
-      platformQuotaEnabled: quota.enforcementEnabled,
+      platformQuotaEnabled: billing.platformApiKeyConfigured && billing.settings.platformEnabled,
     },
     quota,
+    billing,
     users,
   }
 }

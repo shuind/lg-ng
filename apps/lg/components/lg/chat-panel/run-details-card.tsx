@@ -142,8 +142,19 @@ export function RunDetailsCard({
           <div>{toolSummary}</div>
         ) : null}
         {latestUsage && (
-          <div className="rounded bg-background/60 px-2 py-1 font-mono text-[10.5px]">
-            tokens p:{latestUsage.promptTokens} c:{latestUsage.completionTokens} total:{latestUsage.totalTokens}
+          <div className="rounded bg-background/60 px-2 py-1 font-mono text-[10.5px] leading-relaxed">
+            <div>
+              tokens p:{latestUsage.promptTokens} hit:{latestUsage.promptCacheHitTokens ?? 0} miss:{latestUsage.promptCacheMissTokens ?? 0} c:{latestUsage.completionTokens} total:{latestUsage.totalTokens}
+            </div>
+            {(typeof latestUsage.estimatedCostCny === "number" || typeof latestUsage.chargedAmountCny === "number") && (
+              <div>
+                {latestUsage.paymentSource ? `${formatPaymentSource(latestUsage.paymentSource)} ` : ""}
+                估算:{formatMoney(latestUsage.estimatedCostCny ?? 0)}
+                {" "}
+                扣费:{formatMoney(latestUsage.chargedAmountCny ?? 0)}
+                {typeof latestUsage.balanceAfterCny === "number" ? ` 余额:${formatMoney(latestUsage.balanceAfterCny)}` : ""}
+              </div>
+            )}
           </div>
         )}
         {visibleNotes.length > 0 && (
@@ -339,4 +350,13 @@ function formatContextPath(item: string): string {
 
 function dedupe(items: string[]): string[] {
   return [...new Set(items.filter(Boolean))]
+}
+
+function formatMoney(value: number): string {
+  if (!Number.isFinite(value)) return "0"
+  return value >= 1 ? `¥${value.toFixed(2)}` : `¥${value.toFixed(6).replace(/0+$/, "0")}`
+}
+
+function formatPaymentSource(source: "balance" | "api"): string {
+  return source === "balance" ? "余额" : "API"
 }

@@ -7,7 +7,7 @@ import {
   getEffectiveOpenAICompatibleConfig,
   type EffectiveOpenAICompatibleConfig,
 } from "@/lib/server/app-settings-store"
-import { recordPlatformTrialQuotaUsage } from "@/lib/server/trial-quota-store"
+import { recordBillingUsage } from "@/lib/server/billing-store"
 
 type LlmConfig = EffectiveOpenAICompatibleConfig
 
@@ -35,7 +35,7 @@ export function getLlmProvider(): string {
 export async function callChatCompletion(
   config: LlmConfig,
   messages: ChatMessage[],
-  options?: { temperature?: number; maxTokens?: number },
+  options?: { temperature?: number; maxTokens?: number; feature?: string },
 ): Promise<ChatResponse> {
   const response = await createChatCompletion({
     client: createOpenAICompatibleClient(config),
@@ -45,14 +45,13 @@ export async function callChatCompletion(
     maxTokens: options?.maxTokens ?? 2000,
     timeoutMs: 60000,
   })
-  if (config.quotaSource === "platform") {
-    await recordPlatformTrialQuotaUsage({
-      provider: config.provider,
-      model: config.model,
-      usage: response.usage,
-      feature: "chat_completion",
-    })
-  }
+  await recordBillingUsage({
+    provider: config.provider,
+    model: config.model,
+    usage: response.usage,
+    feature: options?.feature ?? "chat_completion",
+    paymentSource: config.paymentSource,
+  })
 
   return { content: stringifyContent(response.message.content) }
 }

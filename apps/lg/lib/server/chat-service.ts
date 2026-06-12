@@ -21,7 +21,8 @@ import {
   updateTurn,
 } from "@/lib/server/thread-store"
 import type { AppliedResponseConstraint, ChatChangeEntry, ChatReference, LedgerEntry, Message, SettingCard, WorkflowAction } from "@/lib/types"
-import type { FileChange, FileProposal } from "novel-guide"
+import type { BillingLedgerEntry } from "@/lib/billing"
+import type { FileChange, FileProposal, ModelUsage } from "novel-guide"
 
 type TrackedFileChange = FileChange & { path: string }
 type SseController = ReadableStreamDefaultController<Uint8Array>
@@ -124,6 +125,7 @@ async function sendThreadMessageUnlocked(bookId: string, body: unknown): Promise
     const changeSet = buildMessageChangeSet(changeRecord.entries)
     const proposals = await recordAgentProposals(bookId, result.proposals)
     const proposalSet = proposals.length > 0 ? { proposals: summarizeProposals(proposals) } : undefined
+    const usageEvent = createUsageEvent(turn.id, result.usage, result.billing)
 
     const events = [
       createAgentEvent(turn.id, { type: "observe", text: "已开始处理。" }),
@@ -131,6 +133,7 @@ async function sendThreadMessageUnlocked(bookId: string, body: unknown): Promise
         type: "error" as const,
         message: failure,
       })),
+      ...(usageEvent ? [usageEvent] : []),
       createAgentEvent(turn.id, {
         type: "done",
         text: changedPaths.length > 0
@@ -413,6 +416,11 @@ async function streamThreadMessageUnlocked(
       events.push(event)
       emitSse(controller, "agent_event", event)
     }
+    const usageEvent = createUsageEvent(turn.id, finalResult.usage, finalResult.billing)
+    if (usageEvent) {
+      events.push(usageEvent)
+      emitSse(controller, "agent_event", usageEvent)
+    }
     const doneEvent = createAgentEvent(turn.id, {
       type: "done",
       text: changedPaths.length > 0
@@ -526,6 +534,32 @@ function closeSse(controller: SseController): void {
   } catch {
     // Already closed by client cancellation.
   }
+}
+
+function createUsageEvent(
+  turnId: string,
+  usage: ModelUsage,
+  billing: BillingLedgerEntry | null,
+) {
+  if (!usage.totalTokens && !billing) return null
+  return createAgentEvent(turnId, {
+    type: "observe",
+    text: billing
+      ? `Token usage: ${billing.totalTokens ?? usage.totalTokens}, cost: ${billing.chargedAmountCny ?? 0}`
+      : `Token usage: ${usage.totalTokens}`,
+    usage: {
+      paymentSource: billing?.paymentSource,
+      promptTokens: billing?.promptTokens ?? usage.promptTokens,
+      promptCacheHitTokens: billing?.promptCacheHitTokens ?? usage.promptCacheHitTokens,
+      promptCacheMissTokens: billing?.promptCacheMissTokens ?? usage.promptCacheMissTokens,
+      completionTokens: billing?.completionTokens ?? usage.completionTokens,
+      totalTokens: billing?.totalTokens ?? usage.totalTokens,
+      estimatedCostCny: billing?.estimatedCostCny,
+      chargedAmountCny: billing?.chargedAmountCny,
+      commissionAmountCny: billing?.commissionAmountCny,
+      balanceAfterCny: billing?.balanceAfterCny,
+    },
+  })
 }
 
 function isAbortError(error: unknown): boolean {

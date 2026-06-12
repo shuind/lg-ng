@@ -295,9 +295,16 @@ export interface AgentEvent {
   argsPreview?: string
   resultPreview?: string
   usage?: {
+    paymentSource?: "balance" | "api"
     promptTokens: number
+    promptCacheHitTokens?: number
+    promptCacheMissTokens?: number
     completionTokens: number
     totalTokens: number
+    estimatedCostCny?: number
+    chargedAmountCny?: number
+    commissionAmountCny?: number
+    balanceAfterCny?: number | null
   }
   durationMs?: number
   ledgerEntryIds?: string[]

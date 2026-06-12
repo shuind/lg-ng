@@ -158,7 +158,7 @@ export async function draftClaudeSkill(input: SkillDraftRequest): Promise<SkillD
           resourceKinds,
         }, null, 2),
       },
-    ], { temperature: 0.2, maxTokens: 2400 })
+    ], { temperature: 0.2, maxTokens: 2400, feature: "skill_draft" })
 
     return normalizeDraftResponse(extractJsonObject(result.content), name, fallback)
   } catch (error) {

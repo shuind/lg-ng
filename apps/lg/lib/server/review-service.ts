@@ -9,6 +9,8 @@ import {
   getThread,
   updateTurn,
 } from "@/lib/server/thread-store"
+import type { BillingLedgerEntry } from "@/lib/billing"
+import type { ModelUsage } from "novel-guide"
 
 export class ReviewRequestError extends Error {
   constructor(
@@ -28,6 +30,32 @@ interface ResolvedReviewScope {
   messageScope: string
   contextPaths: string[]
   incremental: boolean
+}
+
+function createReviewUsageEvent(
+  turnId: string,
+  usage: ModelUsage,
+  billing: BillingLedgerEntry | null,
+) {
+  if (!usage.totalTokens && !billing) return null
+  return createAgentEvent(turnId, {
+    type: "observe",
+    text: billing
+      ? `Token usage: ${billing.totalTokens ?? usage.totalTokens}, cost: ${billing.chargedAmountCny ?? 0}`
+      : `Token usage: ${usage.totalTokens}`,
+    usage: {
+      paymentSource: billing?.paymentSource,
+      promptTokens: billing?.promptTokens ?? usage.promptTokens,
+      promptCacheHitTokens: billing?.promptCacheHitTokens ?? usage.promptCacheHitTokens,
+      promptCacheMissTokens: billing?.promptCacheMissTokens ?? usage.promptCacheMissTokens,
+      completionTokens: billing?.completionTokens ?? usage.completionTokens,
+      totalTokens: billing?.totalTokens ?? usage.totalTokens,
+      estimatedCostCny: billing?.estimatedCostCny,
+      chargedAmountCny: billing?.chargedAmountCny,
+      commissionAmountCny: billing?.commissionAmountCny,
+      balanceAfterCny: billing?.balanceAfterCny,
+    },
+  })
 }
 
 export async function runBookReview(bookId: string, body: unknown): Promise<{
@@ -61,6 +89,7 @@ async function runBookReviewUnlocked(bookId: string, body: unknown): Promise<{
       threadId: thread.id,
       scope: reviewScope.promptScope,
     })
+    const usageEvent = createReviewUsageEvent(turn.id, result.usage, result.billing)
     const events = [
       createAgentEvent(turn.id, {
         type: "tool_call",
@@ -74,6 +103,7 @@ async function runBookReviewUnlocked(bookId: string, body: unknown): Promise<{
         type: "error" as const,
         message: failure,
       })),
+      ...(usageEvent ? [usageEvent] : []),
       createAgentEvent(turn.id, {
         type: "done",
         text: result.failedTools.length > 0 ? "体检完成，但存在工具问题。" : "体检完成。",

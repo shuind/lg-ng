@@ -53,6 +53,7 @@ ${context}${summaryBlock}${promptBlock}
     const result = await callChatCompletion(config, messages, {
       temperature: 0.7,
       maxTokens: 1500,
+      feature: "draft",
     })
 
     return result.content.trim() || FALLBACK_TEXT

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
   AdminApiError,
+  adjustAdminBillingBalance,
   createAdminInvite,
   getAdminOverview,
   updateAdminInvite,
@@ -17,6 +18,7 @@ import {
   type AdminUserOverview,
   type TrialQuotaSettings,
 } from "@/lib/api"
+import type { BillingUserSummary } from "@/lib/billing"
 import { cn } from "@/lib/utils"
 
 const DEFAULT_INVITE_MAX_REDEMPTIONS = 10
@@ -102,30 +104,44 @@ function StatusPill({
 
 function UserRow({
   user,
+  billingUsage,
+  billingAdjustmentDraft,
+  billingSaving,
+  billingCanSave,
   quotaUsage,
   quotaDraft,
   quotaBudgetCny,
   quotaIsCustom,
   quotaSaving,
   quotaCanSave,
+  onBillingAdjustmentDraftChange,
+  onSaveBillingAdjustment,
   onQuotaDraftChange,
   onSaveQuota,
 }: {
   user: AdminUserOverview
+  billingUsage?: BillingUserSummary
+  billingAdjustmentDraft: string
+  billingSaving: boolean
+  billingCanSave: boolean
   quotaUsage?: { estimatedCostCny: number; requestCount: number }
   quotaDraft: string
   quotaBudgetCny: number
   quotaIsCustom: boolean
   quotaSaving: boolean
   quotaCanSave: boolean
+  onBillingAdjustmentDraftChange: (value: string) => void
+  onSaveBillingAdjustment: () => void
   onQuotaDraftChange: (value: string) => void
   onSaveQuota: () => void
 }) {
   const usedCny = quotaUsage?.estimatedCostCny ?? 0
   const requestCount = quotaUsage?.requestCount ?? 0
+  const balanceCny = billingUsage?.balanceCny ?? 0
+  const usedBalanceCny = billingUsage?.usedBalanceCny ?? 0
 
   return (
-    <div className="grid gap-3 border-t border-border/60 px-4 py-3 text-[13px] lg:grid-cols-[minmax(220px,1.4fr)_72px_88px_96px_132px_176px_116px_112px] lg:items-center">
+    <div className="grid gap-3 border-t border-border/60 px-4 py-3 text-[13px] lg:grid-cols-[minmax(220px,1.4fr)_72px_88px_96px_132px_132px_160px_176px_116px_112px] lg:items-center">
       <div className="min-w-0">
         <div className="truncate font-medium">{user.email}</div>
         <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">{user.id}</div>
@@ -145,6 +161,37 @@ function UserRow({
         ) : (
           <StatusPill tone="warning">未配置</StatusPill>
         )}
+      </div>
+      <div>
+        <div className="lg:hidden text-[11px] text-muted-foreground">余额</div>
+        <span>{formatMoney(balanceCny)}</span>
+        {usedBalanceCny > 0 ? (
+          <span className="ml-1 text-muted-foreground">用 {formatMoney(usedBalanceCny)}</span>
+        ) : null}
+      </div>
+      <div>
+        <div className="lg:hidden text-[11px] text-muted-foreground">调账</div>
+        <div className="flex items-center gap-2">
+          <Input
+            className="h-8 w-24 text-[13px]"
+            type="number"
+            step="0.000001"
+            value={billingAdjustmentDraft}
+            onChange={(event) => onBillingAdjustmentDraftChange(event.target.value)}
+          />
+          <Button
+            aria-label={`调整 ${user.email} 的余额`}
+            className="h-8 w-8 p-0"
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={!billingCanSave}
+            onClick={onSaveBillingAdjustment}
+          >
+            <Coins className={cn("h-3.5 w-3.5", billingSaving && "animate-pulse")} />
+          </Button>
+        </div>
+        <div className="mt-1 text-[11px] text-muted-foreground">正数发放，负数扣回</div>
       </div>
       <div>
         <div className="lg:hidden text-[11px] text-muted-foreground">已用额度</div>
@@ -318,6 +365,10 @@ function createUserQuotaDrafts(
   return Object.fromEntries(users.map((user) => [user.id, String(getUserBudgetCny(settings, user.id))]))
 }
 
+function createBillingAdjustmentDrafts(users: AdminUserOverview[]): Record<string, string> {
+  return Object.fromEntries(users.map((user) => [user.id, "0"]))
+}
+
 function getInviteSlotCount(invites: AdminInviteOverview[]): number {
   return invites
     .filter((invite) => invite.configured)
@@ -355,6 +406,10 @@ export function AdminPanel() {
   const [userQuotaSavingId, setUserQuotaSavingId] = useState<string | null>(null)
   const [userQuotaMessage, setUserQuotaMessage] = useState<string | null>(null)
   const [userQuotaError, setUserQuotaError] = useState<string | null>(null)
+  const [billingAdjustmentDrafts, setBillingAdjustmentDrafts] = useState<Record<string, string>>({})
+  const [billingAdjustmentSavingId, setBillingAdjustmentSavingId] = useState<string | null>(null)
+  const [billingAdjustmentMessage, setBillingAdjustmentMessage] = useState<string | null>(null)
+  const [billingAdjustmentError, setBillingAdjustmentError] = useState<string | null>(null)
   const [inviteCreateMax, setInviteCreateMax] = useState(String(DEFAULT_INVITE_MAX_REDEMPTIONS))
   const [inviteMaxDrafts, setInviteMaxDrafts] = useState<Record<string, string>>({})
   const [inviteCreating, setInviteCreating] = useState(false)
@@ -372,6 +427,7 @@ export function AdminPanel() {
       setOverview(nextOverview)
       setQuotaDraft(nextOverview.quota.settings)
       setUserQuotaDrafts(createUserQuotaDrafts(nextOverview.users, nextOverview.quota.settings))
+      setBillingAdjustmentDrafts(createBillingAdjustmentDrafts(nextOverview.users))
       setInviteMaxDrafts(createInviteMaxDrafts(nextOverview.auth.invites))
     } catch (err) {
       if (err instanceof AdminApiError && err.status === 403) {
@@ -451,6 +507,34 @@ export function AdminPanel() {
     }
   }
 
+  async function saveBillingAdjustment(user: AdminUserOverview) {
+    if (billingAdjustmentSavingId) return
+    const amountCny = Number(billingAdjustmentDrafts[user.id])
+    if (!Number.isFinite(amountCny) || amountCny === 0) {
+      setBillingAdjustmentMessage(null)
+      setBillingAdjustmentError("请输入非 0 调账金额")
+      return
+    }
+
+    setBillingAdjustmentSavingId(user.id)
+    setBillingAdjustmentMessage(null)
+    setBillingAdjustmentError(null)
+    try {
+      await adjustAdminBillingBalance({
+        userId: user.id,
+        amountCny,
+        note: amountCny > 0 ? "admin credit" : "admin debit",
+      })
+      setBillingAdjustmentDrafts((current) => ({ ...current, [user.id]: "0" }))
+      setBillingAdjustmentMessage("余额已调整")
+      await loadOverview(true)
+    } catch (err) {
+      setBillingAdjustmentError(getErrorMessage(err))
+    } finally {
+      setBillingAdjustmentSavingId(null)
+    }
+  }
+
   async function createInvite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (inviteCreating) return
@@ -519,6 +603,9 @@ export function AdminPanel() {
   const quotaUsageByUserId = useMemo(() => {
     return new Map((overview?.quota.byUser ?? []).map((usage) => [usage.userId, usage]))
   }, [overview?.quota.byUser])
+  const billingUsageByUserId = useMemo(() => {
+    return new Map((overview?.billing.byUser ?? []).map((usage) => [usage.userId, usage]))
+  }, [overview?.billing.byUser])
   const inviteSlotCount = overview?.auth.inviteSlotCount ?? 0
 
   if (loading) {
@@ -595,6 +682,8 @@ export function AdminPanel() {
           <StatusPill tone={overview.llm.platformQuotaEnabled ? "good" : "warning"}>
             {overview.llm.platformQuotaEnabled ? "平台额度已启用" : "平台额度未生效"}
           </StatusPill>
+          <StatusPill>余额总计 {formatMoney(overview.billing.total.balanceCny)} 元</StatusPill>
+          <StatusPill>余额已扣 {formatMoney(overview.billing.total.usedBalanceCny)} 元</StatusPill>
           <StatusPill tone={overview.auth.adminEmailCount > 0 ? "good" : "warning"}>管理员 {overview.auth.adminEmailCount}</StatusPill>
         </div>
         <div className="mt-3 flex items-start gap-2 text-[12px] leading-relaxed text-muted-foreground">
@@ -743,14 +832,18 @@ export function AdminPanel() {
             <h2 className="text-sm font-semibold tracking-normal">内测用户</h2>
             {userQuotaMessage ? <span className="text-[12px] text-emerald-700 dark:text-emerald-300">{userQuotaMessage}</span> : null}
             {userQuotaError ? <span className="text-[12px] text-destructive">{userQuotaError}</span> : null}
+            {billingAdjustmentMessage ? <span className="text-[12px] text-emerald-700 dark:text-emerald-300">{billingAdjustmentMessage}</span> : null}
+            {billingAdjustmentError ? <span className="text-[12px] text-destructive">{billingAdjustmentError}</span> : null}
           </div>
           <span className="text-[12px] text-muted-foreground">{sortedUsers.length} 人</span>
         </div>
-        <div className="hidden border-t border-border/60 px-4 py-2 text-[11px] font-medium uppercase tracking-normal text-muted-foreground lg:grid lg:grid-cols-[minmax(220px,1.4fr)_72px_88px_96px_132px_176px_116px_112px]">
+        <div className="hidden border-t border-border/60 px-4 py-2 text-[11px] font-medium uppercase tracking-normal text-muted-foreground lg:grid lg:grid-cols-[minmax(220px,1.4fr)_72px_88px_96px_132px_132px_160px_176px_116px_112px]">
           <div>账号</div>
           <div>书籍</div>
           <div>数据</div>
           <div>模型 Key</div>
+          <div>余额</div>
+          <div>调账</div>
           <div>已用额度</div>
           <div>用户额度</div>
           <div>Session</div>
@@ -762,21 +855,35 @@ export function AdminPanel() {
             const quotaBudgetCny = getUserBudgetCny(settings, user.id)
             const quotaDraftValue = userQuotaDrafts[user.id] ?? String(quotaBudgetCny)
             const quotaDraftNumber = Number(quotaDraftValue)
+            const billingAdjustmentDraft = billingAdjustmentDrafts[user.id] ?? "0"
+            const billingAdjustmentNumber = Number(billingAdjustmentDraft)
             const quotaCanSave = userQuotaSavingId === null &&
               Number.isFinite(quotaDraftNumber) &&
               quotaDraftNumber >= 0 &&
               quotaDraftNumber !== quotaBudgetCny
+            const billingCanSave = billingAdjustmentSavingId === null &&
+              Number.isFinite(billingAdjustmentNumber) &&
+              billingAdjustmentNumber !== 0
 
             return (
               <UserRow
                 key={user.id}
                 user={user}
+                billingUsage={billingUsageByUserId.get(user.id)}
+                billingAdjustmentDraft={billingAdjustmentDraft}
+                billingSaving={billingAdjustmentSavingId === user.id}
+                billingCanSave={billingCanSave}
                 quotaUsage={quotaUsageByUserId.get(user.id)}
                 quotaDraft={quotaDraftValue}
                 quotaBudgetCny={quotaBudgetCny}
                 quotaIsCustom={Object.prototype.hasOwnProperty.call(settings.userBudgetsCny, user.id)}
                 quotaSaving={userQuotaSavingId === user.id}
                 quotaCanSave={quotaCanSave}
+                onBillingAdjustmentDraftChange={(value) => setBillingAdjustmentDrafts((current) => ({
+                  ...current,
+                  [user.id]: value,
+                }))}
+                onSaveBillingAdjustment={() => void saveBillingAdjustment(user)}
                 onQuotaDraftChange={(value) => setUserQuotaDrafts((current) => ({
                   ...current,
                   [user.id]: value,

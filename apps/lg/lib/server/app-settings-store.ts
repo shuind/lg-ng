@@ -9,8 +9,12 @@ import {
 import {
   APP_MODEL_OPTIONS,
   DEFAULT_APP_MODEL_ID,
+  DEFAULT_PAYMENT_SOURCE,
+  isAppPaymentSource,
   isAppModelId,
+  normalizeAppPaymentSource,
   normalizeAppModelId,
+  type AppPaymentSource,
   type AppModelId,
   type AppSettings,
   type AppSettingsPayload,
@@ -19,9 +23,9 @@ import {
 import { getDataRoot } from "@/lib/server/paths"
 import { decryptSecret, encryptSecret, maskSecret } from "@/lib/server/secret-crypto"
 import {
-  canUsePlatformTrialQuotaSync,
-  getPlatformDeepSeekApiKey,
-} from "@/lib/server/trial-quota-store"
+  canUseBalanceBillingSync,
+  getPlatformBillingApiKey,
+} from "@/lib/server/billing-store"
 
 const APP_SETTINGS_FILE = "app-settings.json"
 const DEFAULT_UPDATED_AT = "1970-01-01T00:00:00.000Z"
@@ -32,6 +36,7 @@ type StoredAppSettings = AppSettings & {
 }
 
 export type EffectiveOpenAICompatibleConfig = OpenAICompatibleConfig & {
+  paymentSource: AppPaymentSource
   quotaSource: "user" | "platform"
 }
 
@@ -41,8 +46,10 @@ function appSettingsPath(): string {
 
 function normalizeAppSettings(data: unknown): StoredAppSettings {
   const raw = data && typeof data === "object" ? data as Partial<StoredAppSettings> : {}
+  const fallbackPaymentSource = raw.deepSeekApiKeyEncrypted ? "api" : DEFAULT_PAYMENT_SOURCE
   return {
     modelId: normalizeAppModelId(raw.modelId),
+    paymentSource: normalizeAppPaymentSource(raw.paymentSource, fallbackPaymentSource),
     updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : DEFAULT_UPDATED_AT,
     deepSeekApiKeyEncrypted: typeof raw.deepSeekApiKeyEncrypted === "string"
       ? raw.deepSeekApiKeyEncrypted
@@ -85,10 +92,11 @@ function getDeepSeekConfigForSettings(settings: StoredAppSettings): OpenAICompat
 }
 
 function getPlatformDeepSeekConfig(modelId: AppModelId): EffectiveOpenAICompatibleConfig | null {
-  const apiKey = getPlatformDeepSeekApiKey()
-  if (!apiKey || !canUsePlatformTrialQuotaSync()) return null
+  const apiKey = getPlatformBillingApiKey()
+  if (!apiKey || !canUseBalanceBillingSync()) return null
   return {
     provider: "deepseek",
+    paymentSource: "balance",
     quotaSource: "platform",
     apiKey,
     baseUrl: process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com",
@@ -99,12 +107,17 @@ function getPlatformDeepSeekConfig(modelId: AppModelId): EffectiveOpenAICompatib
 function buildPayload(saved: StoredAppSettings | null): AppSettingsPayload {
   const settings = saved ?? {
     modelId: defaultModelIdFromEnv(),
+    paymentSource: DEFAULT_PAYMENT_SOURCE,
     updatedAt: DEFAULT_UPDATED_AT,
   }
-  const activeConfig = saved ? getDeepSeekConfigForSettings(settings) : null
+  const userConfig = saved ? getDeepSeekConfigForSettings(settings) : null
+  const activeConfig = settings.paymentSource === "api"
+    ? userConfig
+    : getPlatformDeepSeekConfig(settings.modelId)
 
   return {
     modelId: settings.modelId,
+    paymentSource: settings.paymentSource,
     updatedAt: settings.updatedAt,
     deepSeekKeyUpdatedAt: settings.deepSeekKeyUpdatedAt,
     saved: Boolean(saved),
@@ -126,10 +139,15 @@ export async function saveAppSettings(input: UpdateAppSettingsInput): Promise<Ap
   if (!isAppModelId(nextModelId)) {
     throw new Error("unsupported model")
   }
+  const nextPaymentSource = input.paymentSource ?? existing?.paymentSource ?? DEFAULT_PAYMENT_SOURCE
+  if (!isAppPaymentSource(nextPaymentSource)) {
+    throw new Error("unsupported payment source")
+  }
 
   const settings: StoredAppSettings = {
     ...existing,
     modelId: nextModelId,
+    paymentSource: nextPaymentSource,
     updatedAt: new Date().toISOString(),
   }
 
@@ -156,7 +174,10 @@ export async function saveAppSettings(input: UpdateAppSettingsInput): Promise<Ap
 export function getEffectiveOpenAICompatibleConfig(): EffectiveOpenAICompatibleConfig | null {
   const saved = readSavedAppSettingsSync()
   const userConfig = saved ? getDeepSeekConfigForSettings(saved) : null
-  if (userConfig) return { ...userConfig, quotaSource: "user" }
+  const paymentSource = saved?.paymentSource ?? (userConfig ? "api" : DEFAULT_PAYMENT_SOURCE)
+  if (paymentSource === "api") {
+    return userConfig ? { ...userConfig, paymentSource: "api", quotaSource: "user" } : null
+  }
   return getPlatformDeepSeekConfig(saved?.modelId ?? defaultModelIdFromEnv())
 }
 

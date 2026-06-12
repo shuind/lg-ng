@@ -1,4 +1,4 @@
-import type { AppModelId, AppSettingsPayload } from "@/lib/app-settings"
+import type { AppModelId, AppPaymentSource, AppSettingsPayload } from "@/lib/app-settings"
 import { readJsonResponse } from "./common"
 
 export async function getAppSettings(): Promise<AppSettingsPayload> {
@@ -8,6 +8,7 @@ export async function getAppSettings(): Promise<AppSettingsPayload> {
 
 export async function updateAppSettings(input: {
   modelId?: AppModelId
+  paymentSource?: AppPaymentSource
   deepSeekApiKey?: string
   clearDeepSeekApiKey?: boolean
 }): Promise<AppSettingsPayload> {

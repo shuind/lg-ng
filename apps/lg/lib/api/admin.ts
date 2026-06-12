@@ -1,3 +1,5 @@
+import type { BillingAdminSummary, BillingUserSummary } from "@/lib/billing"
+
 export type AdminUserOverview = {
   id: string
   email: string
@@ -95,6 +97,7 @@ export type AdminOverviewPayload = {
     platformQuotaEnabled: boolean
   }
   quota: TrialQuotaSummary
+  billing: BillingAdminSummary
   users: AdminUserOverview[]
 }
 
@@ -137,6 +140,19 @@ export async function updateAdminTrialQuotaSettings(
     body: JSON.stringify(input),
   })
   return readAdminResponse<TrialQuotaSummary>(res, "额度设置保存失败")
+}
+
+export async function adjustAdminBillingBalance(input: {
+  userId: string
+  amountCny: number
+  note?: string
+}): Promise<BillingUserSummary> {
+  const res = await fetch("/api/admin/billing/adjustments", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  })
+  return readAdminResponse<BillingUserSummary>(res, "余额调整失败")
 }
 
 export async function createAdminInvite(input: {

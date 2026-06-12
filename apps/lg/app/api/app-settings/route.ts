@@ -16,15 +16,16 @@ async function PATCHHandler(request: Request) {
     const body = await request.json()
     return NextResponse.json(await saveAppSettings({
       modelId: body.modelId,
+      paymentSource: body.paymentSource,
       deepSeekApiKey: body.deepSeekApiKey,
       clearDeepSeekApiKey: body.clearDeepSeekApiKey,
     }))
   } catch (err) {
     console.error("[api/app-settings] PATCH error:", err)
-    const message = err instanceof Error && err.message === "unsupported model"
-      ? "不支持的模型"
-      : "保存设置失败"
-    const status = message === "不支持的模型" ? 400 : 500
+    const badRequest = err instanceof Error &&
+      (err.message === "unsupported model" || err.message === "unsupported payment source")
+    const message = badRequest ? "保存的设置无效" : "保存设置失败"
+    const status = badRequest ? 400 : 500
     return NextResponse.json({ error: message }, { status })
   }
 }

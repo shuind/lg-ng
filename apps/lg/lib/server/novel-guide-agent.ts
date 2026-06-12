@@ -11,7 +11,8 @@ import {
 import { getBook } from "@/lib/server/book-store"
 import { getEffectiveOpenAICompatibleConfig } from "@/lib/server/app-settings-store"
 import { getBookDir } from "@/lib/server/paths"
-import { recordPlatformTrialQuotaUsage } from "@/lib/server/trial-quota-store"
+import { recordBillingUsage } from "@/lib/server/billing-store"
+import type { BillingLedgerEntry } from "@/lib/billing"
 import type { AppliedResponseConstraint, ChatReference, Message, SkillSummary, WorkflowAction } from "@/lib/types"
 
 export interface NovelGuideAgentResult {
@@ -20,6 +21,7 @@ export interface NovelGuideAgentResult {
   toolTrace: string[]
   failedTools: string[]
   usage: ModelUsage
+  billing: BillingLedgerEntry | null
   workspacePath: string
   fileChanges: FileChange[]
   proposals: FileProposal[]
@@ -31,6 +33,7 @@ export interface NovelGuideReviewResult {
   toolTrace: string[]
   failedTools: string[]
   usage: ModelUsage
+  billing: BillingLedgerEntry | null
   workspacePath: string
 }
 
@@ -184,14 +187,15 @@ export async function runNovelGuideAgent(input: {
   const config = getEffectiveOpenAICompatibleConfig()
   if (!config) {
     return {
-      reply: "Novel Guide 还没有可用模型。请配置个人 DeepSeek API Key，或等待平台内测额度开启。",
+      reply: "当前模型不可用。请在设置页选择余额并确保有可用余额，或切换到自己的 API 并保存 DeepSeek API Key。",
       sessionId: input.threadId,
       toolTrace: [],
       failedTools: ["model_config: missing API key"],
       usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-          workspacePath: getBookDir(input.bookId),
-          fileChanges: [],
-          proposals: [],
+      billing: null,
+      workspacePath: getBookDir(input.bookId),
+      fileChanges: [],
+      proposals: [],
     }
   }
 
@@ -227,14 +231,13 @@ export async function runNovelGuideAgent(input: {
     workflowAction: input.workflowAction,
   }), { signal: input.signal })
 
-  if (config.quotaSource === "platform") {
-    await recordPlatformTrialQuotaUsage({
-      provider: config.provider,
-      model: config.model,
-      usage: result.usage,
-      feature: "agent",
-    })
-  }
+  const billing = await recordBillingUsage({
+    provider: config.provider,
+    model: config.model,
+    usage: result.usage,
+    feature: "agent",
+    paymentSource: config.paymentSource,
+  })
 
   return {
     reply: result.text,
@@ -242,6 +245,7 @@ export async function runNovelGuideAgent(input: {
     toolTrace: result.toolTrace,
     failedTools: result.failedTools,
     usage: result.usage,
+    billing,
     workspacePath,
     fileChanges: result.fileChanges,
     proposals: result.proposals,
@@ -267,11 +271,12 @@ export async function* runNovelGuideAgentStream(input: {
     yield {
       type: "done",
       result: {
-        reply: "Novel Guide 还没有可用模型。请配置个人 DeepSeek API Key，或等待平台内测额度开启。",
+        reply: "当前模型不可用。请在设置页选择余额并确保有可用余额，或切换到自己的 API 并保存 DeepSeek API Key。",
         sessionId: input.threadId,
         toolTrace: [],
         failedTools: ["model_config: missing API key"],
         usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        billing: null,
         workspacePath: getBookDir(input.bookId),
         fileChanges: [],
         proposals: [],
@@ -315,14 +320,13 @@ export async function* runNovelGuideAgentStream(input: {
       yield { type: "engine_event", event }
       continue
     }
-    if (config.quotaSource === "platform") {
-      await recordPlatformTrialQuotaUsage({
-        provider: config.provider,
-        model: config.model,
-        usage: event.result.usage,
-        feature: "agent_stream",
-      })
-    }
+    const billing = await recordBillingUsage({
+      provider: config.provider,
+      model: config.model,
+      usage: event.result.usage,
+      feature: "agent_stream",
+      paymentSource: config.paymentSource,
+    })
     yield {
       type: "done",
       result: {
@@ -331,6 +335,7 @@ export async function* runNovelGuideAgentStream(input: {
         toolTrace: event.result.toolTrace,
         failedTools: event.result.failedTools,
         usage: event.result.usage,
+        billing,
         workspacePath,
         fileChanges: event.result.fileChanges,
         proposals: event.result.proposals,
@@ -347,11 +352,12 @@ export async function runNovelGuideReview(input: {
   const config = getEffectiveOpenAICompatibleConfig()
   if (!config) {
     return {
-      reply: "Novel Guide 还没有可用模型。请配置个人 DeepSeek API Key，或等待平台内测额度开启。",
+      reply: "当前模型不可用。请在设置页选择余额并确保有可用余额，或切换到自己的 API 并保存 DeepSeek API Key。",
       sessionId: input.threadId,
       toolTrace: [],
       failedTools: ["model_config: missing API key"],
       usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      billing: null,
       workspacePath: getBookDir(input.bookId),
     }
   }
@@ -420,14 +426,13 @@ export async function runNovelGuideReview(input: {
     completionTokens: sum.completionTokens + result.usage.completionTokens,
     totalTokens: sum.totalTokens + result.usage.totalTokens,
   }), { promptTokens: 0, completionTokens: 0, totalTokens: 0 })
-  if (config.quotaSource === "platform") {
-    await recordPlatformTrialQuotaUsage({
-      provider: config.provider,
-      model: config.model,
-      usage,
-      feature: "review",
-    })
-  }
+  const billing = await recordBillingUsage({
+    provider: config.provider,
+    model: config.model,
+    usage,
+    feature: "review",
+    paymentSource: config.paymentSource,
+  })
 
   return {
     reply,
@@ -435,6 +440,7 @@ export async function runNovelGuideReview(input: {
     toolTrace,
     failedTools,
     usage,
+    billing,
     workspacePath,
   }
 }
