@@ -44,7 +44,6 @@ export function AppShell(props: AppShellProps) {
           activeThreadId={props.activeThreadId}
           selectedTurnId={props.selectedTurnId}
           turnBranchNavigation={props.turnBranchNavigation}
-          reviewing={props.reviewing}
           messages={props.messages}
           turns={props.turns}
           threads={props.threads}
@@ -58,7 +57,6 @@ export function AppShell(props: AppShellProps) {
           applyingProposalId={props.applyingProposalId}
           onSelectTurn={props.onSelectTurn}
           onSend={props.onSend}
-          onReview={props.onReview}
           onAddCitation={props.onAddCitation}
           onRemoveCitation={props.onRemoveCitation}
           onClearCitations={props.onClearCitations}

@@ -3,7 +3,21 @@
 import type { FormEvent, ReactNode } from "react"
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { AlertTriangle, Coins, Database, HardDrive, KeyRound, Plus, PlugZap, RefreshCw, Save, Ticket, Trash2, Users } from "lucide-react"
+import type { LucideIcon } from "lucide-react"
+import {
+  AlertTriangle,
+  Coins,
+  Database,
+  HardDrive,
+  KeyRound,
+  Plus,
+  PlugZap,
+  RefreshCw,
+  Save,
+  Ticket,
+  Trash2,
+  Users,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -16,11 +30,9 @@ import {
   testAdminPlatformKey,
   updateAdminBillingSettings,
   updateAdminInvite,
-  updateAdminTrialQuotaSettings,
   type AdminInviteOverview,
   type AdminOverviewPayload,
   type AdminUserOverview,
-  type TrialQuotaSettings,
 } from "@/lib/api"
 import type { BillingPricing, BillingUserSummary } from "@/lib/billing"
 import { cn } from "@/lib/utils"
@@ -52,12 +64,13 @@ function formatDate(value: string | null): string {
 }
 
 function formatMoney(value: number): string {
-  if (!Number.isFinite(value)) return "0.0000"
-  return value >= 1 ? value.toFixed(2) : value.toFixed(6).replace(/0+$/, "0")
+  if (!Number.isFinite(value) || value === 0) return "0"
+  const fixed = Math.abs(value) >= 1 ? value.toFixed(2) : value.toFixed(6)
+  return fixed.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "")
 }
 
 function getErrorMessage(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : "后台数据加载失败"
+  return error instanceof Error && error.message ? error.message : "Admin data failed to load"
 }
 
 function SummaryTile({
@@ -66,7 +79,7 @@ function SummaryTile({
   value,
   tone = "default",
 }: {
-  icon: typeof Users
+  icon: LucideIcon
   label: string
   value: string
   tone?: "default" | "warning"
@@ -75,10 +88,14 @@ function SummaryTile({
     <div className="rounded-lg border border-border/70 bg-card/75 p-4">
       <div className="flex items-center justify-between gap-3">
         <span className="text-[12px] font-medium text-muted-foreground">{label}</span>
-        <span className={cn(
-          "flex h-8 w-8 items-center justify-center rounded-md",
-          tone === "warning" ? "bg-amber-500/10 text-amber-700 dark:text-amber-300" : "bg-primary/10 text-primary",
-        )}>
+        <span
+          className={cn(
+            "flex h-8 w-8 items-center justify-center rounded-md",
+            tone === "warning"
+              ? "bg-amber-500/10 text-amber-700 dark:text-amber-300"
+              : "bg-primary/10 text-primary",
+          )}
+        >
           <Icon className="h-4 w-4" />
         </span>
       </div>
@@ -95,238 +112,20 @@ function StatusPill({
   tone?: "neutral" | "good" | "warning"
 }) {
   return (
-    <span className={cn(
-      "inline-flex h-6 items-center rounded-md border px-2 text-[12px] font-medium",
-      tone === "good" && "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-      tone === "warning" && "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-      tone === "neutral" && "border-border/70 bg-background text-muted-foreground",
-    )}>
+    <span
+      className={cn(
+        "inline-flex h-6 items-center rounded-md border px-2 text-[12px] font-medium",
+        tone === "good" && "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+        tone === "warning" && "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+        tone === "neutral" && "border-border/70 bg-background text-muted-foreground",
+      )}
+    >
       {children}
     </span>
   )
 }
 
-function UserRow({
-  user,
-  billingUsage,
-  billingAdjustmentDraft,
-  billingSaving,
-  billingCanSave,
-  quotaUsage,
-  quotaDraft,
-  quotaBudgetCny,
-  quotaIsCustom,
-  quotaSaving,
-  quotaCanSave,
-  onBillingAdjustmentDraftChange,
-  onSaveBillingAdjustment,
-  onQuotaDraftChange,
-  onSaveQuota,
-}: {
-  user: AdminUserOverview
-  billingUsage?: BillingUserSummary
-  billingAdjustmentDraft: string
-  billingSaving: boolean
-  billingCanSave: boolean
-  quotaUsage?: { estimatedCostCny: number; requestCount: number }
-  quotaDraft: string
-  quotaBudgetCny: number
-  quotaIsCustom: boolean
-  quotaSaving: boolean
-  quotaCanSave: boolean
-  onBillingAdjustmentDraftChange: (value: string) => void
-  onSaveBillingAdjustment: () => void
-  onQuotaDraftChange: (value: string) => void
-  onSaveQuota: () => void
-}) {
-  const usedCny = quotaUsage?.estimatedCostCny ?? 0
-  const requestCount = quotaUsage?.requestCount ?? 0
-  const balanceCny = billingUsage?.balanceCny ?? 0
-  const usedBalanceCny = billingUsage?.usedBalanceCny ?? 0
-
-  return (
-    <div className="grid gap-3 border-t border-border/60 px-4 py-3 text-[13px] lg:grid-cols-[minmax(220px,1.4fr)_72px_88px_96px_132px_132px_160px_176px_116px_112px] lg:items-center">
-      <div className="min-w-0">
-        <div className="truncate font-medium">{user.email}</div>
-        <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">{user.id}</div>
-      </div>
-      <div>
-        <div className="lg:hidden text-[11px] text-muted-foreground">书籍</div>
-        {user.booksCount}
-      </div>
-      <div>
-        <div className="lg:hidden text-[11px] text-muted-foreground">数据</div>
-        {formatBytes(user.dataBytes)}
-      </div>
-      <div>
-        <div className="lg:hidden text-[11px] text-muted-foreground">模型 Key</div>
-        {user.hasPersonalDeepSeekKey ? (
-          <StatusPill tone="good">{user.deepSeekKeyPreview ?? "已配置"}</StatusPill>
-        ) : (
-          <StatusPill tone="warning">未配置</StatusPill>
-        )}
-      </div>
-      <div>
-        <div className="lg:hidden text-[11px] text-muted-foreground">余额</div>
-        <span>{formatMoney(balanceCny)}</span>
-        {usedBalanceCny > 0 ? (
-          <span className="ml-1 text-muted-foreground">用 {formatMoney(usedBalanceCny)}</span>
-        ) : null}
-      </div>
-      <div>
-        <div className="lg:hidden text-[11px] text-muted-foreground">调账</div>
-        <div className="flex items-center gap-2">
-          <Input
-            className="h-8 w-24 text-[13px]"
-            type="number"
-            step="0.000001"
-            value={billingAdjustmentDraft}
-            onChange={(event) => onBillingAdjustmentDraftChange(event.target.value)}
-          />
-          <Button
-            aria-label={`调整 ${user.email} 的余额`}
-            className="h-8 w-8 p-0"
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={!billingCanSave}
-            onClick={onSaveBillingAdjustment}
-          >
-            <Coins className={cn("h-3.5 w-3.5", billingSaving && "animate-pulse")} />
-          </Button>
-        </div>
-        <div className="mt-1 text-[11px] text-muted-foreground">正数发放，负数扣回</div>
-      </div>
-      <div>
-        <div className="lg:hidden text-[11px] text-muted-foreground">已用额度</div>
-        <span>{formatMoney(usedCny)} / {formatMoney(quotaBudgetCny)}</span>
-        {requestCount > 0 ? (
-          <span className="ml-1 text-muted-foreground">{requestCount} 次</span>
-        ) : null}
-      </div>
-      <div>
-        <div className="lg:hidden text-[11px] text-muted-foreground">用户额度</div>
-        <div className="flex items-center gap-2">
-          <Input
-            className="h-8 w-24 text-[13px]"
-            type="number"
-            min="0"
-            step="0.000001"
-            value={quotaDraft}
-            onChange={(event) => onQuotaDraftChange(event.target.value)}
-          />
-          <Button
-            aria-label={`保存 ${user.email} 的用户额度`}
-            className="h-8 w-8 p-0"
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={!quotaCanSave}
-            onClick={onSaveQuota}
-          >
-            <Save className={cn("h-3.5 w-3.5", quotaSaving && "animate-pulse")} />
-          </Button>
-        </div>
-        <div className="mt-1 text-[11px] text-muted-foreground">
-          {quotaIsCustom ? "单独配置" : "默认额度"}
-        </div>
-      </div>
-      <div>
-        <div className="lg:hidden text-[11px] text-muted-foreground">Session</div>
-        <span>{user.activeSessionCount} 活跃</span>
-        {user.expiredSessionCount > 0 ? (
-          <span className="ml-1 text-muted-foreground">/ {user.expiredSessionCount} 过期</span>
-        ) : null}
-      </div>
-      <div>
-        <div className="lg:hidden text-[11px] text-muted-foreground">最近数据</div>
-        {formatDate(user.dataUpdatedAt)}
-      </div>
-    </div>
-  )
-}
-
-function InviteRow({
-  invite,
-  maxDraft,
-  saving,
-  onMaxDraftChange,
-  onSaveMax,
-}: {
-  invite: AdminInviteOverview
-  maxDraft: string
-  saving: boolean
-  onMaxDraftChange: (value: string) => void
-  onSaveMax: () => void
-}) {
-  const latestRedemption = invite.redeemedUsers[invite.redeemedUsers.length - 1] ?? null
-  const redeemedLabel = latestRedemption
-    ? `${latestRedemption.email ?? latestRedemption.userId}${invite.redeemedCount > 1 ? ` 等 ${invite.redeemedCount} 人` : ""}`
-    : "-"
-  const maxDraftNumber = Number(maxDraft)
-  const canSaveMax = invite.editable
-    && Number.isFinite(maxDraftNumber)
-    && maxDraftNumber >= 1
-    && Math.floor(maxDraftNumber) !== invite.maxRedemptions
-    && !saving
-
-  return (
-    <div className="grid gap-3 border-t border-border/60 px-4 py-3 text-[13px] md:grid-cols-[minmax(180px,1fr)_168px_minmax(200px,1fr)_120px] md:items-center">
-      <div className="min-w-0">
-        <div className="truncate font-mono">{invite.code ?? "已移除的邀请码"}</div>
-        <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">{invite.codeHash.slice(0, 16)}...</div>
-      </div>
-      <div>
-        <div className="md:hidden text-[11px] text-muted-foreground">名额</div>
-        {!invite.configured ? (
-          <StatusPill tone="warning">已移除</StatusPill>
-        ) : invite.remainingRedemptions <= 0 ? (
-          <StatusPill tone="warning">{invite.redeemedCount}/{invite.maxRedemptions}</StatusPill>
-        ) : (
-          <StatusPill tone="good">{invite.redeemedCount}/{invite.maxRedemptions}</StatusPill>
-        )}
-        {invite.editable ? (
-          <div className="mt-2 flex items-center gap-2">
-            <Input
-              className="h-8 w-20 text-[13px]"
-              type="number"
-              min="1"
-              step="1"
-              value={maxDraft}
-              onChange={(event) => onMaxDraftChange(event.target.value)}
-            />
-            <Button
-              aria-label="保存邀请码名额"
-              className="h-8 w-8 p-0"
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={!canSaveMax}
-              onClick={onSaveMax}
-            >
-              <Save className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        ) : invite.source === "env" ? (
-          <div className="mt-1 text-[11px] text-muted-foreground">环境变量</div>
-        ) : null}
-      </div>
-      <div className="min-w-0">
-        <div className="md:hidden text-[11px] text-muted-foreground">最近兑换用户</div>
-        <div className="truncate">{redeemedLabel}</div>
-        {invite.configured ? null : (
-          <div className="mt-1 text-[11px] text-muted-foreground">当前环境变量未配置此码</div>
-        )}
-      </div>
-      <div>
-        <div className="md:hidden text-[11px] text-muted-foreground">最近兑换</div>
-        {formatDate(latestRedemption?.redeemedAt ?? null)}
-      </div>
-    </div>
-  )
-}
-
-function QuotaNumberInput({
+function MoneyNumberInput({
   label,
   value,
   onChange,
@@ -354,19 +153,176 @@ function QuotaNumberInput({
   )
 }
 
+function UserRow({
+  user,
+  billingUsage,
+  billingAdjustmentDraft,
+  billingSaving,
+  billingCanSave,
+  onBillingAdjustmentDraftChange,
+  onSaveBillingAdjustment,
+}: {
+  user: AdminUserOverview
+  billingUsage?: BillingUserSummary
+  billingAdjustmentDraft: string
+  billingSaving: boolean
+  billingCanSave: boolean
+  onBillingAdjustmentDraftChange: (value: string) => void
+  onSaveBillingAdjustment: () => void
+}) {
+  const balanceCny = billingUsage?.balanceCny ?? 0
+  const usedBalanceCny = billingUsage?.usedBalanceCny ?? 0
+
+  return (
+    <div className="grid gap-3 border-t border-border/60 px-4 py-3 text-[13px] lg:grid-cols-[minmax(220px,1.4fr)_72px_88px_96px_132px_132px_116px_112px] lg:items-center">
+      <div className="min-w-0">
+        <div className="truncate font-medium">{user.email}</div>
+        <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">{user.id}</div>
+      </div>
+      <div>
+        <div className="lg:hidden text-[11px] text-muted-foreground">Books</div>
+        {user.booksCount}
+      </div>
+      <div>
+        <div className="lg:hidden text-[11px] text-muted-foreground">Data</div>
+        {formatBytes(user.dataBytes)}
+      </div>
+      <div>
+        <div className="lg:hidden text-[11px] text-muted-foreground">Model key</div>
+        {user.hasPersonalDeepSeekKey ? (
+          <StatusPill tone="good">{user.deepSeekKeyPreview ?? "Configured"}</StatusPill>
+        ) : (
+          <StatusPill tone="warning">Missing</StatusPill>
+        )}
+      </div>
+      <div>
+        <div className="lg:hidden text-[11px] text-muted-foreground">Balance</div>
+        <span>{formatMoney(balanceCny)}</span>
+        {usedBalanceCny > 0 ? (
+          <span className="ml-1 text-muted-foreground">used {formatMoney(usedBalanceCny)}</span>
+        ) : null}
+      </div>
+      <div>
+        <div className="lg:hidden text-[11px] text-muted-foreground">Adjust</div>
+        <div className="flex items-center gap-2">
+          <Input
+            className="h-8 w-24 text-[13px]"
+            type="number"
+            step="0.000001"
+            value={billingAdjustmentDraft}
+            onChange={(event) => onBillingAdjustmentDraftChange(event.target.value)}
+          />
+          <Button
+            aria-label={`Adjust balance for ${user.email}`}
+            className="h-8 w-8 p-0"
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={!billingCanSave}
+            onClick={onSaveBillingAdjustment}
+          >
+            <Coins className={cn("h-3.5 w-3.5", billingSaving && "animate-pulse")} />
+          </Button>
+        </div>
+        <div className="mt-1 text-[11px] text-muted-foreground">Positive credits, negative debits.</div>
+      </div>
+      <div>
+        <div className="lg:hidden text-[11px] text-muted-foreground">Session</div>
+        <span>{user.activeSessionCount} active</span>
+        {user.expiredSessionCount > 0 ? (
+          <span className="ml-1 text-muted-foreground">/ {user.expiredSessionCount} expired</span>
+        ) : null}
+      </div>
+      <div>
+        <div className="lg:hidden text-[11px] text-muted-foreground">Recent data</div>
+        {formatDate(user.dataUpdatedAt)}
+      </div>
+    </div>
+  )
+}
+
+function InviteRow({
+  invite,
+  maxDraft,
+  saving,
+  onMaxDraftChange,
+  onSaveMax,
+}: {
+  invite: AdminInviteOverview
+  maxDraft: string
+  saving: boolean
+  onMaxDraftChange: (value: string) => void
+  onSaveMax: () => void
+}) {
+  const latestRedemption = invite.redeemedUsers[invite.redeemedUsers.length - 1] ?? null
+  const redeemedLabel = latestRedemption
+    ? `${latestRedemption.email ?? latestRedemption.userId}${invite.redeemedCount > 1 ? ` and ${invite.redeemedCount - 1} more` : ""}`
+    : "-"
+  const maxDraftNumber = Number(maxDraft)
+  const canSaveMax = invite.editable
+    && Number.isFinite(maxDraftNumber)
+    && maxDraftNumber >= 1
+    && Math.floor(maxDraftNumber) !== invite.maxRedemptions
+    && !saving
+
+  return (
+    <div className="grid gap-3 border-t border-border/60 px-4 py-3 text-[13px] md:grid-cols-[minmax(180px,1fr)_168px_minmax(200px,1fr)_120px] md:items-center">
+      <div className="min-w-0">
+        <div className="truncate font-mono">{invite.code ?? "Removed invite"}</div>
+        <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">{invite.codeHash.slice(0, 16)}...</div>
+      </div>
+      <div>
+        <div className="md:hidden text-[11px] text-muted-foreground">Slots</div>
+        {!invite.configured ? (
+          <StatusPill tone="warning">Removed</StatusPill>
+        ) : invite.remainingRedemptions <= 0 ? (
+          <StatusPill tone="warning">{invite.redeemedCount}/{invite.maxRedemptions}</StatusPill>
+        ) : (
+          <StatusPill tone="good">{invite.redeemedCount}/{invite.maxRedemptions}</StatusPill>
+        )}
+        {invite.editable ? (
+          <div className="mt-2 flex items-center gap-2">
+            <Input
+              className="h-8 w-20 text-[13px]"
+              type="number"
+              min="1"
+              step="1"
+              value={maxDraft}
+              onChange={(event) => onMaxDraftChange(event.target.value)}
+            />
+            <Button
+              aria-label="Save invite slots"
+              className="h-8 w-8 p-0"
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!canSaveMax}
+              onClick={onSaveMax}
+            >
+              <Save className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        ) : invite.source === "env" ? (
+          <div className="mt-1 text-[11px] text-muted-foreground">Env var</div>
+        ) : null}
+      </div>
+      <div className="min-w-0">
+        <div className="md:hidden text-[11px] text-muted-foreground">Latest user</div>
+        <div className="truncate">{redeemedLabel}</div>
+        {invite.configured ? null : (
+          <div className="mt-1 text-[11px] text-muted-foreground">Not present in current env vars.</div>
+        )}
+      </div>
+      <div>
+        <div className="md:hidden text-[11px] text-muted-foreground">Latest use</div>
+        {formatDate(latestRedemption?.redeemedAt ?? null)}
+      </div>
+    </div>
+  )
+}
+
 function createInviteMaxDrafts(invites: AdminInviteOverview[]): Record<string, string> {
   return Object.fromEntries(invites.map((invite) => [invite.codeHash, String(invite.maxRedemptions)]))
-}
-
-function getUserBudgetCny(settings: TrialQuotaSettings, userId: string): number {
-  return settings.userBudgetsCny[userId] ?? settings.perUserBudgetCny
-}
-
-function createUserQuotaDrafts(
-  users: AdminUserOverview[],
-  settings: TrialQuotaSettings,
-): Record<string, string> {
-  return Object.fromEntries(users.map((user) => [user.id, String(getUserBudgetCny(settings, user.id))]))
 }
 
 function createBillingAdjustmentDrafts(users: AdminUserOverview[]): Record<string, string> {
@@ -421,14 +377,6 @@ export function AdminPanel() {
   const [platformKeyClearing, setPlatformKeyClearing] = useState(false)
   const [platformKeyMessage, setPlatformKeyMessage] = useState<string | null>(null)
   const [platformKeyError, setPlatformKeyError] = useState<string | null>(null)
-  const [quotaDraft, setQuotaDraft] = useState<TrialQuotaSettings | null>(null)
-  const [quotaSaving, setQuotaSaving] = useState(false)
-  const [quotaMessage, setQuotaMessage] = useState<string | null>(null)
-  const [quotaError, setQuotaError] = useState<string | null>(null)
-  const [userQuotaDrafts, setUserQuotaDrafts] = useState<Record<string, string>>({})
-  const [userQuotaSavingId, setUserQuotaSavingId] = useState<string | null>(null)
-  const [userQuotaMessage, setUserQuotaMessage] = useState<string | null>(null)
-  const [userQuotaError, setUserQuotaError] = useState<string | null>(null)
   const [billingAdjustmentDrafts, setBillingAdjustmentDrafts] = useState<Record<string, string>>({})
   const [billingAdjustmentSavingId, setBillingAdjustmentSavingId] = useState<string | null>(null)
   const [billingAdjustmentMessage, setBillingAdjustmentMessage] = useState<string | null>(null)
@@ -450,8 +398,6 @@ export function AdminPanel() {
       setOverview(nextOverview)
       setBillingPlatformEnabledDraft(nextOverview.billing.settings.platformEnabled)
       setBillingPricingDraft(createBillingPricingDraft(nextOverview.billing.settings.pricing))
-      setQuotaDraft(nextOverview.quota.settings)
-      setUserQuotaDrafts(createUserQuotaDrafts(nextOverview.users, nextOverview.quota.settings))
       setBillingAdjustmentDrafts(createBillingAdjustmentDrafts(nextOverview.users))
       setInviteMaxDrafts(createInviteMaxDrafts(nextOverview.auth.invites))
     } catch (err) {
@@ -463,28 +409,6 @@ export function AdminPanel() {
     } finally {
       setLoading(false)
       setRefreshing(false)
-    }
-  }
-
-  async function saveQuotaSettings(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!quotaDraft || quotaSaving) return
-    setQuotaSaving(true)
-    setQuotaError(null)
-    setQuotaMessage(null)
-    try {
-      const quota = await updateAdminTrialQuotaSettings(quotaDraft)
-      setQuotaDraft(quota.settings)
-      setUserQuotaDrafts(createUserQuotaDrafts(overview?.users ?? [], quota.settings))
-      setOverview((current) => current ? {
-        ...current,
-        quota,
-      } : current)
-      setQuotaMessage("额度设置已保存")
-    } catch (err) {
-      setQuotaError(getErrorMessage(err))
-    } finally {
-      setQuotaSaving(false)
     }
   }
 
@@ -505,11 +429,11 @@ export function AdminPanel() {
         ...current,
         llm: {
           ...current.llm,
-          platformQuotaEnabled: billing.platformApiKeyConfigured && billing.settings.platformEnabled,
+          platformBalanceEnabled: billing.platformApiKeyConfigured && billing.settings.platformEnabled,
         },
         billing,
       } : current)
-      setBillingSettingsMessage("余额设置已保存")
+      setBillingSettingsMessage("Balance settings saved.")
     } catch (err) {
       setBillingSettingsError(getErrorMessage(err))
     } finally {
@@ -526,7 +450,7 @@ export function AdminPanel() {
     try {
       await saveAdminPlatformKey({ apiKey })
       setPlatformKeyDraft("")
-      setPlatformKeyMessage("平台 API Key 已保存")
+      setPlatformKeyMessage("Platform API key saved.")
       await loadOverview(true)
     } catch (err) {
       setPlatformKeyError(getErrorMessage(err))
@@ -542,7 +466,7 @@ export function AdminPanel() {
     setPlatformKeyMessage(null)
     try {
       const result = await testAdminPlatformKey(platformKeyDraft.trim() ? { apiKey: platformKeyDraft.trim() } : {})
-      setPlatformKeyMessage(`平台 API Key 测试通过：${result.model}`)
+      setPlatformKeyMessage(`Platform API key test passed: ${result.model}`)
     } catch (err) {
       setPlatformKeyError(getErrorMessage(err))
     } finally {
@@ -558,7 +482,7 @@ export function AdminPanel() {
     try {
       await clearAdminPlatformKey()
       setPlatformKeyDraft("")
-      setPlatformKeyMessage("后台保存的平台 API Key 已清除")
+      setPlatformKeyMessage("Saved platform API key cleared.")
       await loadOverview(true)
     } catch (err) {
       setPlatformKeyError(getErrorMessage(err))
@@ -567,48 +491,12 @@ export function AdminPanel() {
     }
   }
 
-  async function saveUserQuota(user: AdminUserOverview) {
-    if (!overview || userQuotaSavingId) return
-    const budgetCny = Number(userQuotaDrafts[user.id])
-    if (!Number.isFinite(budgetCny) || budgetCny < 0) {
-      setUserQuotaMessage(null)
-      setUserQuotaError("请输入有效额度")
-      return
-    }
-
-    setUserQuotaSavingId(user.id)
-    setUserQuotaMessage(null)
-    setUserQuotaError(null)
-    try {
-      const quota = await updateAdminTrialQuotaSettings({
-        userBudgetsCny: {
-          ...overview.quota.settings.userBudgetsCny,
-          [user.id]: budgetCny,
-        },
-      })
-      setQuotaDraft(quota.settings)
-      setUserQuotaDrafts((current) => ({
-        ...current,
-        [user.id]: String(getUserBudgetCny(quota.settings, user.id)),
-      }))
-      setOverview((current) => current ? {
-        ...current,
-        quota,
-      } : current)
-      setUserQuotaMessage("用户额度已保存")
-    } catch (err) {
-      setUserQuotaError(getErrorMessage(err))
-    } finally {
-      setUserQuotaSavingId(null)
-    }
-  }
-
   async function saveBillingAdjustment(user: AdminUserOverview) {
     if (billingAdjustmentSavingId) return
     const amountCny = Number(billingAdjustmentDrafts[user.id])
     if (!Number.isFinite(amountCny) || amountCny === 0) {
       setBillingAdjustmentMessage(null)
-      setBillingAdjustmentError("请输入非 0 调账金额")
+      setBillingAdjustmentError("Enter a non-zero adjustment amount.")
       return
     }
 
@@ -622,7 +510,7 @@ export function AdminPanel() {
         note: amountCny > 0 ? "admin credit" : "admin debit",
       })
       setBillingAdjustmentDrafts((current) => ({ ...current, [user.id]: "0" }))
-      setBillingAdjustmentMessage("余额已调整")
+      setBillingAdjustmentMessage("Balance adjusted.")
       await loadOverview(true)
     } catch (err) {
       setBillingAdjustmentError(getErrorMessage(err))
@@ -652,7 +540,7 @@ export function AdminPanel() {
         ...current,
         [invite.codeHash]: String(invite.maxRedemptions),
       }))
-      setInviteMessage(`已生成 ${invite.code}`)
+      setInviteMessage(`Created ${invite.code}`)
     } catch (err) {
       setInviteError(getErrorMessage(err))
     } finally {
@@ -674,19 +562,12 @@ export function AdminPanel() {
         ...current,
         [updatedInvite.codeHash]: String(updatedInvite.maxRedemptions),
       }))
-      setInviteMessage("邀请码名额已保存")
+      setInviteMessage("Invite slots saved.")
     } catch (err) {
       setInviteError(getErrorMessage(err))
     } finally {
       setInviteUpdatingHash(null)
     }
-  }
-
-  function updateQuotaDraft<K extends keyof Omit<TrialQuotaSettings, "updatedAt">>(
-    key: K,
-    value: TrialQuotaSettings[K],
-  ) {
-    setQuotaDraft((current) => current ? { ...current, [key]: value } : current)
   }
 
   function updateBillingPricingDraft<K extends keyof BillingPricing>(
@@ -703,9 +584,6 @@ export function AdminPanel() {
   const sortedUsers = useMemo(() => {
     return [...(overview?.users ?? [])].sort((left, right) => right.createdAt.localeCompare(left.createdAt))
   }, [overview?.users])
-  const quotaUsageByUserId = useMemo(() => {
-    return new Map((overview?.quota.byUser ?? []).map((usage) => [usage.userId, usage]))
-  }, [overview?.quota.byUser])
   const billingUsageByUserId = useMemo(() => {
     return new Map((overview?.billing.byUser ?? []).map((usage) => [usage.userId, usage]))
   }, [overview?.billing.byUser])
@@ -714,7 +592,7 @@ export function AdminPanel() {
   if (loading) {
     return (
       <div className="rounded-lg border border-border/70 bg-card/75 p-5 text-sm text-muted-foreground">
-        正在加载后台数据...
+        Loading admin data...
       </div>
     )
   }
@@ -725,15 +603,15 @@ export function AdminPanel() {
         <div className="flex items-start gap-3">
           <AlertTriangle className="mt-0.5 h-4 w-4 text-amber-700 dark:text-amber-300" />
           <div className="min-w-0">
-            <div className="text-sm font-medium text-amber-800 dark:text-amber-200">当前账号没有后台访问权限</div>
+            <div className="text-sm font-medium text-amber-800 dark:text-amber-200">This account cannot access admin.</div>
             <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
-              将当前登录邮箱加入环境变量 LG_ADMIN_EMAILS 后重启服务，再重新进入后台。
+              Add the current login email to LG_ADMIN_EMAILS, restart the server, and open admin again.
             </p>
             <pre className="mt-4 overflow-x-auto rounded-md border border-border/70 bg-background p-3 text-[12px] leading-relaxed">
-              <code>LG_ADMIN_EMAILS=你的邮箱</code>
+              <code>LG_ADMIN_EMAILS=your-email@example.com</code>
             </pre>
             <Button className="mt-4" size="sm" variant="outline" asChild>
-              <Link href="/">返回工作台</Link>
+              <Link href="/">Back to app</Link>
             </Button>
           </div>
         </div>
@@ -750,7 +628,7 @@ export function AdminPanel() {
             <div className="text-sm font-medium text-destructive">{error}</div>
             <Button className="mt-4" size="sm" variant="outline" onClick={() => void loadOverview()}>
               <RefreshCw className="h-4 w-4" />
-              重试
+              Retry
             </Button>
           </div>
         </div>
@@ -769,39 +647,39 @@ export function AdminPanel() {
       billingPricingDraft?.outputPricePerMillionCny !== overview.billing.settings.pricing.outputPricePerMillionCny
     )
   const platformKeySourceLabel = overview.billing.platformKeySource === "environment"
-    ? "环境变量"
+    ? "env var"
     : overview.billing.platformKeySource === "admin"
-      ? `后台保存 ${overview.billing.platformKeyPreview ?? ""}`.trim()
-      : "未配置"
+      ? `admin saved ${overview.billing.platformKeyPreview ?? ""}`.trim()
+      : "not configured"
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-[12px] text-muted-foreground">
-          刷新于 {formatDate(overview.generatedAt)}
+          Refreshed {formatDate(overview.generatedAt)}
         </div>
         <Button size="sm" variant="outline" onClick={() => void loadOverview(true)} disabled={refreshing}>
           <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
-          刷新
+          Refresh
         </Button>
       </div>
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <SummaryTile icon={Users} label="用户" value={`${overview.auth.userCount}`} />
-        <SummaryTile icon={Ticket} label="邀请码名额" value={`${overview.auth.redeemedInviteCount}/${inviteSlotCount}`} />
-        <SummaryTile icon={KeyRound} label="活跃 Session" value={`${overview.auth.activeSessionCount}`} />
-        <SummaryTile icon={HardDrive} label="用户数据" value={formatBytes(overview.storage.totalUserDataBytes)} />
+        <SummaryTile icon={Users} label="Users" value={`${overview.auth.userCount}`} />
+        <SummaryTile icon={Ticket} label="Invite slots" value={`${overview.auth.redeemedInviteCount}/${inviteSlotCount}`} />
+        <SummaryTile icon={KeyRound} label="Active sessions" value={`${overview.auth.activeSessionCount}`} />
+        <SummaryTile icon={HardDrive} label="User data" value={formatBytes(overview.storage.totalUserDataBytes)} />
       </section>
 
       <section className="rounded-lg border border-border/70 bg-card/75 p-4">
         <div className="flex flex-wrap items-center gap-2">
-          <StatusPill tone={overview.llm.userKeyModeEnabled ? "good" : "warning"}>用户 Key 模式</StatusPill>
-          <StatusPill tone={overview.llm.platformQuotaEnabled ? "good" : "warning"}>
-            {overview.llm.platformQuotaEnabled ? "平台额度已启用" : "平台额度未生效"}
+          <StatusPill tone={overview.llm.userKeyModeEnabled ? "good" : "warning"}>User key mode</StatusPill>
+          <StatusPill tone={overview.llm.platformBalanceEnabled ? "good" : "warning"}>
+            {overview.llm.platformBalanceEnabled ? "Platform balance available" : "Platform balance unavailable"}
           </StatusPill>
-          <StatusPill>余额总计 {formatMoney(overview.billing.total.balanceCny)} 元</StatusPill>
-          <StatusPill>余额已扣 {formatMoney(overview.billing.total.usedBalanceCny)} 元</StatusPill>
-          <StatusPill tone={overview.auth.adminEmailCount > 0 ? "good" : "warning"}>管理员 {overview.auth.adminEmailCount}</StatusPill>
+          <StatusPill>Total balance {formatMoney(overview.billing.total.balanceCny)} CNY</StatusPill>
+          <StatusPill>Used balance {formatMoney(overview.billing.total.usedBalanceCny)} CNY</StatusPill>
+          <StatusPill tone={overview.auth.adminEmailCount > 0 ? "good" : "warning"}>Admins {overview.auth.adminEmailCount}</StatusPill>
         </div>
         <div className="mt-3 flex items-start gap-2 text-[12px] leading-relaxed text-muted-foreground">
           <Database className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -812,9 +690,9 @@ export function AdminPanel() {
       <section className="rounded-lg border border-border/70 bg-card/75 p-4">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold tracking-normal">平台余额</h2>
+            <h2 className="text-sm font-semibold tracking-normal">Platform balance</h2>
             <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
-              管理余额调用的全局开关、平台 DeepSeek API Key 和扣费单价。用户仍在下方列表中逐个调账。
+              Manage the global balance switch, platform DeepSeek API key, pricing, and per-user balance adjustments.
             </p>
           </div>
           <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">
@@ -824,15 +702,15 @@ export function AdminPanel() {
 
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <StatusPill tone={overview.billing.settings.platformEnabled ? "good" : "warning"}>
-            {overview.billing.settings.platformEnabled ? "余额通道已启用" : "余额通道未启用"}
+            {overview.billing.settings.platformEnabled ? "Balance channel enabled" : "Balance channel disabled"}
           </StatusPill>
           <StatusPill tone={overview.billing.platformApiKeyConfigured ? "good" : "warning"}>
-            平台 Key：{platformKeySourceLabel}
+            Platform key: {platformKeySourceLabel}
           </StatusPill>
-          <StatusPill>余额总计 {formatMoney(overview.billing.total.balanceCny)} 元</StatusPill>
-          <StatusPill>余额已扣 {formatMoney(overview.billing.total.usedBalanceCny)} 元</StatusPill>
-          <StatusPill tone={overview.llm.platformQuotaEnabled ? "good" : "warning"}>
-            {overview.llm.platformQuotaEnabled ? "余额调用可用" : "余额调用不可用"}
+          <StatusPill>Total {formatMoney(overview.billing.total.balanceCny)} CNY</StatusPill>
+          <StatusPill>Used {formatMoney(overview.billing.total.usedBalanceCny)} CNY</StatusPill>
+          <StatusPill tone={overview.llm.platformBalanceEnabled ? "good" : "warning"}>
+            {overview.llm.platformBalanceEnabled ? "Balance calls available" : "Balance calls unavailable"}
           </StatusPill>
         </div>
 
@@ -845,26 +723,26 @@ export function AdminPanel() {
                 onChange={(event) => setBillingPlatformEnabledDraft(event.target.checked)}
                 className="h-4 w-4"
               />
-              启用平台余额调用
+              Enable platform balance calls
             </label>
 
             <div className="grid gap-3 md:grid-cols-3">
-              <QuotaNumberInput
-                label="缓存命中输入单价"
+              <MoneyNumberInput
+                label="Cache-hit input price"
                 value={billingPricingDraft.promptCacheHitPricePerMillionCny}
-                suffix="元 / 百万"
+                suffix="CNY / 1M"
                 onChange={(value) => updateBillingPricingDraft("promptCacheHitPricePerMillionCny", value)}
               />
-              <QuotaNumberInput
-                label="缓存未命中输入单价"
+              <MoneyNumberInput
+                label="Cache-miss input price"
                 value={billingPricingDraft.promptCacheMissPricePerMillionCny}
-                suffix="元 / 百万"
+                suffix="CNY / 1M"
                 onChange={(value) => updateBillingPricingDraft("promptCacheMissPricePerMillionCny", value)}
               />
-              <QuotaNumberInput
-                label="输出 token 单价"
+              <MoneyNumberInput
+                label="Output token price"
                 value={billingPricingDraft.outputPricePerMillionCny}
-                suffix="元 / 百万"
+                suffix="CNY / 1M"
                 onChange={(value) => updateBillingPricingDraft("outputPricePerMillionCny", value)}
               />
             </div>
@@ -872,7 +750,7 @@ export function AdminPanel() {
             <div className="flex flex-wrap items-center gap-3">
               <Button type="submit" size="sm" disabled={!billingSettingsCanSave}>
                 <Save className="h-4 w-4" />
-                {billingSettingsSaving ? "保存中..." : "保存余额设置"}
+                {billingSettingsSaving ? "Saving..." : "Save balance settings"}
               </Button>
               {billingSettingsMessage ? <span className="text-[12px] text-emerald-700 dark:text-emerald-300">{billingSettingsMessage}</span> : null}
               {billingSettingsError ? <span className="text-[12px] text-destructive">{billingSettingsError}</span> : null}
@@ -882,7 +760,7 @@ export function AdminPanel() {
 
         <div className="mt-5 grid gap-3 border-t border-border/60 pt-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
           <label className="block space-y-1.5">
-            <span className="text-[12px] font-medium text-muted-foreground">平台 DeepSeek API Key</span>
+            <span className="text-[12px] font-medium text-muted-foreground">Platform DeepSeek API key</span>
             <Input
               type="password"
               autoComplete="off"
@@ -894,15 +772,27 @@ export function AdminPanel() {
           <div className="flex flex-wrap gap-2">
             <Button type="button" size="sm" disabled={!platformKeyDraft.trim() || platformKeySaving} onClick={() => void savePlatformKey()}>
               <Save className={cn("h-4 w-4", platformKeySaving && "animate-pulse")} />
-              保存 Key
+              Save key
             </Button>
-            <Button type="button" size="sm" variant="outline" disabled={platformKeyTesting || (!platformKeyDraft.trim() && !overview.billing.platformApiKeyConfigured)} onClick={() => void testPlatformKey()}>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={platformKeyTesting || (!platformKeyDraft.trim() && !overview.billing.platformApiKeyConfigured)}
+              onClick={() => void testPlatformKey()}
+            >
               <PlugZap className={cn("h-4 w-4", platformKeyTesting && "animate-pulse")} />
-              测试
+              Test
             </Button>
-            <Button type="button" size="sm" variant="ghost" disabled={platformKeyClearing || overview.billing.platformKeySource !== "admin"} onClick={() => void clearPlatformKey()}>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={platformKeyClearing || overview.billing.platformKeySource !== "admin"}
+              onClick={() => void clearPlatformKey()}
+            >
               <Trash2 className={cn("h-4 w-4", platformKeyClearing && "animate-pulse")} />
-              清除后台 Key
+              Clear saved key
             </Button>
           </div>
         </div>
@@ -912,97 +802,14 @@ export function AdminPanel() {
         </div>
       </section>
 
-      <section className="rounded-lg border border-border/70 bg-card/75 p-4">
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold tracking-normal">内测额度</h2>
-            <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
-              平台 Key 需通过 DEEPSEEK_PLATFORM_API_KEY 配置；用户没有个人 Key 时才会使用平台额度。默认额度可被用户列表中的单独配置覆盖。
-            </p>
-          </div>
-          <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">
-            <Coins className="h-4 w-4" />
-          </span>
-        </div>
-
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <StatusPill tone={overview.quota.platformApiKeyConfigured ? "good" : "warning"}>
-            {overview.quota.platformApiKeyConfigured ? "平台 Key 已配置" : "平台 Key 未配置"}
-          </StatusPill>
-          <StatusPill tone={overview.quota.enforcementEnabled ? "good" : "warning"}>
-            {overview.quota.enforcementEnabled ? "额度熔断已生效" : "额度熔断未生效"}
-          </StatusPill>
-          <StatusPill>已用 {formatMoney(overview.quota.total.estimatedCostCny)} 元</StatusPill>
-          <StatusPill>剩余 {formatMoney(overview.quota.total.remainingCny)} 元</StatusPill>
-          <StatusPill>命中 {overview.quota.total.promptCacheHitTokens}</StatusPill>
-          <StatusPill>未命中 {overview.quota.total.promptCacheMissTokens}</StatusPill>
-        </div>
-
-        {quotaDraft ? (
-          <form className="space-y-4" onSubmit={saveQuotaSettings}>
-            <label className="flex items-center gap-2 text-[13px]">
-              <input
-                type="checkbox"
-                checked={quotaDraft.enabled}
-                onChange={(event) => updateQuotaDraft("enabled", event.target.checked)}
-                className="h-4 w-4"
-              />
-              启用平台试用额度
-            </label>
-
-            <div className="grid gap-3 md:grid-cols-2">
-              <QuotaNumberInput
-                label="总额度"
-                value={quotaDraft.totalBudgetCny}
-                suffix="元"
-                onChange={(value) => updateQuotaDraft("totalBudgetCny", value)}
-              />
-              <QuotaNumberInput
-                label="默认用户额度"
-                value={quotaDraft.perUserBudgetCny}
-                suffix="元/人"
-                onChange={(value) => updateQuotaDraft("perUserBudgetCny", value)}
-              />
-              <QuotaNumberInput
-                label="缓存命中输入单价"
-                value={quotaDraft.promptCacheHitPricePerMillionCny}
-                suffix="元/百万"
-                onChange={(value) => updateQuotaDraft("promptCacheHitPricePerMillionCny", value)}
-              />
-              <QuotaNumberInput
-                label="缓存未命中输入单价"
-                value={quotaDraft.promptCacheMissPricePerMillionCny}
-                suffix="元/百万"
-                onChange={(value) => updateQuotaDraft("promptCacheMissPricePerMillionCny", value)}
-              />
-              <QuotaNumberInput
-                label="输出 token 单价"
-                value={quotaDraft.outputPricePerMillionCny}
-                suffix="元/百万"
-                onChange={(value) => updateQuotaDraft("outputPricePerMillionCny", value)}
-              />
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <Button type="submit" size="sm" disabled={quotaSaving}>
-                <Save className="h-4 w-4" />
-                {quotaSaving ? "保存中..." : "保存额度"}
-              </Button>
-              {quotaMessage ? <span className="text-[12px] text-emerald-700 dark:text-emerald-300">{quotaMessage}</span> : null}
-              {quotaError ? <span className="text-[12px] text-destructive">{quotaError}</span> : null}
-            </div>
-          </form>
-        ) : null}
-      </section>
-
       <section className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
         <div className="flex items-center justify-between gap-3 px-4 py-3">
-          <h2 className="text-sm font-semibold tracking-normal">邀请码</h2>
-          <span className="text-[12px] text-muted-foreground">{overview.auth.invites.length} 个</span>
+          <h2 className="text-sm font-semibold tracking-normal">Invites</h2>
+          <span className="text-[12px] text-muted-foreground">{overview.auth.invites.length} total</span>
         </div>
         <form className="flex flex-wrap items-end gap-3 border-t border-border/60 px-4 py-3" onSubmit={createInvite}>
           <label className="block space-y-1.5">
-            <span className="text-[12px] font-medium text-muted-foreground">人数上限</span>
+            <span className="text-[12px] font-medium text-muted-foreground">Max redemptions</span>
             <Input
               className="w-28"
               type="number"
@@ -1014,16 +821,16 @@ export function AdminPanel() {
           </label>
           <Button type="submit" size="sm" disabled={inviteCreating}>
             <Plus className="h-4 w-4" />
-            {inviteCreating ? "生成中..." : "生成邀请码"}
+            {inviteCreating ? "Creating..." : "Create invite"}
           </Button>
           {inviteMessage ? <span className="text-[12px] text-emerald-700 dark:text-emerald-300">{inviteMessage}</span> : null}
           {inviteError ? <span className="text-[12px] text-destructive">{inviteError}</span> : null}
         </form>
         <div className="hidden border-t border-border/60 px-4 py-2 text-[11px] font-medium uppercase tracking-normal text-muted-foreground md:grid md:grid-cols-[minmax(180px,1fr)_168px_minmax(200px,1fr)_120px]">
-          <div>邀请码</div>
-          <div>名额</div>
-          <div>最近兑换用户</div>
-          <div>最近兑换</div>
+          <div>Invite</div>
+          <div>Slots</div>
+          <div>Latest user</div>
+          <div>Latest use</div>
         </div>
         {overview.auth.invites.length > 0 ? (
           overview.auth.invites.map((invite) => (
@@ -1041,7 +848,7 @@ export function AdminPanel() {
           ))
         ) : (
           <div className="border-t border-border/60 px-4 py-8 text-center text-sm text-muted-foreground">
-            暂无邀请码
+            No invites.
           </div>
         )}
       </section>
@@ -1049,38 +856,26 @@ export function AdminPanel() {
       <section className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
         <div className="flex items-center justify-between gap-3 px-4 py-3">
           <div className="flex flex-wrap items-center gap-3">
-            <h2 className="text-sm font-semibold tracking-normal">内测用户</h2>
-            {userQuotaMessage ? <span className="text-[12px] text-emerald-700 dark:text-emerald-300">{userQuotaMessage}</span> : null}
-            {userQuotaError ? <span className="text-[12px] text-destructive">{userQuotaError}</span> : null}
+            <h2 className="text-sm font-semibold tracking-normal">Users</h2>
             {billingAdjustmentMessage ? <span className="text-[12px] text-emerald-700 dark:text-emerald-300">{billingAdjustmentMessage}</span> : null}
             {billingAdjustmentError ? <span className="text-[12px] text-destructive">{billingAdjustmentError}</span> : null}
           </div>
-          <span className="text-[12px] text-muted-foreground">{sortedUsers.length} 人</span>
+          <span className="text-[12px] text-muted-foreground">{sortedUsers.length} total</span>
         </div>
-        <div className="hidden border-t border-border/60 px-4 py-2 text-[11px] font-medium uppercase tracking-normal text-muted-foreground lg:grid lg:grid-cols-[minmax(220px,1.4fr)_72px_88px_96px_132px_132px_160px_176px_116px_112px]">
-          <div>账号</div>
-          <div>书籍</div>
-          <div>数据</div>
-          <div>模型 Key</div>
-          <div>余额</div>
-          <div>调账</div>
-          <div>已用额度</div>
-          <div>用户额度</div>
+        <div className="hidden border-t border-border/60 px-4 py-2 text-[11px] font-medium uppercase tracking-normal text-muted-foreground lg:grid lg:grid-cols-[minmax(220px,1.4fr)_72px_88px_96px_132px_132px_116px_112px]">
+          <div>Account</div>
+          <div>Books</div>
+          <div>Data</div>
+          <div>Model key</div>
+          <div>Balance</div>
+          <div>Adjust</div>
           <div>Session</div>
-          <div>最近数据</div>
+          <div>Recent data</div>
         </div>
         {sortedUsers.length > 0 ? (
           sortedUsers.map((user) => {
-            const settings = overview.quota.settings
-            const quotaBudgetCny = getUserBudgetCny(settings, user.id)
-            const quotaDraftValue = userQuotaDrafts[user.id] ?? String(quotaBudgetCny)
-            const quotaDraftNumber = Number(quotaDraftValue)
             const billingAdjustmentDraft = billingAdjustmentDrafts[user.id] ?? "0"
             const billingAdjustmentNumber = Number(billingAdjustmentDraft)
-            const quotaCanSave = userQuotaSavingId === null &&
-              Number.isFinite(quotaDraftNumber) &&
-              quotaDraftNumber >= 0 &&
-              quotaDraftNumber !== quotaBudgetCny
             const billingCanSave = billingAdjustmentSavingId === null &&
               Number.isFinite(billingAdjustmentNumber) &&
               billingAdjustmentNumber !== 0
@@ -1093,28 +888,17 @@ export function AdminPanel() {
                 billingAdjustmentDraft={billingAdjustmentDraft}
                 billingSaving={billingAdjustmentSavingId === user.id}
                 billingCanSave={billingCanSave}
-                quotaUsage={quotaUsageByUserId.get(user.id)}
-                quotaDraft={quotaDraftValue}
-                quotaBudgetCny={quotaBudgetCny}
-                quotaIsCustom={Object.prototype.hasOwnProperty.call(settings.userBudgetsCny, user.id)}
-                quotaSaving={userQuotaSavingId === user.id}
-                quotaCanSave={quotaCanSave}
                 onBillingAdjustmentDraftChange={(value) => setBillingAdjustmentDrafts((current) => ({
                   ...current,
                   [user.id]: value,
                 }))}
                 onSaveBillingAdjustment={() => void saveBillingAdjustment(user)}
-                onQuotaDraftChange={(value) => setUserQuotaDrafts((current) => ({
-                  ...current,
-                  [user.id]: value,
-                }))}
-                onSaveQuota={() => void saveUserQuota(user)}
               />
             )
           })
         ) : (
           <div className="border-t border-border/60 px-4 py-8 text-center text-sm text-muted-foreground">
-            暂无用户
+            No users.
           </div>
         )}
       </section>

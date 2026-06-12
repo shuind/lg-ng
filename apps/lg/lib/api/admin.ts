@@ -42,45 +42,6 @@ export type AdminInviteOverview = {
   updatedAt: string | null
 }
 
-export type TrialQuotaSettings = {
-  enabled: boolean
-  totalBudgetCny: number
-  perUserBudgetCny: number
-  userBudgetsCny: Record<string, number>
-  promptCacheHitPricePerMillionCny: number
-  promptCacheMissPricePerMillionCny: number
-  outputPricePerMillionCny: number
-  updatedAt: string
-}
-
-export type TrialQuotaSummary = {
-  settings: TrialQuotaSettings
-  platformApiKeyConfigured: boolean
-  enforcementEnabled: boolean
-  total: {
-    promptTokens: number
-    promptCacheHitTokens: number
-    promptCacheMissTokens: number
-    completionTokens: number
-    totalTokens: number
-    estimatedCostCny: number
-    requestCount: number
-    remainingCny: number
-  }
-  byUser: Array<{
-    userId: string
-    budgetCny: number
-    remainingCny: number
-    promptTokens: number
-    promptCacheHitTokens: number
-    promptCacheMissTokens: number
-    completionTokens: number
-    totalTokens: number
-    estimatedCostCny: number
-    requestCount: number
-  }>
-}
-
 export type AdminOverviewPayload = {
   generatedAt: string
   dataRoot: string
@@ -99,9 +60,8 @@ export type AdminOverviewPayload = {
   }
   llm: {
     userKeyModeEnabled: boolean
-    platformQuotaEnabled: boolean
+    platformBalanceEnabled: boolean
   }
-  quota: TrialQuotaSummary
   billing: BillingAdminSummary
   users: AdminUserOverview[]
 }
@@ -133,18 +93,7 @@ async function readAdminResponse<T>(res: Response, fallbackMessage: string): Pro
 
 export async function getAdminOverview(): Promise<AdminOverviewPayload> {
   const res = await fetch("/api/admin/overview", { cache: "no-store" })
-  return readAdminResponse<AdminOverviewPayload>(res, "后台数据加载失败")
-}
-
-export async function updateAdminTrialQuotaSettings(
-  input: Partial<Omit<TrialQuotaSettings, "updatedAt">>,
-): Promise<TrialQuotaSummary> {
-  const res = await fetch("/api/admin/quota", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  })
-  return readAdminResponse<TrialQuotaSummary>(res, "额度设置保存失败")
+  return readAdminResponse<AdminOverviewPayload>(res, "Admin data failed to load")
 }
 
 export async function adjustAdminBillingBalance(input: {
@@ -157,7 +106,7 @@ export async function adjustAdminBillingBalance(input: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   })
-  return readAdminResponse<BillingUserSummary>(res, "余额调整失败")
+  return readAdminResponse<BillingUserSummary>(res, "Balance adjustment failed")
 }
 
 export async function updateAdminBillingSettings(input: BillingSettingsUpdateInput): Promise<BillingAdminSummary> {
@@ -166,7 +115,7 @@ export async function updateAdminBillingSettings(input: BillingSettingsUpdateInp
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   })
-  return readAdminResponse<BillingAdminSummary>(res, "余额设置保存失败")
+  return readAdminResponse<BillingAdminSummary>(res, "Balance settings failed to save")
 }
 
 export async function saveAdminPlatformKey(input: {
@@ -177,7 +126,7 @@ export async function saveAdminPlatformKey(input: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   })
-  return readAdminResponse<BillingPlatformKeyStatus>(res, "平台 API Key 保存失败")
+  return readAdminResponse<BillingPlatformKeyStatus>(res, "Platform API key failed to save")
 }
 
 export async function testAdminPlatformKey(input: {
@@ -188,12 +137,12 @@ export async function testAdminPlatformKey(input: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   })
-  return readAdminResponse<{ ok: true; model: string }>(res, "平台 API Key 测试失败")
+  return readAdminResponse<{ ok: true; model: string }>(res, "Platform API key test failed")
 }
 
 export async function clearAdminPlatformKey(): Promise<BillingPlatformKeyStatus> {
   const res = await fetch("/api/admin/billing/platform-key", { method: "DELETE" })
-  return readAdminResponse<BillingPlatformKeyStatus>(res, "平台 API Key 清除失败")
+  return readAdminResponse<BillingPlatformKeyStatus>(res, "Platform API key failed to clear")
 }
 
 export async function createAdminInvite(input: {
@@ -204,7 +153,7 @@ export async function createAdminInvite(input: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   })
-  return readAdminResponse<AdminInviteOverview>(res, "邀请码生成失败")
+  return readAdminResponse<AdminInviteOverview>(res, "Invite creation failed")
 }
 
 export async function updateAdminInvite(
@@ -216,5 +165,5 @@ export async function updateAdminInvite(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   })
-  return readAdminResponse<AdminInviteOverview>(res, "邀请码保存失败")
+  return readAdminResponse<AdminInviteOverview>(res, "Invite failed to save")
 }

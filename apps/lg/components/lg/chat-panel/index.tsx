@@ -19,7 +19,6 @@ interface ChatPanelProps {
   activeThreadId: string
   selectedTurnId: string | null
   turnBranchNavigation: Record<string, TurnBranchNavigation>
-  reviewing: boolean
   citations: ChatCitation[]
   settingCards: SettingCard[]
   importedMaterials: ImportedMaterial[]
@@ -29,7 +28,6 @@ interface ChatPanelProps {
   applyingProposalId: string | null
   onSelectTurn: (turnId: string) => void
   onSend: (text: string, citations: ChatCitation[], options: ChatSendOptions) => Promise<void>
-  onReview: () => Promise<void>
   onAddCitation: (reference: ChatReference) => void
   onRemoveCitation: (cardId: string) => void
   onClearCitations: () => void
@@ -58,7 +56,6 @@ export function ChatPanel({
   activeThreadId,
   selectedTurnId,
   turnBranchNavigation,
-  reviewing,
   citations,
   settingCards,
   importedMaterials,
@@ -68,7 +65,6 @@ export function ChatPanel({
   applyingProposalId,
   onSelectTurn,
   onSend,
-  onReview,
   onAddCitation,
   onRemoveCitation,
   onClearCitations,
@@ -132,8 +128,6 @@ export function ChatPanel({
         messages={messages}
         selectedTurnId={selectedTurnId}
         threads={threads}
-        reviewing={reviewing}
-        onReview={onReview}
         onCreateThread={onCreateThread}
         onSelectThread={onSelectThread}
         onRenameThread={onRenameThread}
@@ -188,10 +182,8 @@ export function ChatPanel({
         onOpenChange={setCommandOpen}
         activeThreadId={activeThreadId}
         threads={threads}
-        reviewing={reviewing}
         onCreateThread={onCreateThread}
         onSelectThread={onSelectThread}
-        onReview={() => void onReview()}
         onFocusComposer={handleFocusComposer}
       />
     </section>

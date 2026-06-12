@@ -2,7 +2,6 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { getAuthAdminSnapshot, type AuthInviteOverview } from "@/lib/server/auth-store"
 import { getGlobalDataRoot } from "@/lib/server/paths"
-import { getTrialQuotaSummary, type TrialQuotaSummary } from "@/lib/server/trial-quota-store"
 import { getBillingAdminSummary } from "@/lib/server/billing-store"
 import type { BillingAdminSummary } from "@/lib/billing"
 
@@ -39,9 +38,8 @@ export type AdminOverviewPayload = {
   }
   llm: {
     userKeyModeEnabled: boolean
-    platformQuotaEnabled: boolean
+    platformBalanceEnabled: boolean
   }
-  quota: TrialQuotaSummary
   billing: BillingAdminSummary
   users: AdminUserOverview[]
 }
@@ -120,10 +118,7 @@ async function readUserAppSettings(userRoot: string): Promise<UserAppSettingsInf
 }
 
 export async function getAdminOverview(): Promise<AdminOverviewPayload> {
-  const [snapshot, quota] = await Promise.all([
-    getAuthAdminSnapshot(),
-    getTrialQuotaSummary(),
-  ])
+  const snapshot = await getAuthAdminSnapshot()
   const billing = await getBillingAdminSummary(snapshot.users.map((user) => user.id))
   const now = Date.now()
   const dataRoot = getGlobalDataRoot()
@@ -188,9 +183,8 @@ export async function getAdminOverview(): Promise<AdminOverviewPayload> {
     },
     llm: {
       userKeyModeEnabled: true,
-      platformQuotaEnabled: billing.platformApiKeyConfigured && billing.settings.platformEnabled,
+      platformBalanceEnabled: billing.platformApiKeyConfigured && billing.settings.platformEnabled,
     },
-    quota,
     billing,
     users,
   }

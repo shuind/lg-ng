@@ -25,7 +25,6 @@ export interface AppShellProps {
   activeThreadId: string
   selectedTurnId: string | null
   turnBranchNavigation: Record<string, TurnBranchNavigation>
-  reviewing: boolean
   mode: AppMode
   collapsed: boolean
   chatCitations: ChatCitation[]
@@ -52,7 +51,6 @@ export interface AppShellProps {
   onRenameBook: (bookId: string, newTitle: string) => void
   onSelectTurn: (turnId: string) => void
   onSend: (text: string, citations: ChatCitation[], options: ChatSendOptions) => Promise<void>
-  onReview: () => Promise<void>
   onAddCitation: (reference: ChatReference) => void
   onRemoveCitation: (cardId: string) => void
   onClearCitations: () => void

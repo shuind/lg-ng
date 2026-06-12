@@ -44,8 +44,8 @@ export const PUT = withAdminRoute(async (request: Request) => {
     return NextResponse.json(await savePlatformBillingApiKey(apiKey))
   } catch (error) {
     const message = error instanceof Error && error.message === "missing_api_key"
-      ? "请输入平台 API Key"
-      : "保存平台 API Key 失败"
+      ? "Enter a platform API key"
+      : "Platform API key failed to save"
     return NextResponse.json({ error: message }, { status: 400 })
   }
 })
@@ -58,12 +58,12 @@ export const POST = withAdminRoute(async (request: Request) => {
       ? body.apiKey.trim()
       : getPlatformBillingApiKey()
     if (!candidateKey) {
-      return NextResponse.json({ error: "平台 API Key 未配置" }, { status: 400 })
+      return NextResponse.json({ error: "Platform API key is not configured" }, { status: 400 })
     }
     return NextResponse.json(await testDeepSeekKey(candidateKey))
   } catch (error) {
     console.error("[api/admin/billing/platform-key] test error:", error)
-    return NextResponse.json({ error: "平台 API Key 测试失败" }, { status: 400 })
+    return NextResponse.json({ error: "Platform API key test failed" }, { status: 400 })
   }
 })
 

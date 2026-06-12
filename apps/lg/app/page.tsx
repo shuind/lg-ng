@@ -30,7 +30,6 @@ import {
   applyProposal,
   discardProposal,
   sendMessageStream,
-  runBookReview,
   createThread,
   forkThread,
   getThread,
@@ -79,7 +78,6 @@ export default function Page() {
   const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([])
   const [rollingBackLedgerEntryId, setRollingBackLedgerEntryId] = useState<string | null>(null)
   const [applyingProposalId, setApplyingProposalId] = useState<string | null>(null)
-  const [reviewing, setReviewing] = useState(false)
   const [activeBookId, setActiveBookId] = useState<string>("")
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null)
   const [mode, setMode] = useState<AppMode>("chat")
@@ -719,92 +717,6 @@ export default function Page() {
     }
   }
 
-  async function handleReview() {
-    if (!activeBookId || !activeThreadId || reviewing) return
-    if (turns.some((turn) => turn.threadId === activeThreadId && turn.status === "running")) {
-      toast({
-        title: "上一轮还在运行",
-        description: "等当前回复完成后再发起新的任务。",
-      })
-      return
-    }
-    const targetThread = threads.find((thread) => thread.id === activeThreadId)
-    if (targetThread && targetThread.status !== "active") return
-
-    const optimisticTurnId = `turn-local-review-${Date.now()}`
-    const ts = new Date().toISOString()
-    const optimisticUser: Message = {
-      id: `msg-local-review-${Date.now()}`,
-      threadId: activeThreadId,
-      turnId: optimisticTurnId,
-      role: "user",
-      content: "体检：增量连续性 / 设定冲突 / 节奏 / 文风（dirty-index）",
-      version: 1,
-      createdAt: ts,
-    }
-    const optimisticTurn: Turn = {
-      id: optimisticTurnId,
-      threadId: activeThreadId,
-      userMessageId: optimisticUser.id,
-      status: "running",
-      createdAt: ts,
-      updatedAt: ts,
-    }
-
-    setReviewing(true)
-    setMessages((current) => [...current, optimisticUser])
-    setTurns((current) => [...current, optimisticTurn])
-    setSelectedTurnId(optimisticTurnId)
-    setActiveLeafTurnId(optimisticTurnId)
-
-    try {
-      const result = await runBookReview(activeBookId, activeThreadId, { kind: "continuity" })
-      setThreads((current) => upsertById(current, result.thread))
-      setTurns((current) => upsertTurnById(current.filter((turn) => turn.id !== optimisticTurnId), result.turn))
-      setMessages((current) => {
-        const withoutOptimistic = current.filter((message) => message.id !== optimisticUser.id)
-        return [
-          ...withoutOptimistic,
-          result.userMessage,
-          ...(result.assistantMessage ? [result.assistantMessage] : []),
-        ].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-      })
-      setSelectedTurnId(result.turn.id)
-      setActiveLeafTurnId(result.turn.id)
-    } catch (err) {
-      console.error("[handleReview] 体检失败:", err)
-      const failedAt = new Date().toISOString()
-      const failedTurn: Turn = {
-        ...optimisticTurn,
-        status: "failed",
-        error: err instanceof Error ? err.message : "体检失败",
-        updatedAt: failedAt,
-      }
-      const assistantMessage: Message = {
-        id: `msg-local-review-error-${Date.now()}`,
-        threadId: activeThreadId,
-        turnId: optimisticTurnId,
-        role: "assistant",
-        content: "体检失败，请稍后重试。",
-        version: 1,
-        createdAt: failedAt,
-        events: [
-          {
-            id: `event-local-review-error-${Date.now()}`,
-            turnId: optimisticTurnId,
-            type: "error",
-            message: failedTurn.error,
-            createdAt: failedAt,
-          },
-        ],
-      }
-      setTurns((current) => upsertTurnById(current, failedTurn))
-      setMessages((current) => [...current, assistantMessage])
-    } finally {
-      setReviewing(false)
-    }
-  }
-
   async function handleSendWithThread(
     text: string,
     threadId: string,
@@ -1120,7 +1032,6 @@ export default function Page() {
   const onRenameBook = useStableCallback(handleRenameBook)
   const onSelectTurn = useStableCallback((turnId: string) => setSelectedTurnId(turnId))
   const onSend = useStableCallback(handleSend)
-  const onReview = useStableCallback(handleReview)
   const onAddCitation = useStableCallback(handleAddCitation)
   const onRemoveCitation = useStableCallback(handleRemoveCitation)
   const onClearCitations = useStableCallback(handleClearCitations)
@@ -1161,7 +1072,6 @@ export default function Page() {
       activeThreadId={activeThreadId}
       selectedTurnId={selectedTurnId}
       turnBranchNavigation={chatThreadView.turnBranchNavigation}
-      reviewing={reviewing}
       mode={mode}
       collapsed={collapsed}
       chatCitations={chatCitations}
@@ -1188,7 +1098,6 @@ export default function Page() {
       onRenameBook={onRenameBook}
       onSelectTurn={onSelectTurn}
       onSend={onSend}
-      onReview={onReview}
       onAddCitation={onAddCitation}
       onRemoveCitation={onRemoveCitation}
       onClearCitations={onClearCitations}

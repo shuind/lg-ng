@@ -22,8 +22,8 @@ import { decryptSecret, encryptSecret, maskSecret } from "@/lib/server/secret-cr
 const BILLING_SETTINGS_FILE = "billing-settings.json"
 const BILLING_LEDGER_FILE = "billing-ledger.jsonl"
 const PLATFORM_LLM_SETTINGS_FILE = "platform-llm-settings.json"
-const QUOTA_SETTINGS_FILE = "quota-settings.json"
-const QUOTA_USAGE_FILE = "quota-usage.jsonl"
+const LEGACY_SETTINGS_FILE = "quota-settings.json"
+const LEGACY_USAGE_FILE = "quota-usage.jsonl"
 const AUTH_FILE = "auth.json"
 const DEFAULT_UPDATED_AT = "1970-01-01T00:00:00.000Z"
 
@@ -35,7 +35,7 @@ type TokenUsage = {
   totalTokens: number
 }
 
-type TrialQuotaSettingsShape = {
+type LegacyBalanceSettingsShape = {
   enabled: boolean
   perUserBudgetCny: number
   userBudgetsCny: Record<string, number>
@@ -44,7 +44,7 @@ type TrialQuotaSettingsShape = {
   outputPricePerMillionCny: number
 }
 
-type TrialQuotaUsageRecordShape = {
+type LegacyBalanceUsageRecordShape = {
   userId: string
   provider: string
   model: string
@@ -83,12 +83,12 @@ function platformLlmSettingsPath(): string {
   return path.join(adminDir(), PLATFORM_LLM_SETTINGS_FILE)
 }
 
-function quotaSettingsPath(): string {
-  return path.join(adminDir(), QUOTA_SETTINGS_FILE)
+function legacySettingsPath(): string {
+  return path.join(adminDir(), LEGACY_SETTINGS_FILE)
 }
 
-function quotaUsagePath(): string {
-  return path.join(adminDir(), QUOTA_USAGE_FILE)
+function legacyUsagePath(): string {
+  return path.join(adminDir(), LEGACY_USAGE_FILE)
 }
 
 function authPath(): string {
@@ -116,7 +116,7 @@ function normalizeTokenCount(value: unknown): number {
   return Math.floor(numberValue)
 }
 
-function defaultTrialQuotaSettings(): TrialQuotaSettingsShape {
+function defaultLegacyBalanceSettings(): LegacyBalanceSettingsShape {
   return {
     enabled: process.env.LG_TRIAL_QUOTA_ENABLED === "true",
     perUserBudgetCny: numberFromEnv("LG_TRIAL_QUOTA_PER_USER_CNY", 2),
@@ -139,10 +139,10 @@ function normalizeUserBudgets(value: unknown): Record<string, number> {
   }))
 }
 
-function readTrialQuotaSettingsSync(): TrialQuotaSettingsShape {
-  const defaults = defaultTrialQuotaSettings()
+function readLegacyBalanceSettingsSync(): LegacyBalanceSettingsShape {
+  const defaults = defaultLegacyBalanceSettings()
   try {
-    const raw = JSON.parse(fs.readFileSync(quotaSettingsPath(), "utf8")) as Partial<TrialQuotaSettingsShape> & {
+    const raw = JSON.parse(fs.readFileSync(legacySettingsPath(), "utf8")) as Partial<LegacyBalanceSettingsShape> & {
       inputPricePerMillionCny?: unknown
     }
     return {
@@ -164,7 +164,7 @@ function readTrialQuotaSettingsSync(): TrialQuotaSettingsShape {
   }
 }
 
-function pricingFromTrialQuota(settings = readTrialQuotaSettingsSync()): BillingPricing {
+function pricingFromLegacyBalance(settings = readLegacyBalanceSettingsSync()): BillingPricing {
   return {
     promptCacheHitPricePerMillionCny: settings.promptCacheHitPricePerMillionCny,
     promptCacheMissPricePerMillionCny: settings.promptCacheMissPricePerMillionCny,
@@ -173,18 +173,18 @@ function pricingFromTrialQuota(settings = readTrialQuotaSettingsSync()): Billing
 }
 
 function defaultBillingSettings(): BillingSettings {
-  const trialSettings = readTrialQuotaSettingsSync()
+  const legacySettings = readLegacyBalanceSettingsSync()
   return {
     version: 1,
     mode: "trial",
-    platformEnabled: trialSettings.enabled,
-    pricing: pricingFromTrialQuota(trialSettings),
+    platformEnabled: legacySettings.enabled,
+    pricing: pricingFromLegacyBalance(legacySettings),
     subscriptionPlans: BILLING_SUBSCRIPTION_PLANS,
     updatedAt: DEFAULT_UPDATED_AT,
   }
 }
 
-function normalizePricing(value: unknown, fallback = pricingFromTrialQuota()): BillingPricing {
+function normalizePricing(value: unknown, fallback = pricingFromLegacyBalance()): BillingPricing {
   const raw = value && typeof value === "object" ? value as Partial<BillingPricing> : {}
   return {
     promptCacheHitPricePerMillionCny: normalizeNonNegativeMoney(
@@ -211,7 +211,7 @@ function normalizeBillingSettings(value: unknown): BillingSettings {
     platformEnabled: typeof raw.platformEnabled === "boolean" ? raw.platformEnabled : defaults.platformEnabled,
     pricing: normalizePricing(raw.pricing, defaults.pricing),
     subscriptionPlans: BILLING_SUBSCRIPTION_PLANS,
-    migratedTrialQuotaAt: typeof raw.migratedTrialQuotaAt === "string" ? raw.migratedTrialQuotaAt : undefined,
+    migratedLegacyBalanceAt: typeof raw.migratedLegacyBalanceAt === "string" ? raw.migratedLegacyBalanceAt : undefined,
     updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : defaults.updatedAt,
   }
 }
@@ -280,9 +280,9 @@ function getPlatformKeyStatus(): BillingPlatformKeyStatus {
   }
 }
 
-function parseTrialUsageLine(line: string): TrialQuotaUsageRecordShape | null {
+function parseLegacyUsageLine(line: string): LegacyBalanceUsageRecordShape | null {
   try {
-    const raw = JSON.parse(line) as Partial<TrialQuotaUsageRecordShape> & { source?: unknown }
+    const raw = JSON.parse(line) as Partial<LegacyBalanceUsageRecordShape> & { source?: unknown }
     if (typeof raw.userId !== "string" || raw.source !== "platform") return null
     return {
       userId: raw.userId,
@@ -302,13 +302,13 @@ function parseTrialUsageLine(line: string): TrialQuotaUsageRecordShape | null {
   }
 }
 
-function readTrialUsageRecordsSync(): TrialQuotaUsageRecordShape[] {
+function readLegacyUsageRecordsSync(): LegacyBalanceUsageRecordShape[] {
   try {
-    return fs.readFileSync(quotaUsagePath(), "utf8")
+    return fs.readFileSync(legacyUsagePath(), "utf8")
       .split(/\r?\n/)
       .filter(Boolean)
-      .map(parseTrialUsageLine)
-      .filter((record): record is TrialQuotaUsageRecordShape => Boolean(record))
+      .map(parseLegacyUsageLine)
+      .filter((record): record is LegacyBalanceUsageRecordShape => Boolean(record))
   } catch {
     return []
   }
@@ -325,13 +325,13 @@ function readAuthUserIdsSync(): string[] {
   }
 }
 
-function createMigrationLedger(settings: TrialQuotaSettingsShape): BillingLedgerEntry[] {
+function createMigrationLedger(settings: LegacyBalanceSettingsShape): BillingLedgerEntry[] {
   const now = new Date().toISOString()
-  const trialUsage = readTrialUsageRecordsSync().sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+  const legacyUsage = readLegacyUsageRecordsSync().sort((left, right) => left.createdAt.localeCompare(right.createdAt))
   const userIds = new Set([
     ...readAuthUserIdsSync(),
     ...Object.keys(settings.userBudgetsCny),
-    ...trialUsage.map((record) => record.userId),
+    ...legacyUsage.map((record) => record.userId),
   ].filter(Boolean))
   const balances = new Map<string, number>()
   const entries: BillingLedgerEntry[] = []
@@ -343,16 +343,16 @@ function createMigrationLedger(settings: TrialQuotaSettingsShape): BillingLedger
     entries.push({
       id: crypto.randomUUID(),
       userId,
-      type: "trial_migration",
+      type: "balance_migration",
       amountCny: budgetCny,
       balanceAfterCny: budgetCny,
-      note: "Migrated from trial quota budget",
+      note: "Migrated from legacy balance budget",
       createdByUserId: null,
       createdAt: now,
     })
   }
 
-  for (const record of trialUsage) {
+  for (const record of legacyUsage) {
     const currentBalance = balances.get(record.userId) ?? 0
     const nextBalance = normalizeMoney(currentBalance - record.estimatedCostCny, 0)
     balances.set(record.userId, nextBalance)
@@ -374,7 +374,7 @@ function createMigrationLedger(settings: TrialQuotaSettingsShape): BillingLedger
       chargedAmountCny: record.estimatedCostCny,
       commissionAmountCny: 0,
       balanceAfterCny: nextBalance,
-      note: "Migrated from trial quota usage",
+      note: "Migrated from legacy balance usage",
       createdByUserId: null,
       createdAt: record.createdAt,
     })
@@ -393,14 +393,14 @@ function ensureBillingInitializedSync(): void {
   if (!settingsExists) {
     const settings = {
       ...defaultBillingSettings(),
-      migratedTrialQuotaAt: new Date().toISOString(),
+      migratedLegacyBalanceAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }
     fs.writeFileSync(billingSettingsPath(), `${JSON.stringify(settings, null, 2)}\n`, "utf8")
   }
 
   if (!ledgerExists) {
-    const settings = readTrialQuotaSettingsSync()
+    const settings = readLegacyBalanceSettingsSync()
     const entries = createMigrationLedger(settings)
     const content = entries.map((entry) => JSON.stringify(entry)).join("\n")
     fs.writeFileSync(billingLedgerPath(), content ? `${content}\n` : "", "utf8")
@@ -424,14 +424,17 @@ async function withBillingLock<T>(callback: () => Promise<T>): Promise<T> {
 
 function parseBillingEntryLine(line: string): BillingLedgerEntry | null {
   try {
-    const raw = JSON.parse(line) as Partial<BillingLedgerEntry>
+    const raw = JSON.parse(line) as Partial<Omit<BillingLedgerEntry, "type">> & {
+      type?: BillingLedgerEntry["type"] | "trial_migration"
+    }
     if (typeof raw.userId !== "string" || typeof raw.id !== "string") return null
     const type = raw.type === "credit_adjustment" ||
       raw.type === "debit_adjustment" ||
       raw.type === "usage" ||
       raw.type === "usage_estimate" ||
+      raw.type === "balance_migration" ||
       raw.type === "trial_migration"
-      ? raw.type
+      ? raw.type === "trial_migration" ? "balance_migration" : raw.type
       : "usage_estimate"
     const paymentSource = raw.paymentSource === "balance" || raw.paymentSource === "api" ? raw.paymentSource : undefined
     return {
@@ -549,21 +552,6 @@ export async function clearPlatformBillingApiKey(): Promise<BillingPlatformKeySt
     await fsp.mkdir(adminDir(), { recursive: true })
     await fsp.writeFile(platformLlmSettingsPath(), `${JSON.stringify(settings, null, 2)}\n`, "utf8")
     return getPlatformKeyStatus()
-  })
-}
-
-export async function syncBillingSettingsFromTrialQuota(): Promise<BillingSettings> {
-  return withBillingLock(async () => {
-    const trialSettings = readTrialQuotaSettingsSync()
-    const existing = readBillingSettingsSyncRaw()
-    const next: BillingSettings = {
-      ...existing,
-      pricing: pricingFromTrialQuota(trialSettings),
-      updatedAt: new Date().toISOString(),
-    }
-    await fsp.mkdir(adminDir(), { recursive: true })
-    await fsp.writeFile(billingSettingsPath(), `${JSON.stringify(next, null, 2)}\n`, "utf8")
-    return next
   })
 }
 

@@ -5,7 +5,7 @@ export type BillingLedgerEntryType =
   | "debit_adjustment"
   | "usage"
   | "usage_estimate"
-  | "trial_migration"
+  | "balance_migration"
 
 export type BillingSubscriptionPlanId = "starter_1" | "standard_8" | "pro_18" | "max_28"
 
@@ -28,7 +28,7 @@ export interface BillingSettings {
   platformEnabled: boolean
   pricing: BillingPricing
   subscriptionPlans: BillingSubscriptionPlan[]
-  migratedTrialQuotaAt?: string
+  migratedLegacyBalanceAt?: string
   updatedAt: string
 }
 

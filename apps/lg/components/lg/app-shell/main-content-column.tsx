@@ -17,7 +17,6 @@ type MainContentColumnProps = Pick<
   | "activeThreadId"
   | "selectedTurnId"
   | "turnBranchNavigation"
-  | "reviewing"
   | "messages"
   | "turns"
   | "threads"
@@ -31,7 +30,6 @@ type MainContentColumnProps = Pick<
   | "applyingProposalId"
   | "onSelectTurn"
   | "onSend"
-  | "onReview"
   | "onAddCitation"
   | "onRemoveCitation"
   | "onClearCitations"
@@ -59,7 +57,6 @@ export function MainContentColumn({
   activeThreadId,
   selectedTurnId,
   turnBranchNavigation,
-  reviewing,
   messages,
   turns,
   threads,
@@ -73,7 +70,6 @@ export function MainContentColumn({
   applyingProposalId,
   onSelectTurn,
   onSend,
-  onReview,
   onAddCitation,
   onRemoveCitation,
   onClearCitations,
@@ -105,7 +101,6 @@ export function MainContentColumn({
           activeThreadId={activeThreadId}
           selectedTurnId={selectedTurnId}
           turnBranchNavigation={turnBranchNavigation}
-          reviewing={reviewing}
           citations={chatCitations}
           settingCards={cards}
           importedMaterials={importedMaterials}
@@ -115,7 +110,6 @@ export function MainContentColumn({
           applyingProposalId={applyingProposalId}
           onSelectTurn={onSelectTurn}
           onSend={onSend}
-          onReview={onReview}
           onAddCitation={onAddCitation}
           onRemoveCitation={onRemoveCitation}
           onClearCitations={onClearCitations}

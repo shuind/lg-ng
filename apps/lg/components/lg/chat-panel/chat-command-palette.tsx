@@ -1,7 +1,7 @@
 ﻿"use client"
 
 import type { ReactNode } from "react"
-import { BookOpen, Check, ListChecks, Moon, Plus, Search, Sun, TerminalSquare } from "lucide-react"
+import { BookOpen, Check, Moon, Plus, Search, Sun, TerminalSquare } from "lucide-react"
 import { useTheme } from "next-themes"
 import { useWorkbenchOpen } from "@/components/lg/workbench-open-context"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -13,20 +13,16 @@ export function ChatCommandPalette({
   onOpenChange,
   activeThreadId,
   threads,
-  reviewing,
   onCreateThread,
   onSelectThread,
-  onReview,
   onFocusComposer,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   activeThreadId: string
   threads: Thread[]
-  reviewing: boolean
   onCreateThread: () => void
   onSelectThread: (threadId: string) => void
-  onReview: () => void
   onFocusComposer: () => void
 }) {
   const workbench = useWorkbenchOpen()
@@ -57,9 +53,6 @@ export function ChatCommandPalette({
           </CommandButton>
           <CommandButton icon={<Plus className="h-4 w-4" />} onClick={() => closeAndRun(onCreateThread)}>
             新建任务线程
-          </CommandButton>
-          <CommandButton icon={<ListChecks className={cn("h-4 w-4", reviewing && "animate-pulse")} />} disabled={reviewing} onClick={() => closeAndRun(onReview)}>
-            运行体检
           </CommandButton>
           <CommandButton icon={<BookOpen className="h-4 w-4" />} disabled={!workbench} onClick={() => closeAndRun(() => workbench?.openPath())}>
             打开 Workbench

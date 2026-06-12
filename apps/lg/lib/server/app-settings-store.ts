@@ -37,7 +37,6 @@ type StoredAppSettings = AppSettings & {
 
 export type EffectiveOpenAICompatibleConfig = OpenAICompatibleConfig & {
   paymentSource: AppPaymentSource
-  quotaSource: "user" | "platform"
 }
 
 function appSettingsPath(): string {
@@ -97,7 +96,6 @@ function getPlatformDeepSeekConfig(modelId: AppModelId): EffectiveOpenAICompatib
   return {
     provider: "deepseek",
     paymentSource: "balance",
-    quotaSource: "platform",
     apiKey,
     baseUrl: process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com",
     model: modelId,
@@ -176,7 +174,7 @@ export function getEffectiveOpenAICompatibleConfig(): EffectiveOpenAICompatibleC
   const userConfig = saved ? getDeepSeekConfigForSettings(saved) : null
   const paymentSource = saved?.paymentSource ?? (userConfig ? "api" : DEFAULT_PAYMENT_SOURCE)
   if (paymentSource === "api") {
-    return userConfig ? { ...userConfig, paymentSource: "api", quotaSource: "user" } : null
+    return userConfig ? { ...userConfig, paymentSource: "api" } : null
   }
   return getPlatformDeepSeekConfig(saved?.modelId ?? defaultModelIdFromEnv())
 }
