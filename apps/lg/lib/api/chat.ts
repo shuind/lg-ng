@@ -107,7 +107,7 @@ export async function sendMessageStream(
   if (!res.ok) {
     await readJsonResponse(res)
   }
-  if (!res.body) throw new Error("stream unavailable")
+  if (!res.body) throw new Error("流式响应不可用")
 
   const reader = res.body.getReader()
   const decoder = new TextDecoder()

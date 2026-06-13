@@ -88,15 +88,15 @@ export async function runTool(
       return await executeTool(tool, input, context);
     }
     if (!decision.confirmationRequired || !context.askConfirmation) {
-      return { ok: false, content: `Permission denied for ${tool.name}: ${decision.reason}` };
+      return { ok: false, content: `${tool.name} 权限被拒绝：${decision.reason}` };
     }
     if (decision.cacheKey && context.permissionCache?.has(decision.cacheKey)) {
       const cached = context.permissionCache.get(decision.cacheKey);
-      if (!cached) return { ok: false, content: `User denied ${tool.name}.` };
+      if (!cached) return { ok: false, content: `用户拒绝了 ${tool.name}。` };
     } else {
-    const approved = await context.askConfirmation(`${decision.reason}\nAllow ${tool.name}?`);
+      const approved = await context.askConfirmation(`${decision.reason}\n允许 ${tool.name}？`);
       if (decision.cacheKey) context.permissionCache?.set(decision.cacheKey, approved);
-    if (!approved) return { ok: false, content: `User denied ${tool.name}.` };
+      if (!approved) return { ok: false, content: `用户拒绝了 ${tool.name}。` };
     }
   }
 
@@ -112,6 +112,6 @@ async function executeTool(
     return await tool.execute(input, context);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return { ok: false, content: `${tool.name} failed: ${message}` };
+    return { ok: false, content: `${tool.name} 失败：${message}` };
   }
 }

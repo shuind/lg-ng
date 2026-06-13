@@ -43,7 +43,7 @@ export function ChatCommandPalette({
             命令
           </DialogTitle>
           <DialogDescription className="sr-only">
-            运行常用操作、切换线程、打开 workbench 或切换主题。
+            运行常用操作、切换线程、打开工作台或切换主题。
           </DialogDescription>
         </DialogHeader>
 
@@ -55,7 +55,7 @@ export function ChatCommandPalette({
             新建任务线程
           </CommandButton>
           <CommandButton icon={<BookOpen className="h-4 w-4" />} disabled={!workbench} onClick={() => closeAndRun(() => workbench?.openPath())}>
-            打开 Workbench
+            打开工作台
           </CommandButton>
         </div>
 

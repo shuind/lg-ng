@@ -509,13 +509,13 @@ async function rollbackLedgerEntryUnlocked(
   entryId: string,
 ): Promise<{ success: boolean; updatedAt?: string; error?: string }> {
   const entry = await getLedgerEntry(bookId, entryId)
-  if (!entry) return { success: false, error: "ledger entry not found" }
-  if (!entry.targetPath) return { success: false, error: "entry is not rollbackable" }
-  if (entry.targetPath === "ledger.jsonl") return { success: false, error: "cannot rollback ledger file" }
+  if (!entry) return { success: false, error: "变更记录不存在" }
+  if (!entry.targetPath) return { success: false, error: "这条记录无法回滚" }
+  if (entry.targetPath === "ledger.jsonl") return { success: false, error: "不能回滚变更记录文件" }
 
   const bookDir = getBookDir(bookId)
   const resolved = resolveInsideBook(bookId, entry.targetPath)
-  if (!resolved) return { success: false, error: "invalid target path" }
+  if (!resolved) return { success: false, error: "目标路径无效" }
 
   let currentContent: string | undefined
   try {
@@ -527,7 +527,7 @@ async function rollbackLedgerEntryUnlocked(
   if (entry.afterHash && sha256(currentContent ?? "") !== entry.afterHash) {
     return {
       success: false,
-      error: "file changed after this ledger entry; restore manually from history or ask the agent to reconstruct it",
+      error: "文件在这条记录之后已经变化；请从历史手动恢复，或让 AI 根据历史重建。",
     }
   }
 
@@ -544,7 +544,7 @@ async function rollbackLedgerEntryUnlocked(
   if (rollbackContent === null) {
     return {
       success: false,
-      error: "this entry has no checkpoint for direct rollback; use the diff history to reconstruct the earlier version",
+      error: "这条记录没有可直接回滚的检查点；请根据 diff 历史重建早期版本。",
     }
   }
 
@@ -561,7 +561,7 @@ async function rollbackLedgerEntryUnlocked(
     targetPath: entry.targetPath,
     beforeSnapshot: currentContent,
     afterSnapshot: rollbackContent,
-    summary: `Rollback ${entry.targetPath} to before ${entry.timestamp}`,
+    summary: `将 ${entry.targetPath} 恢复到 ${entry.timestamp} 之前`,
   })
 
   return { success: true, updatedAt }

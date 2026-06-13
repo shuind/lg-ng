@@ -23,7 +23,7 @@ async function POSTHandler(
       return NextResponse.json({ error: err.message, code: err.code }, { status: err.status })
     }
     console.error("[api/books/proposals/apply] error:", err)
-    return NextResponse.json({ error: "采纳 proposal 失败" }, { status: 500 })
+    return NextResponse.json({ error: "采纳改动提案失败" }, { status: 500 })
   }
 }
 

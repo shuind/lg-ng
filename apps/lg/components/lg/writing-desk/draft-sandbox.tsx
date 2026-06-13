@@ -90,7 +90,9 @@ export function DraftSandbox({
         <div className="border-t border-border/60 px-4 py-3 text-[12px]">
           <div className="mb-2 flex items-center justify-between gap-2">
             <div className="min-w-0 truncate font-mono text-[11px] text-foreground/80">{proposal.targetPath}</div>
-            <div className="rounded bg-background/70 px-1.5 py-0.5 text-[10.5px] text-muted-foreground">{proposal.status}</div>
+            <div className="rounded bg-background/70 px-1.5 py-0.5 text-[10.5px] text-muted-foreground">
+              {formatProposalStatus(proposal.status)}
+            </div>
           </div>
           <div className="space-y-1.5">
             {proposal.hunks.map((hunk) => (
@@ -139,4 +141,12 @@ export function DraftSandbox({
       )}
     </div>
   )
+}
+
+function formatProposalStatus(status: ProposalSummary["status"]): string {
+  if (status === "pending") return "待采纳"
+  if (status === "applied") return "已采纳"
+  if (status === "partially_applied") return "部分采纳"
+  if (status === "discarded") return "已丢弃"
+  return status
 }

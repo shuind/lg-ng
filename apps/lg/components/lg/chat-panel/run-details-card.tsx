@@ -18,11 +18,11 @@ export function RunDetailsCard({
     .map((event) => event.text ?? event.name ?? "")
     .filter(Boolean)
   const failures = [
-    ...(brief?.diagnosis ?? []).filter((item) => !item.startsWith("Token usage:")),
+    ...(brief?.diagnosis ?? []).filter((item) => !isTokenUsageText(item)),
     ...events.filter((event) => event.type === "error").map((event) => event.message ?? event.text ?? "处理失败"),
   ]
   const visibleNotes = [
-    ...(brief?.recommendations ?? []).filter((item) => !item.startsWith("Token usage:")),
+    ...(brief?.recommendations ?? []).filter((item) => !isTokenUsageText(item)),
     ...(brief?.missing ?? []).map((item) => `缺少：${item}`),
   ].slice(0, 4)
   const contextPaths = brief?.contextPaths ?? events.flatMap((event) => event.paths ?? [])
@@ -144,7 +144,7 @@ export function RunDetailsCard({
         {latestUsage && (
           <div className="rounded bg-background/60 px-2 py-1 font-mono text-[10.5px] leading-relaxed">
             <div>
-              tokens p:{latestUsage.promptTokens} hit:{latestUsage.promptCacheHitTokens ?? 0} miss:{latestUsage.promptCacheMissTokens ?? 0} c:{latestUsage.completionTokens} total:{latestUsage.totalTokens}
+              token 输入:{latestUsage.promptTokens} 缓存命中:{latestUsage.promptCacheHitTokens ?? 0} 读入:{latestUsage.promptCacheMissTokens ?? 0} 输出:{latestUsage.completionTokens} 总计:{latestUsage.totalTokens}
             </div>
             {(typeof latestUsage.estimatedCostCny === "number" || typeof latestUsage.chargedAmountCny === "number") && (
               <div>
@@ -238,12 +238,18 @@ function extractEvidenceLinks(event: Pick<ToolRun, "resultPreview">): EvidenceLi
 }
 
 function extractReadFileEvidence(preview: string): EvidenceLink[] {
-  const match = preview.match(/File:\s+(.+?)\s+Lines:\s+(\d+)-/i)
-  if (!match?.[1]) return []
+  const match = preview.match(/(?:File:\s+(.+?)\s+Lines:\s+|文件：\s*(.+?)\s+行：\s*)(\d+)-/i)
+  const path = (match?.[1] ?? match?.[2] ?? "").trim()
+  if (!path) return []
+  const line = match?.[3] ? Number(match[3]) : undefined
   return [{
-    path: match[1].trim(),
-    line: match[2] ? Number(match[2]) : undefined,
+    path,
+    line,
   }]
+}
+
+function isTokenUsageText(value: string): boolean {
+  return value.startsWith("Token usage:") || value.startsWith("token 用量：")
 }
 
 function extractSearchCanonEvidence(preview: string): EvidenceLink[] {

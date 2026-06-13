@@ -28,7 +28,7 @@ async function POSTHandler(
       typeof body.baseContent !== "string" ||
       typeof body.afterContent !== "string"
     ) {
-      return NextResponse.json({ error: "缺少 proposal 内容" }, { status: 400 })
+      return NextResponse.json({ error: "缺少改动提案内容" }, { status: 400 })
     }
     const proposal = await createProposal(bookId, {
       targetPath: body.targetPath,
@@ -43,7 +43,7 @@ async function POSTHandler(
       return NextResponse.json({ error: err.message, code: err.code }, { status: err.status })
     }
     console.error("[api/books/proposals] create error:", err)
-    return NextResponse.json({ error: "创建 proposal 失败" }, { status: 500 })
+    return NextResponse.json({ error: "创建改动提案失败" }, { status: 500 })
   }
 }
 

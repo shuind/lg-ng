@@ -7,7 +7,7 @@ export function normalizeSlashPath(value: string): string {
 export function resolveInside(cwd: string, inputPath: string): string {
   const resolved = path.resolve(cwd, inputPath);
   if (!isInside(cwd, resolved)) {
-    throw new Error(`Path escapes workspace: ${inputPath}`);
+    throw new Error(`路径超出工作区：${inputPath}`);
   }
   return resolved;
 }

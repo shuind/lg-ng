@@ -32,10 +32,10 @@ export function LedgerPreviewPanel({ entry }: { entry: LedgerEntry | null }) {
       )}
       {entry?.beforeHash && (
         <div className="shrink-0 border-t border-border/60 p-4 text-[10.5px] leading-relaxed text-muted-foreground">
-          <div className="font-mono">before: {entry.beforeHash}</div>
-          <div className="font-mono">after: {entry.afterHash}</div>
+          <div className="font-mono">变更前：{entry.beforeHash}</div>
+          <div className="font-mono">变更后：{entry.afterHash}</div>
           {entry.checkpointPath && (
-            <div className="mt-1 font-mono">checkpoint: {entry.checkpointPath}</div>
+            <div className="mt-1 font-mono">检查点：{entry.checkpointPath}</div>
           )}
         </div>
       )}

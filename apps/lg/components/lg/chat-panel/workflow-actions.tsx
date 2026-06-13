@@ -17,14 +17,14 @@ export const WORKFLOW_ACTIONS: WorkflowActionMeta[] = [
     id: "continue",
     label: "续写",
     command: "/续写",
-    description: "基于当前上下文生成可采纳的续写 proposal",
+    description: "基于当前上下文生成可采纳的续写改动提案",
     Icon: RefreshCw,
   },
   {
     id: "revise",
     label: "改稿",
     command: "/改稿",
-    description: "对已有正文或设定生成局部修改 proposal",
+    description: "对已有正文或设定生成局部改动提案",
     Icon: PenLine,
   },
   {

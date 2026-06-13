@@ -28,7 +28,7 @@ export function ThreadMenuDropdown({
   return (
     <div className="absolute right-0 top-9 z-30 w-72 rounded-lg border border-border/70 bg-popover p-2 text-[12px] text-popover-foreground shadow-lg">
       <div className="mb-1 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
-        Active Threads
+        活跃线程
       </div>
       <div className="max-h-48 overflow-y-auto">
         {activeThreads.map((thread) => (
@@ -42,13 +42,13 @@ export function ThreadMenuDropdown({
             <span className="min-w-0 flex-1 truncate">{thread.title}</span>
           </button>
         ))}
-        {activeThreads.length === 0 && <div className="px-2 py-2 text-muted-foreground">暂无 active thread</div>}
+        {activeThreads.length === 0 && <div className="px-2 py-2 text-muted-foreground">暂无活跃线程</div>}
       </div>
 
       {archivedThreads.length > 0 && (
         <>
           <div className="mt-2 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
-            Archived
+            已归档
           </div>
           {archivedThreads.map((thread) => (
             <div key={thread.id} className="flex items-center gap-1 rounded-md px-2 py-1.5">

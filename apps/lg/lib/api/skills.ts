@@ -19,9 +19,9 @@ function fallbackStyleGuideSkill(bookId: string): Skill {
 export async function listSkills(bookId: string): Promise<Skill[]> {
   try {
     const res = await fetch(`/api/books/${bookId}/skills`, { cache: "no-store" })
-    if (!res.ok) throw new Error("api failed")
+    if (!res.ok) throw new Error("接口请求失败")
     const data = await res.json()
-    if (!Array.isArray(data)) throw new Error("invalid")
+    if (!Array.isArray(data)) throw new Error("接口返回格式无效")
     return data
   } catch {
     await delay()
@@ -119,7 +119,7 @@ export async function updateSkill(bookId: string, input: UpdateSkillRequest): Pr
 export async function getStyleGuideSkill(bookId: string): Promise<{ skill: Skill; summary: string }> {
   try {
     const res = await fetch(`/api/books/${bookId}/skills/style-guide`, { cache: "no-store" })
-    if (!res.ok) throw new Error("api failed")
+    if (!res.ok) throw new Error("接口请求失败")
     return await res.json()
   } catch {
     await delay()
@@ -136,7 +136,7 @@ export async function refreshStyleGuideSummary(bookId: string): Promise<{ skill:
       method: "POST",
       headers: { "Content-Type": "application/json" },
     })
-    if (!res.ok) throw new Error("api failed")
+    if (!res.ok) throw new Error("接口请求失败")
     return await res.json()
   } catch {
     await delay()

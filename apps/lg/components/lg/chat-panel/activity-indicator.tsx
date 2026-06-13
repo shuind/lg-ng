@@ -49,7 +49,7 @@ function deriveActivityState(events: AgentEvent[], streaming: boolean): {
   detail?: string
   tone: "idle" | "tool" | "done" | "error"
 } {
-  const visibleEvents = events.filter((event) => !event.text?.startsWith("Token usage:"))
+  const visibleEvents = events.filter((event) => !isTokenUsageText(event.text))
   const lastError = [...visibleEvents].reverse().find((event) => event.type === "error")
   if (lastError) {
     return {
@@ -121,8 +121,12 @@ function formatToolTitle(name: string): string {
   if (normalized === "read_file") return "正在读取文件"
   if (normalized === "grep" || normalized === "glob" || normalized === "search_canon") return "正在检索资料"
   if (normalized === "write_file" || normalized === "edit_file") return "正在写入项目文件"
-  if (normalized === "propose_file_change") return "正在生成改动 proposal"
+  if (normalized === "propose_file_change") return "正在生成改动提案"
   return `正在调用 ${normalized}`
+}
+
+function isTokenUsageText(value?: string): boolean {
+  return Boolean(value?.startsWith("Token usage:") || value?.startsWith("token 用量："))
 }
 
 function summarizeArgs(value?: string): string | undefined {

@@ -101,7 +101,7 @@ describe("workspace tools", () => {
     const cwd = await tempDir();
     const result = await runTool(WriteFileTool, { path: "../escape.md", content: "x" }, { cwd });
     expect(result.ok).toBe(false);
-    expect(result.content).toContain("Path escapes workspace");
+    expect(result.content).toContain("路径超出工作区");
   });
 
   it("returns tool failures as results", async () => {
@@ -109,7 +109,7 @@ describe("workspace tools", () => {
     await writeFile(path.join(cwd, "a.md"), "hello", "utf8");
     const result = await runTool(ReadFileTool, { path: "missing.md" }, { cwd });
     expect(result.ok).toBe(false);
-    expect(result.content).toContain("read_file failed");
+    expect(result.content).toContain("read_file 失败");
   });
 
   it("searches canon by alias with paragraph anchors", async () => {
@@ -158,7 +158,7 @@ describe("workspace tools", () => {
     const cwd = await tempDir();
     const result = await runTool(ShellTool, { command: "git reset --hard" }, { cwd });
     expect(result.ok).toBe(false);
-    expect(result.content).toContain("Permission denied");
+    expect(result.content).toContain("权限被拒绝");
   });
 
   it("proposes file changes without mutating files", async () => {

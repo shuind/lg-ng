@@ -141,7 +141,7 @@ export function AssistantMessageBubble({
                 title={entry.targetPath}
                 subtitle={entry.summary}
                 patch={entry.diffPatch}
-                emptyMessage={entry.diffOmitted ? "diff 过大，完整内容已保留在 Ledger。" : "本次改动没有可预览 diff。"}
+                emptyMessage={entry.diffOmitted ? "diff 过大，完整内容已保留在变更记录。" : "本次改动没有可预览 diff。"}
                 action={(
                   <div className="flex shrink-0 items-center gap-1">
                     {entry.diffOmitted && (
@@ -152,7 +152,7 @@ export function AssistantMessageBubble({
                         className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] text-muted-foreground transition hover:bg-secondary hover:text-foreground disabled:opacity-50"
                       >
                         <ExternalLink className="h-3 w-3" />
-                        Ledger
+                        变更记录
                       </button>
                     )}
                     <button
@@ -338,12 +338,14 @@ function parseAskUserResult(value?: string): string | null {
   const trimmed = value?.trim()
   if (!trimmed) return null
 
-  const marker = "Question for user:"
-  const markerIndex = trimmed.indexOf(marker)
-  if (markerIndex < 0) return null
+  const markers = ["给用户的问题：", "Question for user:"]
+  const marker = markers.find((item) => trimmed.includes(item))
+  const markerIndex = marker ? trimmed.indexOf(marker) : -1
+  if (!marker || markerIndex < 0) return null
 
   let question = trimmed.slice(markerIndex + marker.length).trim()
   const footerIndex = [
+    "在最终回复中向用户提出这个问题",
     "The CLI will show",
     "Present this question to the user",
   ].map((footer) => question.indexOf(footer)).filter((index) => index >= 0).sort((a, b) => a - b)[0]
@@ -394,7 +396,7 @@ function ProposalCard({
           {proposal.targetPath}
         </span>
         <span className="rounded bg-background/70 px-1.5 py-0.5 text-[10.5px] text-muted-foreground">
-          {proposal.status}
+          {formatProposalStatus(proposal.status)}
         </span>
       </summary>
       <div className="space-y-2 border-t hairline px-3 py-2">
@@ -453,4 +455,12 @@ function ProposalCard({
       </div>
     </details>
   )
+}
+
+function formatProposalStatus(status: ProposalSummary["status"]): string {
+  if (status === "pending") return "待采纳"
+  if (status === "applied") return "已采纳"
+  if (status === "partially_applied") return "部分采纳"
+  if (status === "discarded") return "已丢弃"
+  return status
 }

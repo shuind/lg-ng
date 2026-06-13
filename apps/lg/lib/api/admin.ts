@@ -93,7 +93,7 @@ async function readAdminResponse<T>(res: Response, fallbackMessage: string): Pro
 
 export async function getAdminOverview(): Promise<AdminOverviewPayload> {
   const res = await fetch("/api/admin/overview", { cache: "no-store" })
-  return readAdminResponse<AdminOverviewPayload>(res, "Admin data failed to load")
+  return readAdminResponse<AdminOverviewPayload>(res, "管理后台数据加载失败")
 }
 
 export async function adjustAdminBillingBalance(input: {
@@ -106,7 +106,7 @@ export async function adjustAdminBillingBalance(input: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   })
-  return readAdminResponse<BillingUserSummary>(res, "Balance adjustment failed")
+  return readAdminResponse<BillingUserSummary>(res, "余额调整失败")
 }
 
 export async function updateAdminBillingSettings(input: BillingSettingsUpdateInput): Promise<BillingAdminSummary> {
@@ -115,7 +115,7 @@ export async function updateAdminBillingSettings(input: BillingSettingsUpdateInp
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   })
-  return readAdminResponse<BillingAdminSummary>(res, "Balance settings failed to save")
+  return readAdminResponse<BillingAdminSummary>(res, "余额设置保存失败")
 }
 
 export async function saveAdminPlatformKey(input: {
@@ -126,7 +126,7 @@ export async function saveAdminPlatformKey(input: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   })
-  return readAdminResponse<BillingPlatformKeyStatus>(res, "Platform API key failed to save")
+  return readAdminResponse<BillingPlatformKeyStatus>(res, "Platform API Key 保存失败")
 }
 
 export async function testAdminPlatformKey(input: {
@@ -137,12 +137,12 @@ export async function testAdminPlatformKey(input: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   })
-  return readAdminResponse<{ ok: true; model: string }>(res, "Platform API key test failed")
+  return readAdminResponse<{ ok: true; model: string }>(res, "Platform API Key 测试失败")
 }
 
 export async function clearAdminPlatformKey(): Promise<BillingPlatformKeyStatus> {
   const res = await fetch("/api/admin/billing/platform-key", { method: "DELETE" })
-  return readAdminResponse<BillingPlatformKeyStatus>(res, "Platform API key failed to clear")
+  return readAdminResponse<BillingPlatformKeyStatus>(res, "Platform API Key 清除失败")
 }
 
 export async function createAdminInvite(input: {
@@ -153,7 +153,7 @@ export async function createAdminInvite(input: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   })
-  return readAdminResponse<AdminInviteOverview>(res, "Invite creation failed")
+  return readAdminResponse<AdminInviteOverview>(res, "邀请码创建失败")
 }
 
 export async function updateAdminInvite(
@@ -165,5 +165,5 @@ export async function updateAdminInvite(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   })
-  return readAdminResponse<AdminInviteOverview>(res, "Invite failed to save")
+  return readAdminResponse<AdminInviteOverview>(res, "邀请码保存失败")
 }

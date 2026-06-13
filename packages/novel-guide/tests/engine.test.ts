@@ -123,12 +123,12 @@ describe("AgentEngine project context", () => {
       message.content.startsWith("NG_PROJECT_CONTEXT:")
     )?.content;
     const lastUser = modelMessages.at(-1)?.content;
-    expect(projectContext).toContain("LG legacy material index");
+    expect(projectContext).toContain("LG 旧素材索引");
     expect(projectContext).toContain("CLAUDE.md");
     expect(projectContext).toContain("hundred year storm");
     expect(projectContext).toContain("skills/style.md");
     expect(projectContext).toContain("chapter endings");
-    expect(lastUser).toBe("User request:\nwrite chapter one");
+    expect(lastUser).toBe("用户请求：\nwrite chapter one");
   });
 
   it("uses configured project context and does not persist it into session history", async () => {
@@ -182,7 +182,7 @@ describe("AgentEngine project context", () => {
     expect(rendered).not.toContain("NG_PROJECT_CONTEXT");
     expect(rendered).toContain("NG_CHANGE_MEMO");
     expect(rendered).toContain("write notes.md");
-    expect(rendered).toContain("User request:\\nwrite notes");
+    expect(rendered).toContain("用户请求：\\nwrite notes");
   });
 
   it("repairs preloaded sessions that are missing a primary system prompt", async () => {

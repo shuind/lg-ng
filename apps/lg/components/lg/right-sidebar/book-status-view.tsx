@@ -9,7 +9,7 @@ const STATUS_SOURCES = [
   { title: "章节状态", path: "状态追踪/章节状态.md" },
   { title: "当前冲突", path: "状态追踪/当前冲突.md" },
   { title: "角色位置", path: "状态追踪/角色位置.md" },
-  { title: "Open 伏笔", path: "剧情管理/伏笔清单.md" },
+  { title: "未收伏笔", path: "剧情管理/伏笔清单.md" },
 ]
 
 interface LoadedStatusSource {
@@ -96,7 +96,7 @@ export function BookStatusView({
 
       {sources.length === 0 ? (
         <div className="mt-10 rounded-lg border border-dashed border-border/70 px-3 py-6 text-center text-[12px] leading-relaxed text-muted-foreground">
-          还没有可汇总的状态追踪文件。打开 workbench 后可在“状态追踪”里维护当前冲突、角色位置和章节状态。
+          还没有可汇总的状态追踪文件。打开工作台后可在“状态追踪”里维护当前冲突、角色位置和章节状态。
         </div>
       ) : (
         sources.map((source) => (

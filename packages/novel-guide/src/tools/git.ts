@@ -21,7 +21,7 @@ async function git(cwd: string, args: string[]): Promise<{ code: number | null; 
 
 export const GitStatusTool: Tool = {
   name: "git_status",
-  description: "Show git status for the workspace.",
+  description: "查看工作区 git 状态。",
   readonly: true,
   parameters: { type: "object", properties: {} },
   requiresPermission() {
@@ -29,13 +29,13 @@ export const GitStatusTool: Tool = {
   },
   async execute(_input, context) {
     const result = await git(context.cwd, ["status", "--short"]);
-    return { ok: result.code === 0, content: result.stdout || result.stderr || "Clean or not a git repository." };
+    return { ok: result.code === 0, content: result.stdout || result.stderr || "干净或不是 git 仓库。" };
   },
 };
 
 export const GitDiffTool: Tool = {
   name: "git_diff",
-  description: "Show git diff for the workspace or a path.",
+  description: "查看整个工作区或指定路径的 git diff。",
   readonly: true,
   parameters: {
     type: "object",
@@ -50,7 +50,7 @@ export const GitDiffTool: Tool = {
     const args = ["diff", "--"];
     if (typeof input.path === "string" && input.path) args.push(input.path);
     const result = await git(context.cwd, args);
-    return { ok: result.code === 0, content: result.stdout || result.stderr || "No diff." };
+    return { ok: result.code === 0, content: result.stdout || result.stderr || "无 diff。" };
   },
 };
 

@@ -494,10 +494,10 @@ export function AppSettingsPanel({ className }: { className?: string }) {
                     <div className="min-w-0">
                       <div className="truncate text-foreground">{entry.feature ?? "AI 调用"} · {formatPaymentSource(entry.paymentSource)}</div>
                       <div className="truncate font-mono text-[11px] text-muted-foreground">
-                        hit {formatTokenCount(entry.promptCacheHitTokens ?? 0)} / read {formatTokenCount(entry.promptCacheMissTokens ?? 0)} / out {formatTokenCount(entry.completionTokens ?? 0)}
+                        缓存命中 {formatTokenCount(entry.promptCacheHitTokens ?? 0)} / 读入 {formatTokenCount(entry.promptCacheMissTokens ?? 0)} / 输出 {formatTokenCount(entry.completionTokens ?? 0)}
                       </div>
                     </div>
-                    <div className="font-mono text-muted-foreground">{formatTokenCount(entry.totalTokens ?? 0)} tok</div>
+                    <div className="font-mono text-muted-foreground">{formatTokenCount(entry.totalTokens ?? 0)} token</div>
                     <div className="font-mono text-foreground">{formatMoney(entry.estimatedCostCny ?? 0)}</div>
                   </div>
                 ))}

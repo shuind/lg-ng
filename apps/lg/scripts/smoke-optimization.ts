@@ -140,7 +140,7 @@ async function main() {
   try {
     await applyProposal(book.id, staleProposal.id)
   } catch (error) {
-    staleRejected = error instanceof Error && error.message.includes("target file changed")
+    staleRejected = error instanceof Error && error.message.includes("目标文件已在提案创建后发生变化")
   }
   if (!staleRejected) throw new Error("stale proposal was not rejected")
 

@@ -10,12 +10,12 @@ function str(value: unknown): string {
 
 export const GlobTool: Tool = {
   name: "glob",
-  description: "List files matching a glob pattern relative to the workspace.",
+  description: "列出工作区内匹配 glob 的文件。",
   readonly: true,
   parameters: {
     type: "object",
     properties: {
-      pattern: { type: "string", description: "Glob pattern, e.g. canon/**/*.md" },
+      pattern: { type: "string", description: "Glob 模式，如 canon/**/*.md" },
       limit: { type: "number" },
     },
     required: ["pattern"],
@@ -32,19 +32,19 @@ export const GlobTool: Tool = {
       ignore: ["node_modules/**", ".git/**", "dist/**"],
     });
     const shown = entries.slice(0, limit).map(normalizeSlashPath);
-    return { ok: true, content: shown.length ? shown.join("\n") : "No files matched.", metadata: { total: entries.length } };
+    return { ok: true, content: shown.length ? shown.join("\n") : "无匹配文件。", metadata: { total: entries.length } };
   },
 };
 
 export const GrepTool: Tool = {
   name: "grep",
-  description: "Search text in workspace files with a regular expression.",
+  description: "用正则搜索工作区文件文本。",
   readonly: true,
   parameters: {
     type: "object",
     properties: {
-      pattern: { type: "string", description: "JavaScript regular expression." },
-      include: { type: "string", description: "Glob include pattern, default **/*.{md,txt,json,ts,tsx,js}" },
+      pattern: { type: "string", description: "JavaScript 正则。" },
+      include: { type: "string", description: "Glob 包含模式，默认 **/*.{md,txt,json,ts,tsx,js}" },
       limit: { type: "number" },
     },
     required: ["pattern"],
@@ -81,7 +81,7 @@ export const GrepTool: Tool = {
         }
       }
     }
-    return { ok: true, content: matches.length ? matches.join("\n") : "No matches.", metadata: { searched: files.length } };
+    return { ok: true, content: matches.length ? matches.join("\n") : "无匹配。", metadata: { searched: files.length } };
   },
 };
 
@@ -139,13 +139,13 @@ function extractAliasTerms(content: string, fileName: string): string[] {
 
 export const SearchCanonTool: Tool = {
   name: "search_canon",
-  description: "Search novel canon and prose semantically with alias priority and paragraph-level anchors. Prefer this over grep for characters, settings, foreshadowing, and long-form continuity lookup.",
+  description: "按别名优先、段落锚点搜索小说正典和正文。查人物、设定、伏笔、长文连续性时优先于 grep。",
   readonly: true,
   parameters: {
     type: "object",
     properties: {
       query: { type: "string" },
-      scope: { type: "string", description: "Optional glob scope. Defaults to canon/drafts/chapter/setting markdown files." },
+      scope: { type: "string", description: "可选 glob 范围。默认搜 canon/drafts/章节/设定 markdown。" },
       limit: { type: "number" },
     },
     required: ["query"],
@@ -155,7 +155,7 @@ export const SearchCanonTool: Tool = {
   },
   async execute(input, context) {
     const query = str(input.query).trim();
-    if (!query) return { ok: false, content: "query is required." };
+    if (!query) return { ok: false, content: "缺少 query。" };
     const limit = typeof input.limit === "number" && input.limit > 0 ? Math.min(50, Math.floor(input.limit)) : 10;
     const scope = str(input.scope);
     const patterns = scope ? [scope] : [

@@ -5,7 +5,7 @@ export function createSkillTools(): Tool[] {
   return [
     {
       name: "load_skill",
-      description: "Load the full prompt content for a project skill by name.",
+      description: "按名称加载项目 skill 的完整 prompt 内容。",
       readonly: true,
       parameters: {
         type: "object",
@@ -22,10 +22,10 @@ export function createSkillTools(): Tool[] {
         const name = typeof input.name === "string" ? input.name : "";
         const args = typeof input.args === "string" ? input.args : "";
         const skill = (await loadSkillsDir(context.cwd)).find((item) => item.name === name);
-        if (!skill) return { ok: false, content: `Skill not found: ${name}` };
+        if (!skill) return { ok: false, content: `未找到 skill：${name}` };
         return {
           ok: true,
-          content: `Loaded skill: ${skill.name}\nDescription: ${skill.description}\n\n${skill.content.replace(/\{\{args\}\}/g, args)}`,
+          content: `已加载 skill：${skill.name}\n说明：${skill.description}\n\n${skill.content.replace(/\{\{args\}\}/g, args)}`,
         };
       },
     },

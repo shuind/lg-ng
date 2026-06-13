@@ -20,7 +20,7 @@ export async function createProposal(bookId: string, input: {
     body: JSON.stringify(input),
   })
   const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "创建 proposal 失败")
+  if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "创建改动提案失败")
   return data.proposal
 }
 
@@ -35,7 +35,7 @@ export async function applyProposal(bookId: string, proposalId: string, hunkIds?
     body: JSON.stringify({ hunkIds }),
   })
   const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "采纳 proposal 失败")
+  if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "采纳改动提案失败")
   return data
 }
 
@@ -45,6 +45,6 @@ export async function discardProposal(bookId: string, proposalId: string): Promi
     headers: { "Content-Type": "application/json" },
   })
   const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "丢弃 proposal 失败")
+  if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "丢弃改动提案失败")
   return data.proposal
 }

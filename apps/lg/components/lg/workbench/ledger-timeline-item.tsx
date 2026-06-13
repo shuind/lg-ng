@@ -30,7 +30,7 @@ export function LedgerTimelineItem({
         <span className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10px]">
           {entry.action}
         </span>
-        <span className="text-muted-foreground/60">by {entry.actor}</span>
+        <span className="text-muted-foreground/60">来源：{formatLedgerActor(entry.actor)}</span>
       </div>
       <div className="mt-1 text-[12.5px] text-foreground/90">{entry.summary}</div>
       <button
@@ -69,4 +69,10 @@ export function LedgerTimelineItem({
       )}
     </div>
   )
+}
+
+function formatLedgerActor(actor: LedgerEntry["actor"]): string {
+  if (actor === "agent") return "AI"
+  if (actor === "user") return "用户"
+  return actor
 }

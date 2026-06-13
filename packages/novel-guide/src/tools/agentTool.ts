@@ -4,7 +4,7 @@ export function createAgentTools(): Tool[] {
   return [
     {
       name: "run_agent",
-      description: "Run a project subagent in an isolated context. Use for read-only reviews like continuity or canon conflict.",
+      description: "在隔离上下文运行项目子智能体。适合连续性、正典冲突等只读评审。",
       readonly: true,
       parameters: {
         type: "object",

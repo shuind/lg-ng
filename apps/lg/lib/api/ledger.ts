@@ -11,7 +11,7 @@ export async function listLedgerEntries(
     if (options.cursor) params.set("cursor", options.cursor)
     const query = params.toString()
     const res = await fetch(`/api/books/${bookId}/ledger${query ? `?${query}` : ""}`, { cache: "no-store" })
-    if (!res.ok) throw new Error("api failed")
+    if (!res.ok) throw new Error("接口请求失败")
     const data = await res.json()
     if (Array.isArray(data)) return { entries: data }
     if (data && typeof data === "object" && Array.isArray(data.entries)) {
@@ -20,7 +20,7 @@ export async function listLedgerEntries(
         nextCursor: typeof data.nextCursor === "string" ? data.nextCursor : undefined,
       }
     }
-    throw new Error("invalid")
+    throw new Error("接口返回格式无效")
   } catch {
     await delay()
     return { entries: [] }

@@ -9,14 +9,14 @@ function stringInput(value: unknown, fallback = ""): string {
 
 export const ReadFileTool: Tool = {
   name: "read_file",
-  description: "Read a UTF-8 text file from the workspace.",
+  description: "读取工作区内 UTF-8 文本文件。",
   readonly: true,
   parameters: {
     type: "object",
     properties: {
-      path: { type: "string", description: "Workspace-relative file path." },
-      offset: { type: "number", description: "Optional 1-based line offset." },
-      limit: { type: "number", description: "Optional maximum number of lines." },
+      path: { type: "string", description: "工作区相对路径。" },
+      offset: { type: "number", description: "可选，1 起始行号。" },
+      limit: { type: "number", description: "可选，最多读取行数。" },
     },
     required: ["path"],
   },
@@ -33,7 +33,7 @@ export const ReadFileTool: Tool = {
     const selected = lines.slice(offset - 1, offset - 1 + limit);
     return {
       ok: true,
-      content: `File: ${normalizeSlashPath(rel)}\nLines: ${offset}-${offset + selected.length - 1} of ${lines.length}\n\n${selected.join("\n")}`,
+      content: `文件：${normalizeSlashPath(rel)}\n行：${offset}-${offset + selected.length - 1}/${lines.length}\n\n${selected.join("\n")}`,
       metadata: { path: rel, totalLines: lines.length },
     };
   },
@@ -41,13 +41,13 @@ export const ReadFileTool: Tool = {
 
 export const WriteFileTool: Tool = {
   name: "write_file",
-  description: "Write a UTF-8 text file. Creates parent directories. In novel workspaces, write generated chapter prose to drafts/ by default; use 章节正文/ only when the user explicitly asks to apply/save directly to chapter body.",
+  description: "写 UTF-8 文本文件并创建父目录。小说工作区生成章节正文默认写 drafts/；仅用户明确要求直存正文时用 章节正文/。",
   readonly: false,
   parameters: {
     type: "object",
     properties: {
-      path: { type: "string", description: "Workspace-relative file path." },
-      content: { type: "string", description: "Complete file content." },
+      path: { type: "string", description: "工作区相对路径。" },
+      content: { type: "string", description: "完整文件内容。" },
     },
     required: ["path", "content"],
   },
@@ -71,7 +71,7 @@ export const WriteFileTool: Tool = {
     await writeFile(abs, content, "utf8");
     return {
       ok: true,
-      content: `Wrote ${relativeTo(context.cwd, abs)} (${content.length} chars).`,
+      content: `已写入 ${relativeTo(context.cwd, abs)}（${content.length} 字符）。`,
       metadata: {
         fileChanges: [{
           path: workspacePath,
@@ -88,15 +88,15 @@ export const WriteFileTool: Tool = {
 
 export const EditFileTool: Tool = {
   name: "edit_file",
-  description: "Edit a UTF-8 text file by replacing exact text. In novel workspaces, avoid editing 章节正文/ for generated chapter prose unless the user explicitly asks to apply/save directly to chapter body; use drafts/ by default.",
+  description: "精确替换文本来编辑 UTF-8 文件。小说工作区生成章节正文默认改 drafts/；用户明确要求直存正文时才改 章节正文/。",
   readonly: false,
   parameters: {
     type: "object",
     properties: {
       path: { type: "string" },
-      old_text: { type: "string", description: "Exact text to replace." },
-      new_text: { type: "string", description: "Replacement text." },
-      replace_all: { type: "boolean", description: "Replace all occurrences instead of one." },
+      old_text: { type: "string", description: "要替换的精确文本。" },
+      new_text: { type: "string", description: "替换文本。" },
+      replace_all: { type: "boolean", description: "替换全部匹配，否则只替换一处。" },
     },
     required: ["path", "old_text", "new_text"],
   },
@@ -108,21 +108,21 @@ export const EditFileTool: Tool = {
     const oldText = stringInput(input.old_text);
     const newText = stringInput(input.new_text);
     const replaceAll = input.replace_all === true;
-    if (!oldText) return { ok: false, content: "old_text must not be empty." };
+    if (!oldText) return { ok: false, content: "old_text 不能为空。" };
 
     const abs = resolveInside(context.cwd, rel);
     const workspacePath = relativeTo(context.cwd, abs);
     const raw = await readFile(abs, "utf8");
     const occurrences = raw.split(oldText).length - 1;
-    if (occurrences === 0) return { ok: false, content: `No exact match found in ${rel}.` };
+    if (occurrences === 0) return { ok: false, content: `${rel} 未找到精确匹配。` };
     if (occurrences > 1 && !replaceAll) {
-      return { ok: false, content: `Found ${occurrences} matches in ${rel}; set replace_all=true or provide a more specific old_text.` };
+      return { ok: false, content: `${rel} 有 ${occurrences} 处匹配；请设 replace_all=true 或提供更具体 old_text。` };
     }
     const next = replaceAll ? raw.split(oldText).join(newText) : raw.replace(oldText, newText);
     await writeFile(abs, next, "utf8");
     return {
       ok: true,
-      content: `Edited ${relativeTo(context.cwd, abs)}; replaced ${replaceAll ? occurrences : 1} occurrence(s).`,
+      content: `已编辑 ${relativeTo(context.cwd, abs)}；替换 ${replaceAll ? occurrences : 1} 处。`,
       metadata: {
         fileChanges: [{
           path: workspacePath,
@@ -139,14 +139,14 @@ export const EditFileTool: Tool = {
 
 export const ProposeFileChangeTool: Tool = {
   name: "propose_file_change",
-  description: "Create a reviewable file-change proposal without modifying the target file. Use in proposal workflows such as /续写 and /改稿. For generated chapter prose, target drafts/ by default; use 章节正文/ only when the user explicitly asks to apply/save directly to chapter body.",
+  description: "创建可审阅文件变更提案，不改目标文件。用于 /续写、/改稿。生成章节正文默认提案到 drafts/；用户明确要求直存正文时才用 章节正文/。",
   readonly: false,
   parameters: {
     type: "object",
     properties: {
-      path: { type: "string", description: "Workspace-relative target file path." },
-      after_content: { type: "string", description: "Complete proposed file content after the change." },
-      summary: { type: "string", description: "Short proposal summary." },
+      path: { type: "string", description: "目标文件工作区相对路径。" },
+      after_content: { type: "string", description: "变更后的完整提案内容。" },
+      summary: { type: "string", description: "简短提案摘要。" },
       source: { type: "string", enum: ["chat", "draft", "workflow"] },
     },
     required: ["path", "after_content"],
@@ -157,7 +157,7 @@ export const ProposeFileChangeTool: Tool = {
   async execute(input, context) {
     const rel = stringInput(input.path);
     const afterContent = stringInput(input.after_content);
-    const summary = stringInput(input.summary) || `Proposed change to ${rel}`;
+    const summary = stringInput(input.summary) || `${rel} 的改动提案`;
     const source = input.source === "draft" || input.source === "workflow" ? input.source : "chat";
     const abs = resolveInside(context.cwd, rel);
     const workspacePath = relativeTo(context.cwd, abs);
@@ -171,7 +171,7 @@ export const ProposeFileChangeTool: Tool = {
     }
     return {
       ok: true,
-      content: `Proposed ${workspacePath}; ${beforeContent.length} -> ${afterContent.length} chars. No file was modified.`,
+      content: `已生成提案 ${workspacePath}；${beforeContent.length} -> ${afterContent.length} 字符。未修改文件。`,
       metadata: {
         proposals: [{
           path: workspacePath,

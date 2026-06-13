@@ -11,12 +11,12 @@ async function PATCHHandler(
   const { title } = body as { title?: string }
 
   if (!title?.trim()) {
-    return NextResponse.json({ error: "title is required" }, { status: 400 })
+    return NextResponse.json({ error: "请输入书名" }, { status: 400 })
   }
 
   const book = await updateBookTitle(bookId, title.trim())
   if (!book) {
-    return NextResponse.json({ error: "book not found" }, { status: 404 })
+    return NextResponse.json({ error: "书籍不存在" }, { status: 404 })
   }
 
   return NextResponse.json(book)

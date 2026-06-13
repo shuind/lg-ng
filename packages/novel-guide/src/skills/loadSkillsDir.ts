@@ -29,7 +29,7 @@ function firstContentLine(content: string): string {
   return content
     .split(/\r?\n/)
     .map((line) => line.trim().replace(/^#+\s*/, ""))
-    .find(Boolean) ?? "Project skill";
+    .find(Boolean) ?? "项目技能";
 }
 
 export async function loadSkillsDir(cwd: string): Promise<SkillDefinition[]> {
@@ -81,7 +81,7 @@ export function skillToPromptCommand(skill: SkillDefinition): PromptCommand {
     disableModelInvocation: skill.disableModelInvocation,
     source: "skills",
     async getPromptForCommand(args) {
-      return `Base directory for this skill: ${skill.baseDir}\n\n${skill.content.replace(/\{\{args\}\}/g, args)}`;
+      return `此技能根目录：${skill.baseDir}\n\n${skill.content.replace(/\{\{args\}\}/g, args)}`;
     },
   };
 }

@@ -82,7 +82,7 @@ describe("query loop", () => {
       maxLoops: 5,
     });
     expect(result.text).toBe("done");
-    expect(result.toolTrace).toEqual(["read_file: ok", "grep: ok"]);
+    expect(result.toolTrace).toEqual(["read_file: 成功", "grep: 成功"]);
   });
 
   it("emits model and tool events in order", async () => {

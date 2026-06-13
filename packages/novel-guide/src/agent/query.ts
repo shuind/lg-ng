@@ -77,7 +77,7 @@ function resultPreviewLimitForTool(name: string): number {
 
 function throwIfAborted(signal?: AbortSignal): void {
   if (!signal?.aborted) return;
-  const error = new Error("Operation aborted");
+  const error = new Error("操作已中止");
   error.name = "AbortError";
   throw error;
 }
@@ -89,7 +89,7 @@ export async function query(input: QueryInput): Promise<QueryResult> {
   }
   if (result) return result;
 
-  const stopText = "Query ended without a final result.";
+  const stopText = "查询结束但没有最终结果。";
   return {
     messages: input.messages,
     text: stopText,
@@ -144,7 +144,7 @@ export async function* queryEvents(input: QueryInput): AsyncGenerator<QueryEvent
     }
 
     if (!assistantMessage) {
-      yield { type: "error", loop, message: "Model stream ended without a final assistant message." };
+      yield { type: "error", loop, message: "模型流结束，但没有最终助手消息。" };
       assistantMessage = { role: "assistant", content: loopText, refusal: null };
     }
 
@@ -179,7 +179,7 @@ export async function* queryEvents(input: QueryInput): AsyncGenerator<QueryEvent
       repeatedCount = 1;
     }
     if (repeatedCount >= 3) {
-      const stopText = "Stopped because the model repeated the same tool request without producing new assistant text.";
+      const stopText = "已停止：模型重复请求同一个工具，且没有产生新的助手文本。";
       messages.push({ role: "assistant", content: stopText });
       failedTools.push(`query: ${stopText}`);
       yield { type: "error", loop, message: stopText };
@@ -196,7 +196,7 @@ export async function* queryEvents(input: QueryInput): AsyncGenerator<QueryEvent
         messages.push({
           role: "tool",
           tool_call_id: toolCall.id,
-          content: `Unsupported tool call type: ${toolCall.type}`,
+        content: `不支持的工具调用类型：${toolCall.type}`,
         });
         continue;
       }
@@ -204,8 +204,8 @@ export async function* queryEvents(input: QueryInput): AsyncGenerator<QueryEvent
       yield { type: "tool_call", loop, name, argsPreview: previewArguments(toolCall.function.arguments, previewLimitForTool(name)) };
       const tool = findTool(input.tools, name);
       if (!tool) {
-        const content = `Unknown tool: ${name}`;
-        toolTrace.push(`${name}: missing`);
+        const content = `未知工具：${name}`;
+        toolTrace.push(`${name}: 缺失`);
         failedTools.push(`${name}: ${content}`);
         messages.push({
           role: "tool",
@@ -218,7 +218,7 @@ export async function* queryEvents(input: QueryInput): AsyncGenerator<QueryEvent
       const startedAt = Date.now();
       const result = await runTool(tool, parseToolArguments(toolCall.function.arguments), input.toolContext);
       const durationMs = Date.now() - startedAt;
-      toolTrace.push(`${name}: ${result.ok ? "ok" : "failed"}`);
+      toolTrace.push(`${name}: ${result.ok ? "成功" : "失败"}`);
       if (!result.ok) failedTools.push(`${name}: ${result.content}`);
       if (result.ok && Array.isArray(result.metadata?.fileChanges)) {
         fileChanges.push(...result.metadata.fileChanges);
@@ -243,7 +243,7 @@ export async function* queryEvents(input: QueryInput): AsyncGenerator<QueryEvent
     }
   }
 
-  const stopText = `Stopped after ${input.maxLoops} tool loop(s) to avoid an infinite loop.`;
+  const stopText = `已在 ${input.maxLoops} 轮工具循环后停止，以避免无限循环。`;
   messages.push({ role: "assistant", content: stopText });
   failedTools.push(`query: ${stopText}`);
   yield {

@@ -2,7 +2,7 @@ import type { Tool } from "./tool.js";
 
 export const AskUserTool: Tool = {
   name: "ask_user",
-  description: "Ask the user a concise question when required to continue.",
+  description: "必须用户补充信息才能继续时，问一个简短问题。",
   readonly: true,
   parameters: {
     type: "object",
@@ -15,12 +15,12 @@ export const AskUserTool: Tool = {
     return { allowed: true };
   },
   async execute(input) {
-    const question = typeof input.question === "string" ? input.question : "Need user input.";
+    const question = typeof input.question === "string" ? input.question : "需要用户补充信息。";
     return {
       ok: true,
       content: [
-        `Question for user: ${question}`,
-        "Present this question to the user in the final assistant reply and wait for their answer. No hidden answer is available.",
+        `给用户的问题：${question}`,
+        "在最终回复中向用户提出这个问题，并等待用户回答。没有隐藏答案可用。",
       ].join("\n"),
     };
   },

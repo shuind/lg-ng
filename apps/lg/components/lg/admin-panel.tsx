@@ -70,7 +70,13 @@ function formatMoney(value: number): string {
 }
 
 function getErrorMessage(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : "Admin data failed to load"
+  return error instanceof Error && error.message ? error.message : "管理后台数据加载失败"
+}
+
+function formatPlatformKeySource(source: AdminOverviewPayload["billing"]["platformKeySource"], preview: string | null): string {
+  if (source === "environment") return "环境变量"
+  if (source === "admin") return `后台保存 ${preview ?? ""}`.trim()
+  return "未配置"
 }
 
 function SummaryTile({
@@ -180,30 +186,30 @@ function UserRow({
         <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">{user.id}</div>
       </div>
       <div>
-        <div className="lg:hidden text-[11px] text-muted-foreground">Books</div>
+        <div className="lg:hidden text-[11px] text-muted-foreground">书籍</div>
         {user.booksCount}
       </div>
       <div>
-        <div className="lg:hidden text-[11px] text-muted-foreground">Data</div>
+        <div className="lg:hidden text-[11px] text-muted-foreground">数据</div>
         {formatBytes(user.dataBytes)}
       </div>
       <div>
-        <div className="lg:hidden text-[11px] text-muted-foreground">Model key</div>
+        <div className="lg:hidden text-[11px] text-muted-foreground">模型 Key</div>
         {user.hasPersonalDeepSeekKey ? (
-          <StatusPill tone="good">{user.deepSeekKeyPreview ?? "Configured"}</StatusPill>
+          <StatusPill tone="good">{user.deepSeekKeyPreview ?? "已配置"}</StatusPill>
         ) : (
-          <StatusPill tone="warning">Missing</StatusPill>
+          <StatusPill tone="warning">未配置</StatusPill>
         )}
       </div>
       <div>
-        <div className="lg:hidden text-[11px] text-muted-foreground">Balance</div>
+        <div className="lg:hidden text-[11px] text-muted-foreground">余额</div>
         <span>{formatMoney(balanceCny)}</span>
         {usedBalanceCny > 0 ? (
-          <span className="ml-1 text-muted-foreground">used {formatMoney(usedBalanceCny)}</span>
+          <span className="ml-1 text-muted-foreground">已用 {formatMoney(usedBalanceCny)}</span>
         ) : null}
       </div>
       <div>
-        <div className="lg:hidden text-[11px] text-muted-foreground">Adjust</div>
+        <div className="lg:hidden text-[11px] text-muted-foreground">调整</div>
         <div className="flex items-center gap-2">
           <Input
             className="h-8 w-24 text-[13px]"
@@ -213,7 +219,7 @@ function UserRow({
             onChange={(event) => onBillingAdjustmentDraftChange(event.target.value)}
           />
           <Button
-            aria-label={`Adjust balance for ${user.email}`}
+            aria-label={`调整 ${user.email} 的余额`}
             className="h-8 w-8 p-0"
             type="button"
             size="sm"
@@ -224,17 +230,17 @@ function UserRow({
             <Coins className={cn("h-3.5 w-3.5", billingSaving && "animate-pulse")} />
           </Button>
         </div>
-        <div className="mt-1 text-[11px] text-muted-foreground">Positive credits, negative debits.</div>
+        <div className="mt-1 text-[11px] text-muted-foreground">正数充值，负数扣减。</div>
       </div>
       <div>
-        <div className="lg:hidden text-[11px] text-muted-foreground">Session</div>
-        <span>{user.activeSessionCount} active</span>
+        <div className="lg:hidden text-[11px] text-muted-foreground">会话</div>
+        <span>{user.activeSessionCount} 活跃</span>
         {user.expiredSessionCount > 0 ? (
-          <span className="ml-1 text-muted-foreground">/ {user.expiredSessionCount} expired</span>
+          <span className="ml-1 text-muted-foreground">/ {user.expiredSessionCount} 过期</span>
         ) : null}
       </div>
       <div>
-        <div className="lg:hidden text-[11px] text-muted-foreground">Recent data</div>
+        <div className="lg:hidden text-[11px] text-muted-foreground">最近数据</div>
         {formatDate(user.dataUpdatedAt)}
       </div>
     </div>
@@ -256,7 +262,7 @@ function InviteRow({
 }) {
   const latestRedemption = invite.redeemedUsers[invite.redeemedUsers.length - 1] ?? null
   const redeemedLabel = latestRedemption
-    ? `${latestRedemption.email ?? latestRedemption.userId}${invite.redeemedCount > 1 ? ` and ${invite.redeemedCount - 1} more` : ""}`
+    ? `${latestRedemption.email ?? latestRedemption.userId}${invite.redeemedCount > 1 ? `，另有 ${invite.redeemedCount - 1} 人` : ""}`
     : "-"
   const maxDraftNumber = Number(maxDraft)
   const canSaveMax = invite.editable
@@ -268,13 +274,13 @@ function InviteRow({
   return (
     <div className="grid gap-3 border-t border-border/60 px-4 py-3 text-[13px] md:grid-cols-[minmax(180px,1fr)_168px_minmax(200px,1fr)_120px] md:items-center">
       <div className="min-w-0">
-        <div className="truncate font-mono">{invite.code ?? "Removed invite"}</div>
+        <div className="truncate font-mono">{invite.code ?? "已移除邀请码"}</div>
         <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">{invite.codeHash.slice(0, 16)}...</div>
       </div>
       <div>
-        <div className="md:hidden text-[11px] text-muted-foreground">Slots</div>
+        <div className="md:hidden text-[11px] text-muted-foreground">名额</div>
         {!invite.configured ? (
-          <StatusPill tone="warning">Removed</StatusPill>
+          <StatusPill tone="warning">已移除</StatusPill>
         ) : invite.remainingRedemptions <= 0 ? (
           <StatusPill tone="warning">{invite.redeemedCount}/{invite.maxRedemptions}</StatusPill>
         ) : (
@@ -291,7 +297,7 @@ function InviteRow({
               onChange={(event) => onMaxDraftChange(event.target.value)}
             />
             <Button
-              aria-label="Save invite slots"
+              aria-label="保存邀请码名额"
               className="h-8 w-8 p-0"
               type="button"
               size="sm"
@@ -303,18 +309,18 @@ function InviteRow({
             </Button>
           </div>
         ) : invite.source === "env" ? (
-          <div className="mt-1 text-[11px] text-muted-foreground">Env var</div>
+          <div className="mt-1 text-[11px] text-muted-foreground">环境变量</div>
         ) : null}
       </div>
       <div className="min-w-0">
-        <div className="md:hidden text-[11px] text-muted-foreground">Latest user</div>
+        <div className="md:hidden text-[11px] text-muted-foreground">最近用户</div>
         <div className="truncate">{redeemedLabel}</div>
         {invite.configured ? null : (
-          <div className="mt-1 text-[11px] text-muted-foreground">Not present in current env vars.</div>
+          <div className="mt-1 text-[11px] text-muted-foreground">当前环境变量中不存在。</div>
         )}
       </div>
       <div>
-        <div className="md:hidden text-[11px] text-muted-foreground">Latest use</div>
+        <div className="md:hidden text-[11px] text-muted-foreground">最近使用</div>
         {formatDate(latestRedemption?.redeemedAt ?? null)}
       </div>
     </div>
@@ -433,7 +439,7 @@ export function AdminPanel() {
         },
         billing,
       } : current)
-      setBillingSettingsMessage("Balance settings saved.")
+      setBillingSettingsMessage("余额设置已保存。")
     } catch (err) {
       setBillingSettingsError(getErrorMessage(err))
     } finally {
@@ -450,7 +456,7 @@ export function AdminPanel() {
     try {
       await saveAdminPlatformKey({ apiKey })
       setPlatformKeyDraft("")
-      setPlatformKeyMessage("Platform API key saved.")
+      setPlatformKeyMessage("Platform API Key 已保存。")
       await loadOverview(true)
     } catch (err) {
       setPlatformKeyError(getErrorMessage(err))
@@ -466,7 +472,7 @@ export function AdminPanel() {
     setPlatformKeyMessage(null)
     try {
       const result = await testAdminPlatformKey(platformKeyDraft.trim() ? { apiKey: platformKeyDraft.trim() } : {})
-      setPlatformKeyMessage(`Platform API key test passed: ${result.model}`)
+      setPlatformKeyMessage(`Platform API Key 测试通过：${result.model}`)
     } catch (err) {
       setPlatformKeyError(getErrorMessage(err))
     } finally {
@@ -482,7 +488,7 @@ export function AdminPanel() {
     try {
       await clearAdminPlatformKey()
       setPlatformKeyDraft("")
-      setPlatformKeyMessage("Saved platform API key cleared.")
+      setPlatformKeyMessage("已清除保存的 Platform API Key。")
       await loadOverview(true)
     } catch (err) {
       setPlatformKeyError(getErrorMessage(err))
@@ -496,7 +502,7 @@ export function AdminPanel() {
     const amountCny = Number(billingAdjustmentDrafts[user.id])
     if (!Number.isFinite(amountCny) || amountCny === 0) {
       setBillingAdjustmentMessage(null)
-      setBillingAdjustmentError("Enter a non-zero adjustment amount.")
+      setBillingAdjustmentError("请输入非零调整金额。")
       return
     }
 
@@ -507,10 +513,10 @@ export function AdminPanel() {
       await adjustAdminBillingBalance({
         userId: user.id,
         amountCny,
-        note: amountCny > 0 ? "admin credit" : "admin debit",
+        note: amountCny > 0 ? "管理员充值" : "管理员扣减",
       })
       setBillingAdjustmentDrafts((current) => ({ ...current, [user.id]: "0" }))
-      setBillingAdjustmentMessage("Balance adjusted.")
+      setBillingAdjustmentMessage("余额已调整。")
       await loadOverview(true)
     } catch (err) {
       setBillingAdjustmentError(getErrorMessage(err))
@@ -540,7 +546,7 @@ export function AdminPanel() {
         ...current,
         [invite.codeHash]: String(invite.maxRedemptions),
       }))
-      setInviteMessage(`Created ${invite.code}`)
+      setInviteMessage(`已创建 ${invite.code}`)
     } catch (err) {
       setInviteError(getErrorMessage(err))
     } finally {
@@ -562,7 +568,7 @@ export function AdminPanel() {
         ...current,
         [updatedInvite.codeHash]: String(updatedInvite.maxRedemptions),
       }))
-      setInviteMessage("Invite slots saved.")
+      setInviteMessage("邀请码名额已保存。")
     } catch (err) {
       setInviteError(getErrorMessage(err))
     } finally {
@@ -592,7 +598,7 @@ export function AdminPanel() {
   if (loading) {
     return (
       <div className="rounded-lg border border-border/70 bg-card/75 p-5 text-sm text-muted-foreground">
-        Loading admin data...
+        正在加载管理后台数据...
       </div>
     )
   }
@@ -603,15 +609,15 @@ export function AdminPanel() {
         <div className="flex items-start gap-3">
           <AlertTriangle className="mt-0.5 h-4 w-4 text-amber-700 dark:text-amber-300" />
           <div className="min-w-0">
-            <div className="text-sm font-medium text-amber-800 dark:text-amber-200">This account cannot access admin.</div>
+            <div className="text-sm font-medium text-amber-800 dark:text-amber-200">当前账号无法访问管理后台。</div>
             <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
-              Add the current login email to LG_ADMIN_EMAILS, restart the server, and open admin again.
+              将当前登录邮箱加入 LG_ADMIN_EMAILS，重启服务后再打开管理后台。
             </p>
             <pre className="mt-4 overflow-x-auto rounded-md border border-border/70 bg-background p-3 text-[12px] leading-relaxed">
               <code>LG_ADMIN_EMAILS=your-email@example.com</code>
             </pre>
             <Button className="mt-4" size="sm" variant="outline" asChild>
-              <Link href="/">Back to app</Link>
+              <Link href="/">返回应用</Link>
             </Button>
           </div>
         </div>
@@ -628,7 +634,7 @@ export function AdminPanel() {
             <div className="text-sm font-medium text-destructive">{error}</div>
             <Button className="mt-4" size="sm" variant="outline" onClick={() => void loadOverview()}>
               <RefreshCw className="h-4 w-4" />
-              Retry
+              重试
             </Button>
           </div>
         </div>
@@ -646,40 +652,39 @@ export function AdminPanel() {
       billingPricingDraft?.promptCacheMissPricePerMillionCny !== overview.billing.settings.pricing.promptCacheMissPricePerMillionCny ||
       billingPricingDraft?.outputPricePerMillionCny !== overview.billing.settings.pricing.outputPricePerMillionCny
     )
-  const platformKeySourceLabel = overview.billing.platformKeySource === "environment"
-    ? "env var"
-    : overview.billing.platformKeySource === "admin"
-      ? `admin saved ${overview.billing.platformKeyPreview ?? ""}`.trim()
-      : "not configured"
+  const platformKeySourceLabel = formatPlatformKeySource(
+    overview.billing.platformKeySource,
+    overview.billing.platformKeyPreview,
+  )
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-[12px] text-muted-foreground">
-          Refreshed {formatDate(overview.generatedAt)}
+          已刷新 {formatDate(overview.generatedAt)}
         </div>
         <Button size="sm" variant="outline" onClick={() => void loadOverview(true)} disabled={refreshing}>
           <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
-          Refresh
+          刷新
         </Button>
       </div>
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <SummaryTile icon={Users} label="Users" value={`${overview.auth.userCount}`} />
-        <SummaryTile icon={Ticket} label="Invite slots" value={`${overview.auth.redeemedInviteCount}/${inviteSlotCount}`} />
-        <SummaryTile icon={KeyRound} label="Active sessions" value={`${overview.auth.activeSessionCount}`} />
-        <SummaryTile icon={HardDrive} label="User data" value={formatBytes(overview.storage.totalUserDataBytes)} />
+        <SummaryTile icon={Users} label="用户" value={`${overview.auth.userCount}`} />
+        <SummaryTile icon={Ticket} label="邀请名额" value={`${overview.auth.redeemedInviteCount}/${inviteSlotCount}`} />
+        <SummaryTile icon={KeyRound} label="活跃会话" value={`${overview.auth.activeSessionCount}`} />
+        <SummaryTile icon={HardDrive} label="用户数据" value={formatBytes(overview.storage.totalUserDataBytes)} />
       </section>
 
       <section className="rounded-lg border border-border/70 bg-card/75 p-4">
         <div className="flex flex-wrap items-center gap-2">
-          <StatusPill tone={overview.llm.userKeyModeEnabled ? "good" : "warning"}>User key mode</StatusPill>
+          <StatusPill tone={overview.llm.userKeyModeEnabled ? "good" : "warning"}>用户自备 Key 模式</StatusPill>
           <StatusPill tone={overview.llm.platformBalanceEnabled ? "good" : "warning"}>
-            {overview.llm.platformBalanceEnabled ? "Platform balance available" : "Platform balance unavailable"}
+            {overview.llm.platformBalanceEnabled ? "平台余额可用" : "平台余额不可用"}
           </StatusPill>
-          <StatusPill>Total balance {formatMoney(overview.billing.total.balanceCny)} CNY</StatusPill>
-          <StatusPill>Used balance {formatMoney(overview.billing.total.usedBalanceCny)} CNY</StatusPill>
-          <StatusPill tone={overview.auth.adminEmailCount > 0 ? "good" : "warning"}>Admins {overview.auth.adminEmailCount}</StatusPill>
+          <StatusPill>总余额 {formatMoney(overview.billing.total.balanceCny)} CNY</StatusPill>
+          <StatusPill>已用余额 {formatMoney(overview.billing.total.usedBalanceCny)} CNY</StatusPill>
+          <StatusPill tone={overview.auth.adminEmailCount > 0 ? "good" : "warning"}>管理员 {overview.auth.adminEmailCount}</StatusPill>
         </div>
         <div className="mt-3 flex items-start gap-2 text-[12px] leading-relaxed text-muted-foreground">
           <Database className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -690,9 +695,9 @@ export function AdminPanel() {
       <section className="rounded-lg border border-border/70 bg-card/75 p-4">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold tracking-normal">Platform balance</h2>
+            <h2 className="text-sm font-semibold tracking-normal">平台余额</h2>
             <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
-              Manage the global balance switch, platform DeepSeek API key, pricing, and per-user balance adjustments.
+              管理全局余额开关、平台 DeepSeek API Key、单价和用户余额调整。
             </p>
           </div>
           <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">
@@ -702,15 +707,15 @@ export function AdminPanel() {
 
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <StatusPill tone={overview.billing.settings.platformEnabled ? "good" : "warning"}>
-            {overview.billing.settings.platformEnabled ? "Balance channel enabled" : "Balance channel disabled"}
+            {overview.billing.settings.platformEnabled ? "余额通道已开启" : "余额通道已关闭"}
           </StatusPill>
           <StatusPill tone={overview.billing.platformApiKeyConfigured ? "good" : "warning"}>
-            Platform key: {platformKeySourceLabel}
+            Platform Key：{platformKeySourceLabel}
           </StatusPill>
-          <StatusPill>Total {formatMoney(overview.billing.total.balanceCny)} CNY</StatusPill>
-          <StatusPill>Used {formatMoney(overview.billing.total.usedBalanceCny)} CNY</StatusPill>
+          <StatusPill>总额 {formatMoney(overview.billing.total.balanceCny)} CNY</StatusPill>
+          <StatusPill>已用 {formatMoney(overview.billing.total.usedBalanceCny)} CNY</StatusPill>
           <StatusPill tone={overview.llm.platformBalanceEnabled ? "good" : "warning"}>
-            {overview.llm.platformBalanceEnabled ? "Balance calls available" : "Balance calls unavailable"}
+            {overview.llm.platformBalanceEnabled ? "余额调用可用" : "余额调用不可用"}
           </StatusPill>
         </div>
 
@@ -723,24 +728,24 @@ export function AdminPanel() {
                 onChange={(event) => setBillingPlatformEnabledDraft(event.target.checked)}
                 className="h-4 w-4"
               />
-              Enable platform balance calls
+              启用平台余额调用
             </label>
 
             <div className="grid gap-3 md:grid-cols-3">
               <MoneyNumberInput
-                label="Cache-hit input price"
+                label="缓存命中输入单价"
                 value={billingPricingDraft.promptCacheHitPricePerMillionCny}
                 suffix="CNY / 1M"
                 onChange={(value) => updateBillingPricingDraft("promptCacheHitPricePerMillionCny", value)}
               />
               <MoneyNumberInput
-                label="Cache-miss input price"
+                label="读入输入单价"
                 value={billingPricingDraft.promptCacheMissPricePerMillionCny}
                 suffix="CNY / 1M"
                 onChange={(value) => updateBillingPricingDraft("promptCacheMissPricePerMillionCny", value)}
               />
               <MoneyNumberInput
-                label="Output token price"
+                label="输出 token 单价"
                 value={billingPricingDraft.outputPricePerMillionCny}
                 suffix="CNY / 1M"
                 onChange={(value) => updateBillingPricingDraft("outputPricePerMillionCny", value)}
@@ -750,7 +755,7 @@ export function AdminPanel() {
             <div className="flex flex-wrap items-center gap-3">
               <Button type="submit" size="sm" disabled={!billingSettingsCanSave}>
                 <Save className="h-4 w-4" />
-                {billingSettingsSaving ? "Saving..." : "Save balance settings"}
+                {billingSettingsSaving ? "保存中..." : "保存余额设置"}
               </Button>
               {billingSettingsMessage ? <span className="text-[12px] text-emerald-700 dark:text-emerald-300">{billingSettingsMessage}</span> : null}
               {billingSettingsError ? <span className="text-[12px] text-destructive">{billingSettingsError}</span> : null}
@@ -760,7 +765,7 @@ export function AdminPanel() {
 
         <div className="mt-5 grid gap-3 border-t border-border/60 pt-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
           <label className="block space-y-1.5">
-            <span className="text-[12px] font-medium text-muted-foreground">Platform DeepSeek API key</span>
+            <span className="text-[12px] font-medium text-muted-foreground">平台 DeepSeek API Key</span>
             <Input
               type="password"
               autoComplete="off"
@@ -772,7 +777,7 @@ export function AdminPanel() {
           <div className="flex flex-wrap gap-2">
             <Button type="button" size="sm" disabled={!platformKeyDraft.trim() || platformKeySaving} onClick={() => void savePlatformKey()}>
               <Save className={cn("h-4 w-4", platformKeySaving && "animate-pulse")} />
-              Save key
+              保存 Key
             </Button>
             <Button
               type="button"
@@ -782,7 +787,7 @@ export function AdminPanel() {
               onClick={() => void testPlatformKey()}
             >
               <PlugZap className={cn("h-4 w-4", platformKeyTesting && "animate-pulse")} />
-              Test
+              测试
             </Button>
             <Button
               type="button"
@@ -792,7 +797,7 @@ export function AdminPanel() {
               onClick={() => void clearPlatformKey()}
             >
               <Trash2 className={cn("h-4 w-4", platformKeyClearing && "animate-pulse")} />
-              Clear saved key
+              清除保存 Key
             </Button>
           </div>
         </div>
@@ -804,12 +809,12 @@ export function AdminPanel() {
 
       <section className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
         <div className="flex items-center justify-between gap-3 px-4 py-3">
-          <h2 className="text-sm font-semibold tracking-normal">Invites</h2>
-          <span className="text-[12px] text-muted-foreground">{overview.auth.invites.length} total</span>
+          <h2 className="text-sm font-semibold tracking-normal">邀请码</h2>
+          <span className="text-[12px] text-muted-foreground">共 {overview.auth.invites.length} 个</span>
         </div>
         <form className="flex flex-wrap items-end gap-3 border-t border-border/60 px-4 py-3" onSubmit={createInvite}>
           <label className="block space-y-1.5">
-            <span className="text-[12px] font-medium text-muted-foreground">Max redemptions</span>
+            <span className="text-[12px] font-medium text-muted-foreground">最大使用次数</span>
             <Input
               className="w-28"
               type="number"
@@ -821,16 +826,16 @@ export function AdminPanel() {
           </label>
           <Button type="submit" size="sm" disabled={inviteCreating}>
             <Plus className="h-4 w-4" />
-            {inviteCreating ? "Creating..." : "Create invite"}
+            {inviteCreating ? "创建中..." : "创建邀请码"}
           </Button>
           {inviteMessage ? <span className="text-[12px] text-emerald-700 dark:text-emerald-300">{inviteMessage}</span> : null}
           {inviteError ? <span className="text-[12px] text-destructive">{inviteError}</span> : null}
         </form>
         <div className="hidden border-t border-border/60 px-4 py-2 text-[11px] font-medium uppercase tracking-normal text-muted-foreground md:grid md:grid-cols-[minmax(180px,1fr)_168px_minmax(200px,1fr)_120px]">
-          <div>Invite</div>
-          <div>Slots</div>
-          <div>Latest user</div>
-          <div>Latest use</div>
+          <div>邀请码</div>
+          <div>名额</div>
+          <div>最近用户</div>
+          <div>最近使用</div>
         </div>
         {overview.auth.invites.length > 0 ? (
           overview.auth.invites.map((invite) => (
@@ -848,7 +853,7 @@ export function AdminPanel() {
           ))
         ) : (
           <div className="border-t border-border/60 px-4 py-8 text-center text-sm text-muted-foreground">
-            No invites.
+            暂无邀请码。
           </div>
         )}
       </section>
@@ -856,21 +861,21 @@ export function AdminPanel() {
       <section className="overflow-hidden rounded-lg border border-border/70 bg-card/75">
         <div className="flex items-center justify-between gap-3 px-4 py-3">
           <div className="flex flex-wrap items-center gap-3">
-            <h2 className="text-sm font-semibold tracking-normal">Users</h2>
+            <h2 className="text-sm font-semibold tracking-normal">用户</h2>
             {billingAdjustmentMessage ? <span className="text-[12px] text-emerald-700 dark:text-emerald-300">{billingAdjustmentMessage}</span> : null}
             {billingAdjustmentError ? <span className="text-[12px] text-destructive">{billingAdjustmentError}</span> : null}
           </div>
-          <span className="text-[12px] text-muted-foreground">{sortedUsers.length} total</span>
+          <span className="text-[12px] text-muted-foreground">共 {sortedUsers.length} 个</span>
         </div>
         <div className="hidden border-t border-border/60 px-4 py-2 text-[11px] font-medium uppercase tracking-normal text-muted-foreground lg:grid lg:grid-cols-[minmax(220px,1.4fr)_72px_88px_96px_132px_132px_116px_112px]">
-          <div>Account</div>
-          <div>Books</div>
-          <div>Data</div>
-          <div>Model key</div>
-          <div>Balance</div>
-          <div>Adjust</div>
-          <div>Session</div>
-          <div>Recent data</div>
+          <div>账号</div>
+          <div>书籍</div>
+          <div>数据</div>
+          <div>模型 Key</div>
+          <div>余额</div>
+          <div>调整</div>
+          <div>会话</div>
+          <div>最近数据</div>
         </div>
         {sortedUsers.length > 0 ? (
           sortedUsers.map((user) => {
@@ -898,7 +903,7 @@ export function AdminPanel() {
           })
         ) : (
           <div className="border-t border-border/60 px-4 py-8 text-center text-sm text-muted-foreground">
-            No users.
+            暂无用户。
           </div>
         )}
       </section>

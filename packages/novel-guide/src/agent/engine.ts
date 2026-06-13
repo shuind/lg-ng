@@ -93,18 +93,18 @@ export class AgentEngine {
     ]);
     const skillSummary = skills
       .filter((skill) => !skill.disableModelInvocation)
-      .map((skill) => `- ${skill.name}: ${skill.description}${skill.whenToUse ? ` when: ${skill.whenToUse}` : ""}`)
+      .map((skill) => `- ${skill.name}: ${skill.description}${skill.whenToUse ? `；何时用：${skill.whenToUse}` : ""}`)
       .join("\n");
     const agentSummary = agents
       .map((agent) => `- ${agent.name}: ${agent.description}`)
       .join("\n");
     return [
       PROJECT_CONTEXT_PREFIX,
-      `Workspace: ${this.config.cwd}`,
-      "Project facts live in workspace files. The index below is navigation, not complete truth. When a task depends on a specific character, setting, chapter, prose passage, foreshadowing hook, or rule, use read_file on the listed path before making claims or edits.",
+      `工作区：${this.config.cwd}`,
+      "项目事实以文件为准。下方只是导航索引，不是完整真相；涉及具体人物、设定、章节、正文、伏笔或规则时，先用 read_file 读取对应路径再判断或修改。",
       memoryCard,
-      skillSummary ? `Available skills:\n${skillSummary}` : "Available skills: none",
-      agentSummary ? `Available agents:\n${agentSummary}` : "Available agents: none",
+      skillSummary ? `可用技能：\n${skillSummary}` : "可用技能：无",
+      agentSummary ? `可用子智能体：\n${agentSummary}` : "可用子智能体：无",
     ].join("\n\n");
   }
 
@@ -134,9 +134,9 @@ export class AgentEngine {
       permissionMode: this.config.permissionMode,
       maxLoops: Math.min(this.config.maxLoops ?? DEFAULT_MAX_LOOPS, DEFAULT_SUBAGENT_MAX_LOOPS),
       readonlyOnly: input.readonly !== false,
-      appendSystemPrompt: `You are running as subagent: ${agent.name}. Return a structured report. Do not modify files unless explicitly allowed.`,
+      appendSystemPrompt: `你正在作为子智能体 ${agent.name} 运行。返回结构化报告；除非明确允许，不要改文件。`,
     });
-    return await subEngine.submitMessage(`${agent.prompt}\n\n# Task\n${input.prompt}`, {
+    return await subEngine.submitMessage(`${agent.prompt}\n\n# 任务\n${input.prompt}`, {
       save: false,
       systemMeta: true,
     });
@@ -153,10 +153,10 @@ export class AgentEngine {
     if (finalResult) return finalResult;
 
     return {
-      text: "Query ended without a final result.",
+      text: "查询结束但没有最终结果。",
       messages: this.messages,
       toolTrace: [],
-      failedTools: ["engine: Query ended without a final result."],
+      failedTools: ["engine: 查询结束但没有最终结果。"],
       fileChanges: [],
       proposals: [],
       usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
@@ -189,7 +189,7 @@ export class AgentEngine {
     const projectContext = await this.buildProjectContext();
     const content = options.systemMeta
       ? prompt
-      : `User request:\n${prompt}`;
+      : `用户请求：\n${prompt}`;
     const turnMessages: ChatCompletionMessageParam[] = [
       ...withProjectContext(this.messages, projectContext),
       { role: "user", content },
@@ -212,10 +212,10 @@ export class AgentEngine {
     if (!result) {
       result = {
         messages: this.messages,
-        text: "Query ended without a final result.",
+        text: "查询结束但没有最终结果。",
         usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
         toolTrace: [],
-        failedTools: ["engine: Query ended without a final result."],
+        failedTools: ["engine: 查询结束但没有最终结果。"],
         fileChanges: [],
         proposals: [],
       };
@@ -304,7 +304,7 @@ export class AgentEngine {
       messages: [
         {
           role: "system",
-          content: "Summarize prior workspace-agent conversation for future continuity. Preserve user goals, decisions, file paths, tool results, unresolved tasks, and important constraints. Do not invent facts.",
+          content: "为后续连续性总结此前工作区智能体对话。保留用户目标、决策、文件路径、工具结果、未解决任务和重要约束；不要编造。",
         },
         { role: "user", content: rendered },
       ],
@@ -313,7 +313,7 @@ export class AgentEngine {
       timeoutMs: 60000,
       signal,
     });
-    return stringifyMessageContent(response.message.content) || "No prior context summary was produced.";
+    return stringifyMessageContent(response.message.content) || "未生成历史上下文摘要。";
   }
 
   private trySimpleLocalReply(prompt: string): string | null {
@@ -370,26 +370,26 @@ function buildChangeMemo(
     if (!change.path || seenChanges.has(change.path)) continue;
     seenChanges.add(change.path);
     const charCount = change.charCount ?? change.afterContent?.length ?? 0;
-    lines.push(`- ${change.operation} ${change.path} (${charCount} chars)`);
+    lines.push(`- ${change.operation} ${change.path} (${charCount} 字符)`);
   }
 
   const seenProposals = new Set<string>();
   for (const proposal of proposals) {
     if (!proposal.path || seenProposals.has(proposal.path)) continue;
     seenProposals.add(proposal.path);
-    lines.push(`- proposed ${proposal.path} (${proposal.afterContent.length} chars)`);
+    lines.push(`- 改动提案 ${proposal.path} (${proposal.afterContent.length} 字符)`);
   }
 
   if (lines.length === 0) return null;
   const visible = lines.slice(0, 20);
-  if (lines.length > visible.length) visible.push(`- ${lines.length - visible.length} more change(s) omitted`);
+  if (lines.length > visible.length) visible.push(`- 另有 ${lines.length - visible.length} 项变更省略`);
   return {
     role: "system",
     content: [
       CHANGE_MEMO_PREFIX,
       `updated_at: ${new Date().toISOString()}`,
       "",
-      "Workspace changes completed in the preceding assistant turn:",
+      "上一轮助手已完成的工作区变更：",
       ...visible,
     ].join("\n"),
   };
@@ -407,7 +407,7 @@ async function buildProjectMemoryCard(cwd: string): Promise<string> {
     readWorkspaceFile(cwd, "NOVEL.md"),
     summarizeLegacyLgMaterials(cwd),
   ]);
-  if (!novel) return legacyMaterialIndex || "Project memory: no NOVEL.md found.";
+  if (!novel) return legacyMaterialIndex || "项目记忆：未找到 NOVEL.md。";
 
   const sections = [
     extractMarkdownSection(novel, "核心实体清单", 1200),
@@ -416,8 +416,8 @@ async function buildProjectMemoryCard(cwd: string): Promise<string> {
   ].filter(Boolean);
   const canonFacts = await summarizeCanonFacts(cwd);
   const body = [
-    "Project index (derived from files, not an LLM summary):",
-    sections.length > 0 ? sections.join("\n\n") : "NOVEL.md has no populated long-term-memory sections yet.",
+    "项目索引（来自文件，不是 LLM 摘要）：",
+    sections.length > 0 ? sections.join("\n\n") : "NOVEL.md 暂无长期记忆内容。",
     canonFacts,
     legacyMaterialIndex,
   ].filter(Boolean);
@@ -463,9 +463,9 @@ async function summarizeCanonFacts(cwd: string): Promise<string> {
     if (!raw) continue;
     const title = raw.match(/^#\s+(.+)$/m)?.[1]?.trim() || file.replace(/^.*\//, "").replace(/\.md$/i, "");
     const aliases = extractAliases(raw);
-    lines.push(`- ${title}${aliases.length ? ` (aliases: ${aliases.join(", ")})` : ""} -> ${file}`);
+    lines.push(`- ${title}${aliases.length ? `（别名：${aliases.join(", ")}）` : ""} -> ${file}`);
   }
-  return lines.length ? `Canon index:\n${lines.join("\n")}` : "";
+  return lines.length ? `正典索引：\n${lines.join("\n")}` : "";
 }
 
 const LEGACY_LG_MATERIAL_PATTERNS = [
@@ -502,7 +502,7 @@ async function summarizeLegacyLgMaterials(cwd: string): Promise<string> {
     const summary = summarizeMaterialFile(file, raw);
     if (summary) lines.push(`- ${summary} | path=${file}`);
   }
-  return lines.length ? `LG legacy material index:\n${lines.join("\n")}` : "";
+  return lines.length ? `LG 旧素材索引：\n${lines.join("\n")}` : "";
 }
 
 function summarizeMaterialFile(file: string, content: string): string {

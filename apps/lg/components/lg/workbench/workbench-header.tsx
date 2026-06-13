@@ -36,7 +36,7 @@ export function WorkbenchHeader({
       <div className="flex items-center gap-1.5">
         <BookText className="h-3.5 w-3.5 text-muted-foreground/80" />
         <span className="font-serif text-[14px] tracking-wide text-foreground">{bookTitle}</span>
-        <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">/ Workbench</span>
+        <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">/ 工作台</span>
       </div>
 
       <nav className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1 rounded-lg border border-border/60 bg-background/60 p-0.5 backdrop-blur">
@@ -44,7 +44,7 @@ export function WorkbenchHeader({
           编辑器
         </TopTab>
         <TopTab active={tab === "ledger"} onClick={() => onTabChange("ledger")} icon={<FileText className="h-3 w-3" />}>
-          Ledger
+          变更记录
         </TopTab>
         <TopTab active={tab === "skill"} onClick={() => onTabChange("skill")} icon={<Sparkles className="h-3 w-3" />}>
           Skill

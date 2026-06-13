@@ -24,7 +24,7 @@ function isDangerousCommand(command: string): boolean {
 
 export const ShellTool: Tool = {
   name: "shell",
-  description: "Run a shell command in the workspace. Dangerous destructive commands require confirmation.",
+  description: "在工作区运行 shell 命令。危险破坏性命令需确认。",
   readonly: false,
   parameters: {
     type: "object",
@@ -41,7 +41,7 @@ export const ShellTool: Tool = {
       allowed: false,
       confirmationRequired: true,
       forceConfirmation: true,
-      reason: `Dangerous shell command requested: ${command}`,
+      reason: `请求执行危险 shell 命令：${command}`,
     };
   },
   async execute(input, context) {
@@ -66,11 +66,11 @@ export const ShellTool: Tool = {
       };
       const abort = () => {
         child.kill();
-        finish({ ok: false, content: `Command aborted.\n${stdout}\n${stderr}` });
+        finish({ ok: false, content: `命令已中止。\n${stdout}\n${stderr}` });
       };
       const timer = setTimeout(() => {
         child.kill();
-        finish({ ok: false, content: `Command timed out after ${timeoutMs}ms.\n${stdout}\n${stderr}` });
+        finish({ ok: false, content: `命令在 ${timeoutMs}ms 后超时。\n${stdout}\n${stderr}` });
       }, timeoutMs);
       if (context.signal?.aborted) {
         abort();
@@ -88,11 +88,11 @@ export const ShellTool: Tool = {
       child.on("close", (code) => {
         finish({
           ok: code === 0,
-          content: `Exit code: ${code}\nSTDOUT:\n${stdout || "(empty)"}\nSTDERR:\n${stderr || "(empty)"}`,
+          content: `退出码：${code}\n标准输出：\n${stdout || "（空）"}\n标准错误：\n${stderr || "（空）"}`,
         });
       });
       child.on("error", (error) => {
-        finish({ ok: false, content: `Failed to start command: ${error.message}` });
+        finish({ ok: false, content: `命令启动失败：${error.message}` });
       });
     });
   },

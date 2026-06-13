@@ -195,15 +195,15 @@ async function applyProposalUnlocked(
 ): Promise<{ proposal: ChangeProposal; ledgerEntry: LedgerEntry; updatedContent: string }> {
   const proposals = await readAllProposals(bookId)
   const index = proposals.findIndex((proposal) => proposal.id === proposalId)
-  if (index < 0) throw new ProposalError("proposal not found", 404, "not_found")
+  if (index < 0) throw new ProposalError("改动提案不存在", 404, "not_found")
 
   const proposal = proposals[index]
   if (proposal.status !== "pending") {
-    throw new ProposalError("proposal is no longer pending", 409, "not_pending")
+    throw new ProposalError("改动提案已不再等待采纳", 409, "not_pending")
   }
 
   const target = resolveInsideBook(bookId, proposal.targetPath)
-  if (!target) throw new ProposalError("invalid target path", 400, "invalid_path")
+  if (!target) throw new ProposalError("目标路径无效", 400, "invalid_path")
 
   let currentContent = ""
   try {
@@ -212,18 +212,18 @@ async function applyProposalUnlocked(
     currentContent = ""
   }
   if (sha256(currentContent) !== proposal.baseHash) {
-    throw new ProposalError("target file changed since proposal was created", 409, "stale_proposal")
+    throw new ProposalError("目标文件已在提案创建后发生变化", 409, "stale_proposal")
   }
 
   const selectedIds = hunkIds === undefined
     ? new Set(proposal.hunks.map((hunk) => hunk.id))
     : new Set(hunkIds)
   if (selectedIds.size === 0) {
-    throw new ProposalError("no hunks selected", 400, "empty_selection")
+    throw new ProposalError("未选择任何改动块", 400, "empty_selection")
   }
   const knownIds = new Set(proposal.hunks.map((hunk) => hunk.id))
   for (const id of selectedIds) {
-    if (!knownIds.has(id)) throw new ProposalError(`unknown hunk: ${id}`, 400, "unknown_hunk")
+    if (!knownIds.has(id)) throw new ProposalError(`未知改动块：${id}`, 400, "unknown_hunk")
   }
 
   const updatedContent = hunkIds === undefined
@@ -238,7 +238,7 @@ async function applyProposalUnlocked(
     targetPath: proposal.targetPath,
     beforeSnapshot: currentContent,
     afterSnapshot: updatedContent,
-    summary: `Apply proposal ${proposal.summary}`,
+    summary: `采纳改动提案：${proposal.summary}`,
   })
   await markDirty(bookId, proposal.targetPath).catch(() => {})
   await touchBookUpdatedAt(bookId)
@@ -261,10 +261,10 @@ export async function discardProposal(bookId: string, proposalId: string): Promi
   return withBookMutationQueue(bookId, async () => {
     const proposals = await readAllProposals(bookId)
     const index = proposals.findIndex((proposal) => proposal.id === proposalId)
-    if (index < 0) throw new ProposalError("proposal not found", 404, "not_found")
+    if (index < 0) throw new ProposalError("改动提案不存在", 404, "not_found")
     const proposal = proposals[index]
     if (proposal.status !== "pending") {
-      throw new ProposalError("proposal is no longer pending", 409, "not_pending")
+      throw new ProposalError("改动提案已不再等待采纳", 409, "not_pending")
     }
     const updated = { ...proposal, status: "discarded" as const, updatedAt: nowIso() }
     proposals[index] = updated

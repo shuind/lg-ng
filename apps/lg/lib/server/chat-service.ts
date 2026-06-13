@@ -368,7 +368,7 @@ async function streamThreadMessageUnlocked(
       } else if (engineEvent.type === "usage_update") {
         const event = createAgentEvent(turn.id, {
           type: "observe",
-          text: `Token usage: ${engineEvent.totalUsage.totalTokens}`,
+          text: `token 用量：${engineEvent.totalUsage.totalTokens}`,
           usage: engineEvent.totalUsage,
         })
         events.push(event)
@@ -545,8 +545,8 @@ function createUsageEvent(
   return createAgentEvent(turnId, {
     type: "observe",
     text: billing
-      ? `Token usage: ${billing.totalTokens ?? usage.totalTokens}, cost: ${billing.chargedAmountCny ?? 0}`
-      : `Token usage: ${usage.totalTokens}`,
+      ? `token 用量：${billing.totalTokens ?? usage.totalTokens}，扣费：${billing.chargedAmountCny ?? 0}`
+      : `token 用量：${usage.totalTokens}`,
     usage: {
       paymentSource: billing?.paymentSource,
       promptTokens: billing?.promptTokens ?? usage.promptTokens,

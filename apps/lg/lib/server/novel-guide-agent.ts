@@ -50,8 +50,8 @@ function formatReferences(references: ChatReference[]): string {
     return `- ${reference.name} (${reference.type || reference.kind})${path}${summary}`
   })
   return [
-    "LG selected references:",
-    "These are explicit user-selected context items. If a reference has a path, read that file before making claims or changes involving it. Do not assume the summary is complete.",
+    "LG 用户选中的引用：",
+    "这些是用户明确选择的上下文。若引用有 path，涉及它的判断或修改前先读文件；不要把 summary 当完整内容。",
     ...lines,
   ].join("\n")
 }
@@ -59,14 +59,14 @@ function formatReferences(references: ChatReference[]): string {
 function formatResponseConstraints(responseConstraints: AppliedResponseConstraint[]): string {
   if (responseConstraints.length === 0) return ""
   const lines = responseConstraints.map((constraint) => {
-    const source = constraint.source === "temporary" ? "temporary" : "library"
+    const source = constraint.source === "temporary" ? "临时" : "库"
     return `- [${source}] ${constraint.title}: ${constraint.instruction}`
   })
   return [
-    "Response constraints:",
-    "These constraints only control the final reply's wording, tone, and output boundaries.",
-    "They do not change file read/write abilities, tool permissions, or what task work may be performed.",
-    "If the current user request directly conflicts with a constraint, follow the current user request. Otherwise, strictly follow all enabled constraints.",
+    "回复约束：",
+    "只约束最终回复的措辞、语气和输出边界。",
+    "不改变文件读写能力、工具权限或可执行任务范围。",
+    "若与本轮用户请求直接冲突，以本轮请求为准；否则严格遵守所有启用约束。",
     ...lines,
   ].join("\n")
 }
@@ -74,12 +74,12 @@ function formatResponseConstraints(responseConstraints: AppliedResponseConstrain
 function formatSkillSummaries(skills: SkillSummary[]): string {
   if (skills.length === 0) return ""
   const lines = skills.flatMap(({ skill, summary }) => [
-    `- ${skill.name ?? skill.id} (${skill.type}) source=${skill.sourceFile} summary=${skill.summaryFile ?? "none"}`,
+    `- ${skill.name ?? skill.id} (${skill.type}) 来源=${skill.sourceFile} 摘要=${skill.summaryFile ?? "无"}`,
     summary.trim() ? summary.trim() : "  （摘要为空。必要时先读取源文件。）",
   ])
   return [
-    "Selected writing skills:",
-    "Use these reusable writing rules as high-priority context for this turn.",
+    "已选写作技能：",
+    "把这些可复用写作规则作为本轮高优先级上下文。",
     ...lines,
   ].join("\n")
 }
@@ -92,13 +92,13 @@ function formatThreadMessages(messages: Message[]): string {
   if (visible.length === 0) return ""
 
   const lines = visible.map((message) => {
-    const label = message.role === "user" ? "User" : "Assistant"
+    const label = message.role === "user" ? "用户" : "助手"
     return `### ${label}\n${clipThreadMessage(message.content, message.role)}`
   })
 
   return [
-    "LG prior thread context:",
-    "These are the visible chat messages before the current user request. Use them as conversation context, especially user corrections and established project facts.",
+    "LG 前文对话：",
+    "这些是本轮请求前可见的聊天消息；用于对话上下文，尤其保留用户纠正和已确定项目事实。",
     ...lines,
   ].join("\n")
 }
@@ -107,21 +107,21 @@ function clipThreadMessage(content: string, role: Message["role"]): string {
   const maxLength = role === "assistant" ? 2400 : 1600
   const normalized = content.trim()
   return normalized.length > maxLength
-    ? `${normalized.slice(0, maxLength)}\n...[truncated]`
+    ? `${normalized.slice(0, maxLength)}\n...[截断]`
     : normalized
 }
 
 function formatWorkflowAction(action?: WorkflowAction): string {
   if (!action) return ""
   const instructions: Record<WorkflowAction, string> = {
-    continue: "Workflow action /续写: use propose_file_change to create a reviewable continuation proposal. Target drafts/ by default for generated chapter prose; use 章节正文/ only when the user explicitly asks to apply directly to chapter body. Do not write target files directly.",
-    revise: "Workflow action /改稿: use propose_file_change to create a concrete diff proposal. If revising chapter prose, target drafts/ by default; use 章节正文/ only when the user explicitly asks to apply directly to chapter body. Prefer minimal edits and do not write target files directly.",
-    plant: "Workflow action /铺垫: plant an open foreshadowing hook and maintain NOVEL.md's 当前 open 伏笔 when writing is requested.",
-    resolve: "Workflow action /收线: inspect open foreshadowing hooks, choose the referenced hook, and check the payoff is self-consistent before writing.",
-    diagnose: "Workflow action /卡点诊断: read context and provide multiple next directions. This is readonly unless the user explicitly asks to write.",
-    plan: "Workflow action /计划: produce a chapter/action plan first. Do not write files in this turn unless the user explicitly asks to execute the plan.",
+    continue: "/续写：用 propose_file_change 生成可审阅续写提案。生成正文默认放 drafts/；仅当用户明确要求直接应用到章节正文时才用 章节正文/。不要直接写目标文件。",
+    revise: "/改稿：用 propose_file_change 生成具体 diff 提案。改章节正文时默认放 drafts/；仅当用户明确要求直接应用到章节正文时才用 章节正文/。优先小改，不直接写目标文件。",
+    plant: "/铺垫：需要写入时，埋一个 open 伏笔，并维护 NOVEL.md 的 当前 open 伏笔。",
+    resolve: "/收线：先检查 open 伏笔，选定被引用伏笔，并确认回收自洽后再写。",
+    diagnose: "/卡点诊断：读上下文，给多个后续方向。除非用户明确要求写入，否则只读。",
+    plan: "/计划：先产出章节/行动计划。本轮不写文件，除非用户明确要求执行计划。",
   }
-  return `Selected workflow:\n${instructions[action]}`
+  return `已选工作流：\n${instructions[action]}`
 }
 
 const PROJECT_CONTEXT_CARD_LIMIT = 60
@@ -167,9 +167,9 @@ async function buildStableProjectContext(bookId: string): Promise<string> {
     .map(formatIndexedFile)
 
   return [
-    "LG stable project index (short summaries and paths; not complete facts):",
-    cardLines.length > 0 ? `Setting cards:\n${cardLines.join("\n")}` : "Setting cards: none",
-    fileLines.length > 0 ? `Workspace files:\n${fileLines.join("\n")}` : "Workspace files: none",
+    "LG 稳定项目索引（短摘要和路径，不是完整事实）：",
+    cardLines.length > 0 ? `设定卡：\n${cardLines.join("\n")}` : "设定卡：无",
+    fileLines.length > 0 ? `工作区文件：\n${fileLines.join("\n")}` : "工作区文件：无",
   ].join("\n\n")
 }
 
@@ -179,11 +179,11 @@ function isProposalWorkflow(action?: WorkflowAction): boolean {
 
 function formatChapterDraftPolicy(): string {
   return [
-    "Chapter draft-first policy:",
-    "- When the user asks to write, continue, rewrite, or draft chapter prose, create or update prose under drafts/ by default.",
-    "- Use existing 章节正文/ files as context, but do not write or edit 章节正文/ for generated prose unless the user explicitly says to write/apply/save directly to the chapter body.",
-    "- If a corresponding draft does not exist, create a clear markdown file under drafts/ using the chapter number/title in the filename.",
-    "- Do not update 状态追踪/ as a side effect of drafting chapter prose unless the user explicitly asks for status tracking updates; mention suggested status changes in the reply instead.",
+    "章节草稿优先策略：",
+    "- 用户要求写、续写、重写或起草章节正文时，默认在 drafts/ 创建或更新正文。",
+    "- 章节正文/ 可作上下文；除非用户明确说直接写入/应用/保存到章节正文，否则不写不改 章节正文/。",
+    "- 若对应草稿不存在，在 drafts/ 下用章节号/标题创建清晰的 markdown 文件。",
+    "- 除非用户明确要求更新状态追踪，否则不要因起草正文而顺手改 状态追踪/；可在回复中建议状态变化。",
   ].join("\n")
 }
 
@@ -198,27 +198,27 @@ function buildPrompt(input: {
   workflowAction?: WorkflowAction
 }): string {
   return [
-    `LG book: ${input.bookTitle} (${input.bookId})`,
+    `LG 书籍：${input.bookTitle} (${input.bookId})`,
     formatChapterDraftPolicy(),
     formatWorkflowAction(input.workflowAction),
     formatResponseConstraints(input.responseConstraints),
     formatSkillSummaries(input.skills),
     formatThreadMessages(input.threadMessages),
-    "User request:",
+    "用户请求：",
     input.userMessage,
     formatReferences(input.references),
   ].filter(Boolean).join("\n")
 }
 
-const LG_LEGACY_PROMPT = `LG integration notes:
-- This workspace may contain legacy LG directories in addition to Novel Guide directories.
-- Treat 人物设定/, 世界观/, 卷纲/, 章节大纲/, 章节正文/, 剧情管理/, 状态追踪/, 读者体验/, 写作约束/, 章节摘要/, and 检查报告/ as first-class novel material.
-- Do not conclude that the project lacks characters, settings, outlines, or prose merely because NOVEL.md, canon/, or drafts/ are sparse. Inspect the legacy LG directories first.
-- For chapter-writing requests, first read the relevant outline/prose files plus nearby world, character, and conflict files before asking the user for basics.
-- For generated chapter prose, draft-first: write to drafts/ by default. Do not write or edit 章节正文/ unless the user explicitly asks to apply/save directly to chapter body.
-- Do not update 状态追踪/ merely as a side effect of drafting chapter prose unless explicitly requested.
-- Prefer reading the real files before answering. If you write files, use the workspace tools and report what changed.
-- The surrounding LG UI stores chat turns separately; do not try to edit thread-messages.jsonl unless the user explicitly asks.`
+const LG_LEGACY_PROMPT = `LG 集成说明：
+- 除 Novel Guide 目录外，工作区可能还有旧 LG 目录。
+- 人物设定/、世界观/、卷纲/、章节大纲/、章节正文/、剧情管理/、状态追踪/、读者体验/、写作约束/、章节摘要/、检查报告/ 都是一等小说材料。
+- 不要因 NOVEL.md、canon/ 或 drafts/ 稀疏就判断项目缺人物、设定、大纲或正文；先查旧 LG 目录。
+- 写章节前，先读相关大纲/正文，以及附近世界观、人物、冲突文件，再向用户追问基础信息。
+- 生成章节正文时草稿优先：默认写 drafts/。除非用户明确要求直接应用/保存到章节正文，不写不改 章节正文/。
+- 除非用户明确要求，不要因起草正文而顺手更新 状态追踪/。
+- 回答前优先读真实文件；写文件时用工作区工具并报告变更。
+- LG UI 另存聊天轮次；除非用户明确要求，不要编辑 thread-messages.jsonl。`
 
 export async function runNovelGuideAgent(input: {
   bookId: string
@@ -448,12 +448,12 @@ export async function runNovelGuideReview(input: {
         agent: checker.agent,
         readonly: true,
         prompt: [
-          `Book: ${bookTitle} (${input.bookId})`,
-          `Review scope: ${scope}`,
+          `书籍：${bookTitle} (${input.bookId})`,
+          `检查范围：${scope}`,
           "",
-          "Run a read-only novel health check for your specialty.",
-          "Return the required JSON-in-markdown schema. Include evidence paths and line numbers when possible.",
-          "Do not modify files.",
+          "按你的专长执行只读小说健康检查。",
+          "返回要求的 JSON-in-markdown schema；尽量包含证据路径和行号。",
+          "不要修改文件。",
         ].join("\n"),
       })
       return { checker, result }
