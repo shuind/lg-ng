@@ -1,6 +1,7 @@
 import { withAuthRoute } from "@/lib/server/auth-route"
 import { NextResponse } from "next/server"
 import {
+  deleteClaudeSkill,
   readClaudeSkillDraft,
   SkillConflictError,
   SkillNotFoundError,
@@ -57,5 +58,27 @@ async function PUTHandler(
   }
 }
 
+async function DELETEHandler(
+  _request: Request,
+  { params }: { params: Promise<{ bookId: string; skillName: string }> },
+) {
+  try {
+    const { bookId, skillName } = await params
+    await deleteClaudeSkill(bookId, decodeURIComponent(skillName))
+    return NextResponse.json({ ok: true })
+  } catch (err) {
+    if (err instanceof SkillNotFoundError) {
+      return NextResponse.json({ error: err.message }, { status: 404 })
+    }
+    if (err instanceof SkillValidationError) {
+      return NextResponse.json({ error: err.message }, { status: 400 })
+    }
+
+    console.error("[api/books/skills/:skillName] delete error:", err)
+    return NextResponse.json({ error: "删除 Skill 失败。" }, { status: 500 })
+  }
+}
+
 export const GET = withAuthRoute(GETHandler)
 export const PUT = withAuthRoute(PUTHandler)
+export const DELETE = withAuthRoute(DELETEHandler)

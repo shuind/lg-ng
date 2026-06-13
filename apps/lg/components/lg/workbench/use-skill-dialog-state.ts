@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import type { Skill, SkillResourceKind, SkillTextResource } from "@/lib/types"
+import type { Skill, SkillDraftResponse, SkillResourceKind, SkillTextResource } from "@/lib/types"
 import { createSkill, draftSkill, getSkillDraft, updateSkill } from "@/lib/api"
 import {
   createDefaultSkillMd,
@@ -97,6 +97,21 @@ export function useSkillDialogState({
     } finally {
       setLoadingSkillDraft(false)
     }
+  }
+
+  function openDraftSkillDialog(draft: SkillDraftResponse) {
+    setEditingSkillName(null)
+    setSkillName(draft.name)
+    setGoal("")
+    setTriggers("")
+    setExamples("")
+    setResourceKinds(["references"])
+    setSkillMd(draft.skillMd)
+    setResources(draft.resources)
+    setWarnings(draft.warnings)
+    setCreateError("")
+    setSkillMdEdited(true)
+    setOpen(true)
   }
 
   function handleToggleResourceKind(kind: SkillResourceKind, checked: boolean) {
@@ -212,5 +227,6 @@ export function useSkillDialogState({
     handleSaveSkill,
     openCreateSkillDialog,
     openEditSkillDialog,
+    openDraftSkillDialog,
   }
 }

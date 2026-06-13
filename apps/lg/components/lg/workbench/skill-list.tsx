@@ -8,7 +8,10 @@ export function SkillList({
   styleSkill,
   summary,
   refreshing,
+  deletingSkillId,
+  error,
   onEdit,
+  onDelete,
   onRefresh,
   onOpenFile,
 }: {
@@ -16,29 +19,41 @@ export function SkillList({
   styleSkill: Skill | null
   summary: string
   refreshing: boolean
+  deletingSkillId: string | null
+  error: string
   onEdit: (skill: Skill) => void
+  onDelete: (skill: Skill) => void
   onRefresh: () => void
   onOpenFile: (path: string) => void
 }) {
   return (
-    <div className="grid gap-3 md:grid-cols-2">
-      {skills.map((skill) => (
-        <SkillCard
-          key={skill.id}
-          skill={skill}
-          isStyleGuide={skill.id === styleSkill?.id}
-          summary={summary}
-          refreshing={refreshing}
-          onEdit={onEdit}
-          onRefresh={onRefresh}
-          onOpenFile={onOpenFile}
-        />
-      ))}
-      {skills.length === 0 && (
-        <div className="rounded-lg border border-dashed border-border/70 bg-background/35 px-3 py-6 text-center text-[12px] leading-relaxed text-muted-foreground">
-          暂无 Skill。可以在 .claude/skills/ 下添加 SKILL.md。
+    <div className="space-y-3">
+      {error && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
+          {error}
         </div>
       )}
+      <div className="grid gap-3 md:grid-cols-2">
+        {skills.map((skill) => (
+          <SkillCard
+            key={skill.id}
+            skill={skill}
+            isStyleGuide={skill.id === styleSkill?.id}
+            summary={summary}
+            refreshing={refreshing}
+            deleting={deletingSkillId === skill.id}
+            onEdit={onEdit}
+            onDelete={onDelete}
+            onRefresh={onRefresh}
+            onOpenFile={onOpenFile}
+          />
+        ))}
+        {skills.length === 0 && (
+          <div className="rounded-lg border border-dashed border-border/70 bg-background/35 px-3 py-6 text-center text-[12px] leading-relaxed text-muted-foreground">
+            暂无 Skill。可以在 .claude/skills/ 下添加 SKILL.md。
+          </div>
+        )}
+      </div>
     </div>
   )
 }

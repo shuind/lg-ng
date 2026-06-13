@@ -1,6 +1,6 @@
 "use client"
 
-import { PenLine, Sparkles } from "lucide-react"
+import { PenLine, Sparkles, Trash2 } from "lucide-react"
 import type { Skill } from "@/lib/types"
 import { skillDirectoryName, skillDisplayName, skillKindLabel } from "./skill-pane-utils"
 
@@ -9,7 +9,9 @@ export function SkillCard({
   isStyleGuide,
   summary,
   refreshing,
+  deleting,
   onEdit,
+  onDelete,
   onRefresh,
   onOpenFile,
 }: {
@@ -17,7 +19,9 @@ export function SkillCard({
   isStyleGuide: boolean
   summary: string
   refreshing: boolean
+  deleting: boolean
   onEdit: (skill: Skill) => void
+  onDelete: (skill: Skill) => void
   onRefresh: () => void
   onOpenFile: (path: string) => void
 }) {
@@ -50,13 +54,24 @@ export function SkillCard({
           )}
         </div>
         {canEditSkill && (
-          <button
-            onClick={() => onEdit(skill)}
-            className="flex shrink-0 items-center gap-1 rounded-md border border-border/70 px-2.5 py-1 text-[11.5px] font-medium text-foreground transition hover:bg-secondary"
-          >
-            <PenLine className="h-3 w-3" />
-            编辑
-          </button>
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              onClick={() => onEdit(skill)}
+              disabled={deleting}
+              className="flex items-center gap-1 rounded-md border border-border/70 px-2.5 py-1 text-[11.5px] font-medium text-foreground transition hover:bg-secondary disabled:opacity-50"
+            >
+              <PenLine className="h-3 w-3" />
+              编辑
+            </button>
+            <button
+              onClick={() => onDelete(skill)}
+              disabled={deleting}
+              className="flex items-center gap-1 rounded-md border border-destructive/30 px-2.5 py-1 text-[11.5px] font-medium text-destructive transition hover:bg-destructive/10 disabled:opacity-50"
+            >
+              <Trash2 className="h-3 w-3" />
+              {deleting ? "删除中..." : "删除"}
+            </button>
+          </div>
         )}
         {isStyleGuide && (
           <button

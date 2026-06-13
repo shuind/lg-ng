@@ -319,6 +319,23 @@ export async function updateClaudeSkill(bookId: string, input: UpdateSkillReques
   return toClaudeSkillRecord(bookId, name, skillMd, meta, stat.mtime.toISOString())
 }
 
+export async function deleteClaudeSkill(bookId: string, rawName: string): Promise<void> {
+  const name = normalizeSkillName(rawName)
+  if (!name || !isValidSkillName(name)) {
+    throw new SkillValidationError("Skill 短名只能使用小写英文字母、数字和连字符。")
+  }
+
+  const targetDir = claudeSkillDir(bookId, name)
+  const skillPath = path.join(targetDir, "SKILL.md")
+  if (!(await fileExists(skillPath))) {
+    throw new SkillNotFoundError(`找不到这个 Skill：${name}`)
+  }
+
+  await fs.rm(targetDir, { recursive: true, force: true })
+  await touchBookUpdatedAt(bookId)
+  await rebuildBookIndexes(bookId).catch(() => {})
+}
+
 function normalizeStyleGuideSkill(bookId: string, skill: Skill, dirty: boolean): Skill {
   return {
     ...skill,

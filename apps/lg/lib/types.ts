@@ -163,6 +163,52 @@ export interface SkillDraftResponse {
   warnings: string[]
 }
 
+export type SkillCandidateStatus = "candidate" | "drafted" | "dismissed"
+
+export interface SkillCandidateEvidence {
+  id: string
+  type: "message" | "diff"
+  label: string
+  text: string
+  ref?: string
+}
+
+export interface SkillCandidateEvalCase {
+  id: string
+  input: string
+  expectedDirection: string
+  notes?: string
+}
+
+export interface SkillCandidateVariant {
+  id: string
+  name: string
+  description: string
+  rules: string[]
+}
+
+export interface SkillCandidate {
+  id: string
+  status: SkillCandidateStatus
+  nameHint: string
+  title: string
+  summary: string
+  trigger: string
+  rules: string[]
+  confidence: number
+  occurrenceCount: number
+  evidence: SkillCandidateEvidence[]
+  evalCases: SkillCandidateEvalCase[]
+  variants: SkillCandidateVariant[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SkillCandidateListResponse {
+  candidates: SkillCandidate[]
+  updatedAt: string
+}
+
 export interface CreateSkillRequest {
   name: string
   skillMd: string
