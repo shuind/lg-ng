@@ -1,8 +1,3 @@
-// Reference: C:/Users/qdz/Desktop/cli/claude-code-main/src/QueryEngine.ts
-// Mechanism copied: one engine per conversation; messages persist across
-// turns; submitMessage builds context, invokes query(), accumulates usage, and
-// writes session state.
-
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type OpenAI from "openai";
@@ -16,6 +11,7 @@ import { queryEvents, type QueryEvent, type QueryResult } from "./query.js";
 import { createSessionId, saveSession, type SessionCompactionState, type SessionState } from "./session.js";
 import { findAgent, loadAgentsDir } from "../agents/loadAgentsDir.js";
 import { loadSkillsDir } from "../skills/loadSkillsDir.js";
+import { WORKSPACE_GUIDE_FILES } from "../workspace/layout.js";
 
 const COMPACTION_PREFIX = "NG_COMPACTION_MEMO:";
 const PROJECT_CONTEXT_PREFIX = "NG_PROJECT_CONTEXT:";
@@ -470,7 +466,7 @@ async function summarizeCanonFacts(cwd: string): Promise<string> {
 
 const LEGACY_LG_MATERIAL_PATTERNS = [
   "创作指南.md",
-  "CLAUDE.md",
+  ...WORKSPACE_GUIDE_FILES,
   "人物设定/**/*.md",
   "世界观/**/*.md",
   "卷纲/**/*.md",

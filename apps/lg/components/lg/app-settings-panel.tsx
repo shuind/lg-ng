@@ -1,13 +1,18 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Check, KeyRound, Loader2, LogOut, PlugZap, Save, Search, Trash2, Wallet } from "lucide-react"
 import { getAppSettings, getMyBillingSummary, getMyBillingUsageRange, logout, testAppSettingsLlm, updateAppSettings } from "@/lib/api"
 import {
   APP_MODEL_OPTIONS,
+  APP_PROVIDER_OPTIONS,
   DEFAULT_APP_MODEL_ID,
+  DEFAULT_APP_PROVIDER,
   DEFAULT_PAYMENT_SOURCE,
+  getAppProviderOption,
+  getDefaultModelForProvider,
   type AppPaymentSource,
+  type AppProviderId,
   type AppModelId,
   type AppSettingsPayload,
 } from "@/lib/app-settings"
@@ -78,21 +83,52 @@ export function AppSettingsPanel({ className }: { className?: string }) {
   const [settings, setSettings] = useState<AppSettingsPayload | null>(null)
   const [billing, setBilling] = useState<BillingUserSummary | null>(null)
   const [usageRange, setUsageRange] = useState<BillingUsageRangePayload | null>(null)
+  const [selectedProvider, setSelectedProvider] = useState<AppProviderId>(DEFAULT_APP_PROVIDER)
   const [selectedModelId, setSelectedModelId] = useState<AppModelId>(DEFAULT_APP_MODEL_ID)
   const [selectedPaymentSource, setSelectedPaymentSource] = useState<AppPaymentSource>(DEFAULT_PAYMENT_SOURCE)
   const [usageFrom, setUsageFrom] = useState(() => toDateTimeLocalValue(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)))
   const [usageTo, setUsageTo] = useState(() => toDateTimeLocalValue(new Date()))
-  const [deepSeekApiKey, setDeepSeekApiKey] = useState("")
+  const [providerApiKey, setProviderApiKey] = useState("")
+  const [providerBaseUrl, setProviderBaseUrl] = useState("")
   const [loading, setLoading] = useState(true)
+  const [savingProvider, setSavingProvider] = useState<AppProviderId | null>(null)
   const [savingModelId, setSavingModelId] = useState<AppModelId | null>(null)
   const [savingPaymentSource, setSavingPaymentSource] = useState<AppPaymentSource | null>(null)
   const [savingKey, setSavingKey] = useState(false)
+  const [savingBaseUrl, setSavingBaseUrl] = useState(false)
   const [clearingKey, setClearingKey] = useState(false)
   const [testingKey, setTestingKey] = useState(false)
   const [loadingUsageRange, setLoadingUsageRange] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [keyMessage, setKeyMessage] = useState<string | null>(null)
+
+  const currentProviderOption = getAppProviderOption(selectedProvider)
+  const recommendedModelOption = APP_MODEL_OPTIONS.find((option) => option.id === DEFAULT_APP_MODEL_ID) ?? APP_MODEL_OPTIONS[0]
+  const backupProviderOptions = APP_PROVIDER_OPTIONS.filter((option) => option.id !== DEFAULT_APP_PROVIDER)
+  const isRecommendedActive = selectedProvider === DEFAULT_APP_PROVIDER && selectedModelId === DEFAULT_APP_MODEL_ID
+  const providerModelOptions = useMemo(
+    () => APP_MODEL_OPTIONS.filter((option) => option.provider === selectedProvider),
+    [selectedProvider],
+  )
+  const paymentOptions = [
+    {
+      id: "balance" as const,
+      label: "使用余额",
+      icon: Wallet,
+      detail: currentProviderOption.supportsBalance
+        ? billing?.canUseBalance ? "平台余额可用" : "需要余额和平台 Key"
+        : "仅 DeepSeek 支持余额",
+      disabled: !currentProviderOption.supportsBalance,
+    },
+    {
+      id: "api" as const,
+      label: "使用自己的 API",
+      icon: KeyRound,
+      detail: settings?.providerConfigured ? "个人 Key 已配置" : "需要保存 API Key",
+      disabled: false,
+    },
+  ]
 
   useEffect(() => {
     let cancelled = false
@@ -113,8 +149,10 @@ export function AppSettingsPanel({ className }: { className?: string }) {
         setSettings(payload)
         setBilling(billingPayload)
         setUsageRange(usagePayload)
+        setSelectedProvider(payload.provider)
         setSelectedModelId(payload.modelId)
         setSelectedPaymentSource(payload.paymentSource)
+        setProviderBaseUrl(payload.providerBaseUrl ?? "")
       })
       .catch((err) => {
         if (cancelled) return
@@ -147,6 +185,37 @@ export function AppSettingsPanel({ className }: { className?: string }) {
     }
   }
 
+  async function handleSelectProvider(provider: AppProviderId) {
+    if (savingProvider || provider === selectedProvider) return
+    const previousProvider = selectedProvider
+    const previousModelId = selectedModelId
+    const previousPaymentSource = selectedPaymentSource
+    const nextModelId = getDefaultModelForProvider(provider)
+    const nextPaymentSource = getAppProviderOption(provider).supportsBalance ? selectedPaymentSource : "api"
+    setSelectedProvider(provider)
+    setSelectedModelId(nextModelId)
+    setSelectedPaymentSource(nextPaymentSource)
+    setSavingProvider(provider)
+    setError(null)
+    setKeyMessage(null)
+
+    try {
+      const payload = await updateAppSettings({ provider, modelId: nextModelId, paymentSource: nextPaymentSource })
+      setSettings(payload)
+      setSelectedProvider(payload.provider)
+      setSelectedModelId(payload.modelId)
+      setSelectedPaymentSource(payload.paymentSource)
+      setProviderBaseUrl(payload.providerBaseUrl ?? "")
+    } catch (err) {
+      setSelectedProvider(previousProvider)
+      setSelectedModelId(previousModelId)
+      setSelectedPaymentSource(previousPaymentSource)
+      setError(err instanceof Error ? err.message : "保存供应商失败")
+    } finally {
+      setSavingProvider(null)
+    }
+  }
+
   async function handleSelectModel(modelId: AppModelId) {
     if (savingModelId || modelId === selectedModelId) return
     const previousModelId = selectedModelId
@@ -168,6 +237,7 @@ export function AppSettingsPanel({ className }: { className?: string }) {
 
   async function handleSelectPaymentSource(paymentSource: AppPaymentSource) {
     if (savingPaymentSource || paymentSource === selectedPaymentSource) return
+    if (paymentSource === "balance" && !currentProviderOption.supportsBalance) return
     const previousPaymentSource = selectedPaymentSource
     setSelectedPaymentSource(paymentSource)
     setSavingPaymentSource(paymentSource)
@@ -188,22 +258,40 @@ export function AppSettingsPanel({ className }: { className?: string }) {
   }
 
   async function handleSaveKey() {
-    const apiKey = deepSeekApiKey.trim()
+    const apiKey = providerApiKey.trim()
     if (!apiKey || savingKey) return
     setSavingKey(true)
     setError(null)
     setKeyMessage(null)
     try {
-      const payload = await updateAppSettings({ deepSeekApiKey: apiKey })
+      const payload = await updateAppSettings({ providerApiKey: apiKey })
       setSettings(payload)
+      setSelectedProvider(payload.provider)
       setSelectedModelId(payload.modelId)
       setSelectedPaymentSource(payload.paymentSource)
-      setDeepSeekApiKey("")
-      setKeyMessage("DeepSeek API Key 已保存。")
+      setProviderApiKey("")
+      setKeyMessage(`${currentProviderOption.label} API Key 已保存。`)
     } catch (err) {
       setError(err instanceof Error ? err.message : "保存 API Key 失败")
     } finally {
       setSavingKey(false)
+    }
+  }
+
+  async function handleSaveBaseUrl() {
+    if (savingBaseUrl) return
+    setSavingBaseUrl(true)
+    setError(null)
+    setKeyMessage(null)
+    try {
+      const payload = await updateAppSettings({ providerBaseUrl })
+      setSettings(payload)
+      setProviderBaseUrl(payload.providerBaseUrl ?? "")
+      setKeyMessage(`${currentProviderOption.label} 接口地址已保存。`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "保存接口地址失败")
+    } finally {
+      setSavingBaseUrl(false)
     }
   }
 
@@ -213,11 +301,11 @@ export function AppSettingsPanel({ className }: { className?: string }) {
     setError(null)
     setKeyMessage(null)
     try {
-      const payload = await updateAppSettings({ clearDeepSeekApiKey: true })
+      const payload = await updateAppSettings({ clearProviderApiKey: true })
       setSettings(payload)
       setSelectedPaymentSource(payload.paymentSource)
-      setDeepSeekApiKey("")
-      setKeyMessage("DeepSeek API Key 已清除。")
+      setProviderApiKey("")
+      setKeyMessage(`${currentProviderOption.label} API Key 已清除。`)
     } catch (err) {
       setError(err instanceof Error ? err.message : "清除 API Key 失败")
     } finally {
@@ -232,9 +320,10 @@ export function AppSettingsPanel({ className }: { className?: string }) {
     setKeyMessage(null)
     try {
       const result = await testAppSettingsLlm()
-      setKeyMessage(`连接成功，当前模型：${result.model}`)
+      const label = getAppProviderOption(result.provider).label
+      setKeyMessage(`连接成功，${label} / ${result.model}`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "DeepSeek 连通性测试失败")
+      setError(err instanceof Error ? err.message : "模型连通性测试失败")
     } finally {
       setTestingKey(false)
     }
@@ -252,32 +341,57 @@ export function AppSettingsPanel({ className }: { className?: string }) {
 
   return (
     <section className={cn("space-y-7", className)}>
-      <div className="space-y-4">
-        <div className="grid gap-3 sm:grid-cols-3">
-          <div className="rounded-lg border border-border/70 bg-background p-3">
-            <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
-              <Wallet className="h-3.5 w-3.5" />
-              余额
-            </div>
-            <div className="mt-2 text-xl font-semibold tracking-normal">{formatMoney(billing?.balanceCny ?? 0)}</div>
-          </div>
-          <div className="rounded-lg border border-border/70 bg-background p-3">
-            <div className="text-[12px] text-muted-foreground">余额已用</div>
-            <div className="mt-2 text-xl font-semibold tracking-normal">{formatMoney(billing?.usedBalanceCny ?? 0)}</div>
-          </div>
-          <div className="rounded-lg border border-border/70 bg-background p-3">
-            <div className="text-[12px] text-muted-foreground">AI 请求</div>
-            <div className="mt-2 text-xl font-semibold tracking-normal">{billing?.requestCount ?? 0}</div>
-          </div>
+      <div className="space-y-5">
+        <div className="space-y-1">
+          <h2 className="text-[13px] font-medium text-foreground">AI 模型</h2>
+          <p className="text-[12px] leading-relaxed text-muted-foreground">
+            默认使用 DeepSeek V4 Flash。Claude 中转和其它模型放在备用/高级选项里，不作为普通用户主路径。
+          </p>
         </div>
 
-        <div className="space-y-2">
-          <h2 className="text-[13px] font-medium text-foreground">支付方式</h2>
-          <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="支付方式">
-            {[
-              { id: "balance" as const, label: "使用余额", icon: Wallet, detail: billing?.canUseBalance ? "平台余额可用" : "需要余额和平台 Key" },
-              { id: "api" as const, label: "使用自己的 API", icon: KeyRound, detail: settings?.deepSeekConfigured ? "个人 Key 已配置" : "需要保存 API Key" },
-            ].map((option) => {
+        <div className={cn(
+          "rounded-xl border p-4 transition",
+          isRecommendedActive
+            ? "border-primary/60 bg-primary/10"
+            : "border-border/70 bg-background",
+        )}>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-primary px-2 py-0.5 text-[11px] font-medium text-primary-foreground">
+                  推荐默认
+                </span>
+                <span className="text-[11px] text-muted-foreground">主路径 · 余额优先</span>
+              </div>
+              <div>
+                <h3 className="text-[16px] font-semibold text-foreground">DeepSeek V4 Flash</h3>
+                <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+                  日常写作的默认模型，速度和成本更均衡。优先走平台余额；余额不可用时可切换为自己的 DeepSeek Key。
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                <span className="rounded-full border border-border/70 bg-background px-2 py-1">
+                  余额 {billing?.canUseBalance ? "可用" : "未就绪"}
+                </span>
+                <span className="rounded-full border border-border/70 bg-background px-2 py-1">
+                  当前 {isRecommendedActive ? "正在使用" : `${currentProviderOption.label} / ${selectedModelId}`}
+                </span>
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant={isRecommendedActive ? "outline" : "default"}
+              disabled={loading || Boolean(savingProvider)}
+              onClick={() => void handleSelectProvider(DEFAULT_APP_PROVIDER)}
+              className="shrink-0"
+            >
+              {savingProvider === DEFAULT_APP_PROVIDER ? <Loader2 className="h-4 w-4 animate-spin" /> : isRecommendedActive ? <Check className="h-4 w-4" /> : null}
+              {isRecommendedActive ? "已使用默认" : "切回默认"}
+            </Button>
+          </div>
+
+          <div className="mt-4 grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="DeepSeek 支付方式">
+            {paymentOptions.map((option) => {
               const active = selectedPaymentSource === option.id
               const saving = savingPaymentSource === option.id
               const Icon = option.icon
@@ -287,13 +401,13 @@ export function AppSettingsPanel({ className }: { className?: string }) {
                   type="button"
                   role="radio"
                   aria-checked={active}
-                  disabled={loading || Boolean(savingPaymentSource)}
+                  disabled={loading || selectedProvider !== DEFAULT_APP_PROVIDER || Boolean(savingPaymentSource) || option.disabled}
                   onClick={() => void handleSelectPaymentSource(option.id)}
                   className={cn(
-                    "flex min-h-14 w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition disabled:cursor-not-allowed disabled:opacity-70",
+                    "flex min-h-14 w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition disabled:cursor-not-allowed disabled:opacity-55",
                     active
-                      ? "border-primary/55 bg-primary/10 text-foreground"
-                      : "border-border/70 bg-background text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                      ? "border-primary/55 bg-background text-foreground"
+                      : "border-border/70 bg-background/70 text-muted-foreground hover:bg-accent/60 hover:text-foreground",
                   )}
                 >
                   <span className="flex min-w-0 items-center gap-2">
@@ -313,70 +427,133 @@ export function AppSettingsPanel({ className }: { className?: string }) {
             })}
           </div>
         </div>
+
+        <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-[13px] font-medium text-foreground">备用模型 / 高级选项</h3>
+              <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+                仅在需要 Claude 中转或其它 OpenAI 兼容接口时切换。切换后需配置对应 Key 和接口地址。
+              </p>
+            </div>
+            {selectedProvider !== DEFAULT_APP_PROVIDER ? (
+              <span className="mt-2 rounded-full border border-border/70 bg-background px-2 py-1 text-[11px] text-muted-foreground sm:mt-0">
+                当前备用：{currentProviderOption.label}
+              </span>
+            ) : null}
+          </div>
+
+          <div className="mt-3 grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="备用模型供应商">
+            {backupProviderOptions.map((option) => {
+              const active = selectedProvider === option.id
+              const saving = savingProvider === option.id
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  disabled={loading || Boolean(savingProvider)}
+                  onClick={() => void handleSelectProvider(option.id)}
+                  className={cn(
+                    "flex min-h-16 w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition disabled:cursor-not-allowed disabled:opacity-70",
+                    active
+                      ? "border-primary/50 bg-background text-foreground"
+                      : "border-border/60 bg-background/60 text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                  )}
+                >
+                  <span className="min-w-0">
+                    <span className="block text-[13px] font-medium">{option.label}</span>
+                    <span className="block text-[11px] leading-snug text-muted-foreground">{option.description}</span>
+                  </span>
+                  {saving ? (
+                    <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" />
+                  ) : active ? (
+                    <Check className="h-4 w-4 shrink-0 text-primary" />
+                  ) : null}
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="mt-4 space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <h4 className="text-[12px] font-medium text-muted-foreground">
+                {selectedProvider === DEFAULT_APP_PROVIDER ? "DeepSeek 可选模型" : `${currentProviderOption.label} 模型`}
+              </h4>
+              {selectedProvider === DEFAULT_APP_PROVIDER ? (
+                <span className="text-[11px] text-muted-foreground">默认无需调整</span>
+              ) : null}
+            </div>
+            <div className="grid gap-2" role="radiogroup" aria-label="模型">
+              {providerModelOptions.map((option) => {
+                const active = selectedModelId === option.id
+                const saving = savingModelId === option.id
+                const recommended = option.id === recommendedModelOption.id
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    disabled={loading || Boolean(savingModelId)}
+                    onClick={() => void handleSelectModel(option.id)}
+                    className={cn(
+                      "flex min-h-14 w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition disabled:cursor-not-allowed disabled:opacity-70",
+                      active
+                        ? "border-primary/55 bg-background text-foreground"
+                        : "border-border/60 bg-background/60 text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                    )}
+                  >
+                    <span className="min-w-0">
+                      <span className="flex items-center gap-2 text-[13px] font-medium">
+                        {option.label}
+                        {recommended ? <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">默认</span> : null}
+                      </span>
+                      <span className="block truncate text-[11px] text-muted-foreground">{option.description} · {option.id}</span>
+                    </span>
+                    {saving ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                    ) : active ? (
+                      <Check className="h-4 w-4 text-primary" />
+                    ) : null}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div className="space-y-5">
+      <div className={cn(
+        "space-y-4 rounded-xl border p-4",
+        selectedProvider === DEFAULT_APP_PROVIDER
+          ? "border-border/70 bg-background"
+          : "border-primary/35 bg-primary/5",
+      )}>
         <div className="space-y-1">
-          <h2 className="text-[13px] font-medium text-foreground">模型</h2>
+          <h2 className="text-[13px] font-medium text-foreground">
+            {selectedProvider === DEFAULT_APP_PROVIDER ? "DeepSeek API Key（可选）" : `${currentProviderOption.label} 接入配置`}
+          </h2>
           <p className="text-[12px] leading-relaxed text-muted-foreground">
-            选择应用默认模型。保存后，后续 AI 请求会使用新的模型配置。
-          </p>
-        </div>
-
-        <div className="grid gap-2" role="radiogroup" aria-label="模型">
-          {APP_MODEL_OPTIONS.map((option) => {
-            const active = selectedModelId === option.id
-            const saving = savingModelId === option.id
-            return (
-              <button
-                key={option.id}
-                type="button"
-                role="radio"
-                aria-checked={active}
-                disabled={loading || Boolean(savingModelId)}
-                onClick={() => void handleSelectModel(option.id)}
-                className={cn(
-                  "flex min-h-14 w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition disabled:cursor-not-allowed disabled:opacity-70",
-                  active
-                    ? "border-primary/55 bg-primary/10 text-foreground"
-                    : "border-border/70 bg-background text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-                )}
-              >
-                <span className="min-w-0">
-                  <span className="block text-[13px] font-medium">{option.label}</span>
-                  <span className="block truncate text-[11px] text-muted-foreground">{option.id}</span>
-                </span>
-                {saving ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                ) : active ? (
-                  <Check className="h-4 w-4 text-primary" />
-                ) : null}
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
-      <div className="space-y-4 border-t border-border/70 pt-6">
-        <div className="space-y-1">
-          <h2 className="text-[13px] font-medium text-foreground">DeepSeek API Key</h2>
-          <p className="text-[12px] leading-relaxed text-muted-foreground">
-            每个账号独立保存密钥。密钥会在服务端加密存储，保存后不会再次显示原文。
+            {selectedProvider === DEFAULT_APP_PROVIDER
+              ? "默认优先使用平台余额；只有在需要使用自己的 DeepSeek Key 时才需要填写这里。"
+              : "备用模型不会默认启用，需要保存对应中转站/供应商的 Key 和 OpenAI 兼容接口地址。"}
           </p>
         </div>
 
         <div className="rounded-lg border border-border/70 bg-background p-3">
           <div className="flex items-center justify-between gap-3 text-[12px]">
             <span className="text-muted-foreground">当前状态</span>
-            <span className={settings?.deepSeekConfigured ? "text-foreground" : "text-muted-foreground"}>
-              {settings?.deepSeekConfigured
-                ? `已配置 ${settings.deepSeekKeyPreview ?? ""}`
+            <span className={settings?.providerConfigured ? "text-foreground" : "text-muted-foreground"}>
+              {settings?.providerConfigured
+                ? `已配置 ${settings.providerKeyPreview ?? "环境变量"}`
                 : "未配置"}
             </span>
           </div>
-          {settings?.deepSeekKeyUpdatedAt ? (
+          {settings?.providerKeyUpdatedAt ? (
             <div className="mt-1 text-right text-[11px] text-muted-foreground">
-              更新于 {new Date(settings.deepSeekKeyUpdatedAt).toLocaleString()}
+              更新于 {new Date(settings.providerKeyUpdatedAt).toLocaleString()}
             </div>
           ) : null}
         </div>
@@ -385,14 +562,29 @@ export function AppSettingsPanel({ className }: { className?: string }) {
           <Input
             type="password"
             autoComplete="off"
-            value={deepSeekApiKey}
-            onChange={(event) => setDeepSeekApiKey(event.target.value)}
-            placeholder="sk-..."
+            value={providerApiKey}
+            onChange={(event) => setProviderApiKey(event.target.value)}
+            placeholder={currentProviderOption.apiKeyPlaceholder}
             className="min-w-0 flex-1"
           />
-          <Button type="button" disabled={!deepSeekApiKey.trim() || savingKey} onClick={() => void handleSaveKey()}>
+          <Button type="button" disabled={!providerApiKey.trim() || savingKey} onClick={() => void handleSaveKey()}>
             {savingKey ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            保存
+            保存 Key
+          </Button>
+        </div>
+
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Input
+            type="url"
+            autoComplete="off"
+            value={providerBaseUrl}
+            onChange={(event) => setProviderBaseUrl(event.target.value)}
+            placeholder={currentProviderOption.defaultBaseUrl || "https://your-relay.example.com/v1"}
+            className="min-w-0 flex-1"
+          />
+          <Button type="button" variant="outline" disabled={savingBaseUrl} onClick={() => void handleSaveBaseUrl()}>
+            {savingBaseUrl ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            保存接口
           </Button>
         </div>
 
@@ -400,7 +592,7 @@ export function AppSettingsPanel({ className }: { className?: string }) {
           <Button
             type="button"
             variant="outline"
-            disabled={!settings?.deepSeekConfigured || testingKey}
+            disabled={!settings?.providerConfigured || testingKey}
             onClick={() => void handleTestKey()}
           >
             {testingKey ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlugZap className="h-4 w-4" />}
@@ -409,7 +601,7 @@ export function AppSettingsPanel({ className }: { className?: string }) {
           <Button
             type="button"
             variant="ghost"
-            disabled={!settings?.deepSeekConfigured || clearingKey}
+            disabled={!settings?.providerConfigured || clearingKey}
             onClick={() => void handleClearKey()}
           >
             {clearingKey ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
@@ -431,11 +623,13 @@ export function AppSettingsPanel({ className }: { className?: string }) {
         ) : selectedPaymentSource === "balance" ? (
           billing?.canUseBalance
             ? `当前使用余额，模型：${settings?.activeModel ?? selectedModelId}`
-            : "当前选择余额；余额为 0 或平台 Key 未配置时，AI 请求会被拦截。"
-        ) : settings?.deepSeekConfigured ? (
-          `当前使用自己的 API，模型：${settings.activeModel ?? selectedModelId}`
+            : settings?.providerConfigured && settings.activeProvider !== "none"
+              ? `余额通道不可用，已改用自己的 API，模型：${settings.activeModel ?? selectedModelId}`
+          : "当前选择余额；余额为 0 或平台 Key 未配置时，AI 请求会被拦截。"
+        ) : settings?.providerConfigured ? (
+          `当前使用自己的 API，供应商：${currentProviderOption.label}，模型：${settings.activeModel ?? selectedModelId}`
         ) : (
-          "当前选择自己的 API；请先保存 DeepSeek API Key。"
+          `当前选择自己的 API；请先保存 ${currentProviderOption.label} API Key。`
         )}
       </div>
 

@@ -1,9 +1,16 @@
 import type {
   CreateSkillRequest,
   Skill,
-  SkillCandidateListResponse,
+  SkillExperimentRunRequest,
+  SkillExperimentResult,
+  SkillExperimentSaveRequest,
+  SkillLabAnalyzeRequest,
   SkillDraftRequest,
   SkillDraftResponse,
+  SkillLabResponse,
+  SkillTrial,
+  SkillTrialSampleSource,
+  SkillTrialVerdict,
   UpdateSkillRequest,
 } from "../types"
 import { delay } from "./common"
@@ -109,62 +116,131 @@ export async function getSkillDraft(bookId: string, skillName: string): Promise<
   }
 }
 
-function normalizeCandidateList(data: unknown): SkillCandidateListResponse {
-  const raw = data && typeof data === "object" ? data as Partial<SkillCandidateListResponse> : {}
+function normalizeLabResponse(data: unknown): SkillLabResponse {
+  const raw = data && typeof data === "object" ? (data as Partial<SkillLabResponse>) : {}
   return {
-    candidates: Array.isArray(raw.candidates) ? raw.candidates : [],
-    updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : new Date().toISOString(),
+    suggestions: Array.isArray(raw.suggestions) ? raw.suggestions : [],
+    analyzedAt: typeof raw.analyzedAt === "string" ? raw.analyzedAt : "",
+    analyzedRevisionCount: typeof raw.analyzedRevisionCount === "number" ? raw.analyzedRevisionCount : 0,
+    modelConfigured: raw.modelConfigured === true,
   }
 }
 
-export async function listSkillCandidates(bookId: string): Promise<SkillCandidateListResponse> {
-  const res = await fetch(`/api/books/${bookId}/skills/candidates`, { cache: "no-store" })
+export async function listSkillLab(bookId: string): Promise<SkillLabResponse> {
+  const res = await fetch(`/api/books/${bookId}/skills/lab`, { cache: "no-store" })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
-    throw new Error(typeof data?.error === "string" ? data.error : "读取 Skill 候选失败。")
+    throw new Error(typeof data?.error === "string" ? data.error : "读取 Skill Lab 失败。")
   }
-  return normalizeCandidateList(data)
+  return normalizeLabResponse(data)
 }
 
-export async function refreshSkillCandidates(bookId: string): Promise<SkillCandidateListResponse> {
-  const res = await fetch(`/api/books/${bookId}/skills/candidates`, {
+export async function analyzeSkillLab(bookId: string, input: SkillLabAnalyzeRequest): Promise<SkillLabResponse> {
+  const res = await fetch(`/api/books/${bookId}/skills/lab`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(typeof data?.error === "string" ? data.error : "分析改稿失败。")
+  }
+  return normalizeLabResponse(data)
+}
+
+export async function dismissSkillSuggestion(bookId: string, suggestionId: string): Promise<SkillLabResponse> {
+  const res = await fetch(`/api/books/${bookId}/skills/lab/${encodeURIComponent(suggestionId)}/dismiss`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
-    throw new Error(typeof data?.error === "string" ? data.error : "刷新 Skill 候选失败。")
+    throw new Error(typeof data?.error === "string" ? data.error : "忽略 Skill 建议失败。")
   }
-  return normalizeCandidateList(data)
+  return normalizeLabResponse(data)
 }
 
-export async function draftSkillCandidate(bookId: string, candidateId: string): Promise<SkillDraftResponse> {
-  const res = await fetch(`/api/books/${bookId}/skills/candidates/${encodeURIComponent(candidateId)}/draft`, {
+export async function promoteSkill(bookId: string, skillName: string): Promise<Skill> {
+  const res = await fetch(`/api/books/${bookId}/skills/lab/skills/${encodeURIComponent(skillName)}/promote`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
-    throw new Error(typeof data?.error === "string" ? data.error : "从候选生成 Skill 草稿失败。")
+    throw new Error(typeof data?.error === "string" ? data.error : "Skill 毕业失败。")
   }
-  return {
-    name: typeof data.name === "string" ? data.name : "novel-skill",
-    skillMd: typeof data.skillMd === "string" ? data.skillMd : "",
-    resources: Array.isArray(data.resources) ? data.resources : [],
-    warnings: Array.isArray(data.warnings) ? data.warnings : [],
-  }
+  if (data?.skill) return data.skill
+  throw new Error("Skill 毕业成功但接口没有返回 Skill 信息。")
 }
 
-export async function dismissSkillCandidate(bookId: string, candidateId: string): Promise<SkillCandidateListResponse> {
-  const res = await fetch(`/api/books/${bookId}/skills/candidates/${encodeURIComponent(candidateId)}/dismiss`, {
+export async function runSkillTrial(
+  bookId: string,
+  input: { skillName: string; sampleText: string; sampleSource?: SkillTrialSampleSource },
+): Promise<SkillTrial> {
+  const res = await fetch(`/api/books/${bookId}/skills/lab/trial`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
-    throw new Error(typeof data?.error === "string" ? data.error : "忽略 Skill 候选失败。")
+    throw new Error(typeof data?.error === "string" ? data.error : "A/B 探针运行失败。")
   }
-  return normalizeCandidateList(data)
+  if (data?.trial) return data.trial
+  throw new Error("A/B 探针完成但接口没有返回记录。")
+}
+
+export async function recordSkillTrialVerdict(
+  bookId: string,
+  trialId: string,
+  verdict: SkillTrialVerdict,
+  judgeNote?: string,
+): Promise<SkillTrial> {
+  const res = await fetch(`/api/books/${bookId}/skills/lab/trial/${encodeURIComponent(trialId)}/verdict`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ verdict, judgeNote }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(typeof data?.error === "string" ? data.error : "记录 A/B 判定失败。")
+  }
+  if (data?.trial) return data.trial
+  throw new Error("记录 A/B 判定成功但接口没有返回记录。")
+}
+
+export async function runSkillExperiment(
+  bookId: string,
+  input: SkillExperimentRunRequest,
+): Promise<SkillExperimentResult> {
+  const res = await fetch(`/api/books/${bookId}/skills/lab/experiment`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(typeof data?.error === "string" ? data.error : "试验台 A/B 运行失败。")
+  }
+  if (data?.result) return data.result
+  throw new Error("试验台 A/B 完成但接口没有返回结果。")
+}
+
+export async function saveSkillExperiment(
+  bookId: string,
+  input: SkillExperimentSaveRequest,
+): Promise<{ skill: Skill; lab: SkillLabResponse }> {
+  const res = await fetch(`/api/books/${bookId}/skills/lab/experiment/save`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(typeof data?.error === "string" ? data.error : "保存实验 Skill 失败。")
+  }
+  if (data?.skill && data?.lab) return { skill: data.skill, lab: normalizeLabResponse(data.lab) }
+  throw new Error("保存实验 Skill 成功但接口没有返回完整结果。")
 }
 
 export async function updateSkill(bookId: string, input: UpdateSkillRequest): Promise<Skill> {

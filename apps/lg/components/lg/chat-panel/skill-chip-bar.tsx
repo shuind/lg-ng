@@ -25,6 +25,11 @@ export function SkillChipBar({
             <span className="hidden rounded bg-muted/60 px-1 text-[10px] text-muted-foreground sm:inline">
               {skillTypeLabel(skill)}
             </span>
+            {skill.stage === "experimental" && (
+              <span className="hidden rounded-full bg-accent/20 px-1 text-[10px] text-accent-foreground sm:inline">
+                实验中
+              </span>
+            )}
             <button
               type="button"
               onClick={() => onRemove(skill.id)}

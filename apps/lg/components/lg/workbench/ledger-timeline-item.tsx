@@ -1,9 +1,9 @@
 "use client"
 
-import { Eye, RotateCcw } from "lucide-react"
+import { RotateCcw } from "lucide-react"
 import type { LedgerEntry } from "@/lib/types"
 import { cn } from "@/lib/utils"
-import { canDirectRollback, formatLedgerTimestamp } from "./ledger-utils"
+import { canDirectRollback, formatLedgerSummary, formatLedgerTimestamp } from "./ledger-utils"
 
 export function LedgerTimelineItem({
   entry,
@@ -20,51 +20,62 @@ export function LedgerTimelineItem({
   onPreview: (entry: LedgerEntry) => void
   onRollback: (entry: LedgerEntry) => void
 }) {
+  const summary = formatLedgerSummary(entry)
+  const canPreview = Boolean(entry.diffPatch || entry.beforeSnapshot)
+  const rollbackable = canDirectRollback(entry)
+
+  function handlePreview() {
+    if (canPreview) onPreview(entry)
+  }
+
+  function handlePreviewKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (!canPreview) return
+    if (event.key !== "Enter" && event.key !== " ") return
+    event.preventDefault()
+    onPreview(entry)
+  }
+
   return (
-    <div className={cn(
-      "paper rounded-lg border border-border/60 bg-card/60 px-4 py-3 backdrop-blur transition",
-      selected && "ring-2 ring-primary/50",
-    )}>
+    <div
+      role={canPreview ? "button" : undefined}
+      tabIndex={canPreview ? 0 : undefined}
+      onClick={handlePreview}
+      onKeyDown={handlePreviewKeyDown}
+      className={cn(
+        "paper rounded-lg border border-border/60 bg-card/60 px-4 py-3 backdrop-blur transition",
+        canPreview && "cursor-pointer hover:border-border hover:bg-card/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45",
+        selected && "ring-2 ring-primary/50",
+      )}
+    >
       <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
         <span className="font-mono">{formatLedgerTimestamp(entry.timestamp)}</span>
-        <span className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10px]">
-          {entry.action}
-        </span>
         <span className="text-muted-foreground/60">来源：{formatLedgerActor(entry.actor)}</span>
       </div>
-      <div className="mt-1 text-[12.5px] text-foreground/90">{entry.summary}</div>
+      {summary && <div className="mt-1 text-[12.5px] text-foreground/90">{summary}</div>}
       <button
         type="button"
-        onClick={() => onOpenFile(entry.targetPath)}
+        onClick={(event) => {
+          event.stopPropagation()
+          onOpenFile(entry.targetPath)
+        }}
         className="mt-0.5 block max-w-full truncate font-mono text-[10.5px] text-muted-foreground/70 transition hover:text-foreground"
       >
         {entry.targetPath}
       </button>
-      {(entry.diffPatch || entry.beforeSnapshot) && (
+      {rollbackable && (
         <div className="mt-3 flex items-center gap-2">
           <button
             type="button"
-            onClick={() => onPreview(entry)}
-            className="flex items-center gap-1 rounded-md border border-border/60 bg-background/60 px-2 py-1 text-[11px] text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+            onClick={(event) => {
+              event.stopPropagation()
+              onRollback(entry)
+            }}
+            disabled={rollingBack}
+            className="flex items-center gap-1 rounded-md bg-foreground px-2 py-1 text-[11px] font-medium text-background transition hover:opacity-90 disabled:opacity-40"
           >
-            <Eye className="h-3 w-3" />
-            查看变更
+            <RotateCcw className="h-3 w-3" />
+            {rollingBack ? "恢复中…" : "恢复到保存前"}
           </button>
-          {canDirectRollback(entry) ? (
-            <button
-              type="button"
-              onClick={() => onRollback(entry)}
-              disabled={rollingBack}
-              className="flex items-center gap-1 rounded-md bg-foreground px-2 py-1 text-[11px] font-medium text-background transition hover:opacity-90 disabled:opacity-40"
-            >
-              <RotateCcw className="h-3 w-3" />
-              {rollingBack ? "恢复中…" : "恢复到保存前"}
-            </button>
-          ) : (
-            <span className="rounded-md border border-border/60 bg-background/40 px-2 py-1 text-[11px] text-muted-foreground">
-              需按历史重建
-            </span>
-          )}
         </div>
       )}
     </div>

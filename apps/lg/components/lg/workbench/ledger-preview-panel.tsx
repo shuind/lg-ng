@@ -27,16 +27,7 @@ export function LedgerPreviewPanel({ entry }: { entry: LedgerEntry | null }) {
         </pre>
       ) : (
         <div className="p-4 text-[12px] leading-relaxed text-muted-foreground">
-          点击时间线里的“查看变更”，这里会显示本次保存的左右对照 diff。没有 checkpoint 的记录需要按历史重建。
-        </div>
-      )}
-      {entry?.beforeHash && (
-        <div className="shrink-0 border-t border-border/60 p-4 text-[10.5px] leading-relaxed text-muted-foreground">
-          <div className="font-mono">变更前：{entry.beforeHash}</div>
-          <div className="font-mono">变更后：{entry.afterHash}</div>
-          {entry.checkpointPath && (
-            <div className="mt-1 font-mono">检查点：{entry.checkpointPath}</div>
-          )}
+          点击时间线卡片，这里会显示本次保存的左右对照 diff。没有 checkpoint 的记录需要按历史重建。
         </div>
       )}
     </div>

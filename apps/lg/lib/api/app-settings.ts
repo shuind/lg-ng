@@ -1,4 +1,4 @@
-import type { AppModelId, AppPaymentSource, AppSettingsPayload } from "@/lib/app-settings"
+import type { AppModelId, AppPaymentSource, AppProviderId, AppSettingsPayload } from "@/lib/app-settings"
 import { readJsonResponse } from "./common"
 
 export async function getAppSettings(): Promise<AppSettingsPayload> {
@@ -7,8 +7,12 @@ export async function getAppSettings(): Promise<AppSettingsPayload> {
 }
 
 export async function updateAppSettings(input: {
+  provider?: AppProviderId
   modelId?: AppModelId
   paymentSource?: AppPaymentSource
+  providerApiKey?: string
+  providerBaseUrl?: string
+  clearProviderApiKey?: boolean
   deepSeekApiKey?: string
   clearDeepSeekApiKey?: boolean
 }): Promise<AppSettingsPayload> {
@@ -20,10 +24,10 @@ export async function updateAppSettings(input: {
   return readJsonResponse<AppSettingsPayload>(res)
 }
 
-export async function testAppSettingsLlm(): Promise<{ ok: true; model: string }> {
+export async function testAppSettingsLlm(): Promise<{ ok: true; model: string; provider: AppProviderId }> {
   const res = await fetch("/api/app-settings/test-llm", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
   })
-  return readJsonResponse<{ ok: true; model: string }>(res)
+  return readJsonResponse<{ ok: true; model: string; provider: AppProviderId }>(res)
 }

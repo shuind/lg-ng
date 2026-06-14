@@ -26,6 +26,8 @@ export function SkillList({
   onRefresh: () => void
   onOpenFile: (path: string) => void
 }) {
+  const otherSkills = skills.filter((skill) => skill.id !== styleSkill?.id)
+
   return (
     <div className="space-y-3">
       {error && (
@@ -33,14 +35,29 @@ export function SkillList({
           {error}
         </div>
       )}
+
+      {styleSkill && (
+        <SkillCard
+          skill={styleSkill}
+          isStyleGuide
+          summary={summary}
+          refreshing={refreshing}
+          deleting={false}
+          onEdit={onEdit}
+          onDelete={onDelete}
+          onRefresh={onRefresh}
+          onOpenFile={onOpenFile}
+        />
+      )}
+
       <div className="grid gap-3 md:grid-cols-2">
-        {skills.map((skill) => (
+        {otherSkills.map((skill) => (
           <SkillCard
             key={skill.id}
             skill={skill}
-            isStyleGuide={skill.id === styleSkill?.id}
-            summary={summary}
-            refreshing={refreshing}
+            isStyleGuide={false}
+            summary=""
+            refreshing={false}
             deleting={deletingSkillId === skill.id}
             onEdit={onEdit}
             onDelete={onDelete}
@@ -48,9 +65,9 @@ export function SkillList({
             onOpenFile={onOpenFile}
           />
         ))}
-        {skills.length === 0 && (
-          <div className="rounded-lg border border-dashed border-border/70 bg-background/35 px-3 py-6 text-center text-[12px] leading-relaxed text-muted-foreground">
-            暂无 Skill。可以在 .claude/skills/ 下添加 SKILL.md。
+        {otherSkills.length === 0 && (
+          <div className="rounded-lg border border-dashed border-border/70 bg-background/35 px-3 py-6 text-center text-[12px] leading-relaxed text-muted-foreground md:col-span-2">
+            还没有项目 Skill。点右上角“新建 Skill”，或到 Skill Lab 里让 AI 从你的改稿提炼。
           </div>
         )}
       </div>

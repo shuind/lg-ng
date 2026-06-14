@@ -168,7 +168,7 @@ export async function importTextMaterial(
   const targetPath = await nextAvailablePath(bookId, directory, fileName)
   const ok = await writeBookFile(bookId, targetPath, input.content, {
     action: "import_file",
-    summary: `导入材料 ${targetPath}`,
+    summary: "导入材料",
   })
   if (!ok) throw new Error(`导入失败：${input.name}`)
 

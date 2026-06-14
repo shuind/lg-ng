@@ -64,7 +64,6 @@ const workbenchSegmentLabels: Record<string, string> = {
 }
 
 const hiddenWorkbenchSegments = new Set([
-  ".claude",
   ".novel-guide",
   ".next",
   ".turbo",
@@ -107,7 +106,7 @@ const hiddenWorkbenchExtensions = new Set([
 ])
 
 const systemWorkbenchFileNames = new Set([
-  "claude.md",
+  "guide.md",
   "novel.md",
   "创作指南.md",
   "关系图谱.json",

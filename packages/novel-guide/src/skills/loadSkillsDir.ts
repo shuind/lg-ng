@@ -1,11 +1,8 @@
-// Reference: C:/Users/qdz/Desktop/cli/claude-code-main/src/skills/loadSkillsDir.ts
-// Mechanism copied: project skills are directories under .claude/skills with a
-// SKILL.md file, parsed as prompt commands with frontmatter metadata.
-
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import matter from "gray-matter";
 import type { PromptCommand } from "../commands/types.js";
+import { WORKSPACE_SKILL_DIRS } from "../workspace/layout.js";
 
 export interface SkillDefinition {
   name: string;
@@ -33,38 +30,44 @@ function firstContentLine(content: string): string {
 }
 
 export async function loadSkillsDir(cwd: string): Promise<SkillDefinition[]> {
-  const skillsPath = path.join(cwd, ".claude", "skills");
-  let entries;
-  try {
-    entries = await readdir(skillsPath, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-
   const skills: SkillDefinition[] = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
-    const baseDir = path.join(skillsPath, entry.name);
-    const filePath = path.join(baseDir, "SKILL.md");
+  const seen = new Set<string>();
+
+  for (const skillsDir of WORKSPACE_SKILL_DIRS) {
+    const skillsPath = path.join(cwd, skillsDir);
+    let entries;
     try {
-      const raw = await readFile(filePath, "utf8");
-      const parsed = matter(raw);
-      const name = typeof parsed.data.name === "string" ? parsed.data.name : entry.name;
-      const description = typeof parsed.data.description === "string"
-        ? parsed.data.description
-        : firstContentLine(parsed.content);
-      skills.push({
-        name,
-        description,
-        whenToUse: typeof parsed.data.when_to_use === "string" ? parsed.data.when_to_use : undefined,
-        argumentHint: typeof parsed.data["argument-hint"] === "string" ? parsed.data["argument-hint"] : undefined,
-        disableModelInvocation: boolFromFrontmatter(parsed.data["disable-model-invocation"], false),
-        userInvocable: boolFromFrontmatter(parsed.data["user-invocable"], true),
-        content: parsed.content.trim(),
-        baseDir,
-      });
+      entries = await readdir(skillsPath, { withFileTypes: true });
     } catch {
-      // Skip invalid skill directories; skills are optional.
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+      const baseDir = path.join(skillsPath, entry.name);
+      const filePath = path.join(baseDir, "SKILL.md");
+      try {
+        const raw = await readFile(filePath, "utf8");
+        const parsed = matter(raw);
+        const name = typeof parsed.data.name === "string" ? parsed.data.name : entry.name;
+        if (seen.has(name)) continue;
+        seen.add(name);
+        const description = typeof parsed.data.description === "string"
+          ? parsed.data.description
+          : firstContentLine(parsed.content);
+        skills.push({
+          name,
+          description,
+          whenToUse: typeof parsed.data.when_to_use === "string" ? parsed.data.when_to_use : undefined,
+          argumentHint: typeof parsed.data["argument-hint"] === "string" ? parsed.data["argument-hint"] : undefined,
+          disableModelInvocation: boolFromFrontmatter(parsed.data["disable-model-invocation"], false),
+          userInvocable: boolFromFrontmatter(parsed.data["user-invocable"], true),
+          content: parsed.content.trim(),
+          baseDir,
+        });
+      } catch {
+        // Skip invalid skill directories; skills are optional.
+      }
     }
   }
   return skills;

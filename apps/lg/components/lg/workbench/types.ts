@@ -1,6 +1,6 @@
 ﻿import type { Book } from "@/lib/types"
 
-export type Tab = "editor" | "ledger" | "skill"
+export type Tab = "editor" | "ledger" | "skill" | "lab"
 
 export interface WorkbenchOpenOptions {
   path?: string

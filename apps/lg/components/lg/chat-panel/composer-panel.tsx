@@ -52,6 +52,7 @@ export function ChatComposerPanel({
   onToggleSkill,
   onToggleReadonly,
   onSelectWorkflowAction,
+  onInsertSkillEvidencePrompt,
   onAddCitation,
   onToggleConstraintPicker,
   onToggleReferencePicker,
@@ -96,6 +97,7 @@ export function ChatComposerPanel({
   onToggleSkill: (skillId: string) => void
   onToggleReadonly: () => void
   onSelectWorkflowAction: (action: WorkflowAction) => void
+  onInsertSkillEvidencePrompt: () => void
   onAddCitation: (reference: ChatReference) => void
   onToggleConstraintPicker: () => void
   onToggleReferencePicker: () => void
@@ -245,6 +247,7 @@ export function ChatComposerPanel({
             onCancel={onCancelSend}
             onToggleReadonly={onToggleReadonly}
             onSelectWorkflowAction={onSelectWorkflowAction}
+            onInsertSkillEvidencePrompt={onInsertSkillEvidencePrompt}
             onToggleConstraintPicker={onToggleConstraintPicker}
             onToggleReferencePicker={onToggleReferencePicker}
           />

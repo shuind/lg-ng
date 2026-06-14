@@ -1,130 +1,188 @@
 "use client"
 
-import type { SkillResourceKind, SkillTextResource } from "@/lib/types"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { SkillDialogForm } from "./skill-dialog-form"
-import { SkillDialogResources } from "./skill-dialog-resources"
+import { useState } from "react"
+import { ChevronDown, ChevronRight, Lightbulb, WandSparkles } from "lucide-react"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { SkillResourcesEditor } from "./skill-dialog-resources"
+import type { SkillDialogController } from "./use-skill-dialog-state"
 
-export function SkillDialog({
-  open,
-  isEditingSkill,
-  skillName,
-  goal,
-  triggers,
-  examples,
-  resourceKinds,
-  skillMd,
-  resources,
-  warnings,
-  createError,
-  generating,
-  savingSkill,
-  loadingSkillDraft,
-  onOpenChange,
-  onSkillNameChange,
-  onSkillNameBlur,
-  onGoalChange,
-  onTriggersChange,
-  onExamplesChange,
-  onToggleResourceKind,
-  onGenerateDraft,
-  onSkillMdChange,
-  onAddResource,
-  onUpdateResource,
-  onRemoveResource,
-  onCancel,
-  onSave,
-}: {
-  open: boolean
-  isEditingSkill: boolean
-  skillName: string
-  goal: string
-  triggers: string
-  examples: string
-  resourceKinds: SkillResourceKind[]
-  skillMd: string
-  resources: SkillTextResource[]
-  warnings: string[]
-  createError: string
-  generating: boolean
-  savingSkill: boolean
-  loadingSkillDraft: boolean
-  onOpenChange: (open: boolean) => void
-  onSkillNameChange: (value: string) => void
-  onSkillNameBlur: () => void
-  onGoalChange: (value: string) => void
-  onTriggersChange: (value: string) => void
-  onExamplesChange: (value: string) => void
-  onToggleResourceKind: (kind: SkillResourceKind, checked: boolean) => void
-  onGenerateDraft: () => void
-  onSkillMdChange: (value: string) => void
-  onAddResource: (kind?: SkillResourceKind) => void
-  onUpdateResource: (index: number, patch: Partial<SkillTextResource>) => void
-  onRemoveResource: (index: number) => void
-  onCancel: () => void
-  onSave: () => void
-}) {
+export function SkillDialog({ dialog }: { dialog: SkillDialogController }) {
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const isIntent = !dialog.isEditingSkill && dialog.step === "intent"
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
+    <Dialog open={dialog.open} onOpenChange={dialog.handleOpenChange}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{isEditingSkill ? "编辑项目 Skill" : "新建项目 Skill"}</DialogTitle>
+          <DialogTitle>{dialog.isEditingSkill ? "编辑 Skill" : "新建 Skill"}</DialogTitle>
           <DialogDescription>
-            {isEditingSkill
-              ? "编辑当前书籍里的 Skill。要改短名时，目录名和 SKILL.md 开头的 name 需要一致。"
-              : "在当前书籍的 .claude/skills 下创建 Skill。可以先生成草稿，也可以直接粘贴完整 SKILL.md。"}
+            {isIntent
+              ? "用一句话说清楚你想让这个 Skill 做什么，AI 会生成可直接保存的 SKILL.md。"
+              : "确认 / 微调下面的 SKILL.md，保存后会写入 .novel-guide/skills/<短名>。"}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-          <SkillDialogForm
-            skillName={skillName}
-            goal={goal}
-            triggers={triggers}
-            examples={examples}
-            resourceKinds={resourceKinds}
-            generating={generating}
-            loadingSkillDraft={loadingSkillDraft}
-            onSkillNameChange={onSkillNameChange}
-            onSkillNameBlur={onSkillNameBlur}
-            onGoalChange={onGoalChange}
-            onTriggersChange={onTriggersChange}
-            onExamplesChange={onExamplesChange}
-            onToggleResourceKind={onToggleResourceKind}
-            onGenerateDraft={onGenerateDraft}
+        {isIntent ? (
+          <IntentStep dialog={dialog} />
+        ) : (
+          <PreviewStep
+            dialog={dialog}
+            advancedOpen={advancedOpen}
+            onToggleAdvanced={() => setAdvancedOpen((value) => !value)}
           />
-
-          <SkillDialogResources
-            skillMd={skillMd}
-            resources={resources}
-            warnings={warnings}
-            createError={createError}
-            resourceKinds={resourceKinds}
-            loadingSkillDraft={loadingSkillDraft}
-            onSkillMdChange={onSkillMdChange}
-            onAddResource={onAddResource}
-            onUpdateResource={onUpdateResource}
-            onRemoveResource={onRemoveResource}
-          />
-        </div>
+        )}
 
         <DialogFooter>
           <button
-            onClick={onCancel}
-            disabled={savingSkill}
+            onClick={dialog.handleCancel}
+            disabled={dialog.savingSkill}
             className="rounded-md border border-border/70 px-3 py-2 text-[12px] transition hover:bg-secondary disabled:opacity-50"
           >
             取消
           </button>
-          <button
-            onClick={onSave}
-            disabled={savingSkill || generating || loadingSkillDraft}
-            className="rounded-md bg-foreground px-3 py-2 text-[12px] font-medium text-background transition hover:opacity-90 disabled:opacity-50"
-          >
-            {savingSkill ? "保存中..." : isEditingSkill ? "保存修改" : "创建 Skill"}
-          </button>
+          {!isIntent && (
+            <button
+              onClick={dialog.handleSaveSkill}
+              disabled={dialog.savingSkill || dialog.loadingSkillDraft}
+              className="rounded-md bg-foreground px-3 py-2 text-[12px] font-medium text-background transition hover:opacity-90 disabled:opacity-50"
+            >
+              {dialog.savingSkill ? "保存中..." : dialog.isEditingSkill ? "保存修改" : "创建 Skill"}
+            </button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function IntentStep({ dialog }: { dialog: SkillDialogController }) {
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1.5">
+        <label className="text-[12px] font-medium text-foreground">想让这个 Skill 做什么？</label>
+        <Textarea
+          value={dialog.intent}
+          onChange={(event) => dialog.setIntent(event.target.value)}
+          placeholder="例：写战斗场景时，先交代双方力量差和空间位置，再写招式因果，避免一招带过。"
+          className="min-h-28 text-[12px] leading-relaxed"
+          autoFocus
+        />
+      </div>
+
+      {dialog.createError && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
+          {dialog.createError}
+        </div>
+      )}
+
+      <button
+        onClick={dialog.handleGenerateDraft}
+        disabled={dialog.generating || !dialog.intent.trim()}
+        className="flex w-full items-center justify-center gap-1.5 rounded-md bg-foreground px-3 py-2 text-[12px] font-medium text-background transition hover:opacity-90 disabled:opacity-50"
+      >
+        <WandSparkles className="h-3.5 w-3.5" />
+        {dialog.generating ? "生成中..." : "用 AI 生成"}
+      </button>
+      <button
+        onClick={dialog.skipToManualDraft}
+        className="w-full text-center text-[11.5px] text-muted-foreground transition hover:text-foreground"
+      >
+        跳过，直接手写 SKILL.md
+      </button>
+    </div>
+  )
+}
+
+function PreviewStep({
+  dialog,
+  advancedOpen,
+  onToggleAdvanced,
+}: {
+  dialog: SkillDialogController
+  advancedOpen: boolean
+  onToggleAdvanced: () => void
+}) {
+  return (
+    <div className="space-y-3">
+      {dialog.hint && (
+        <div className="flex items-start gap-2 rounded-lg border border-accent/30 bg-accent/10 px-3 py-2 text-[11.5px] leading-relaxed text-foreground">
+          <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-foreground" />
+          <div>
+            <span className="font-medium">AI 改进建议：</span>
+            {dialog.hint}
+          </div>
+        </div>
+      )}
+
+      <div className="grid gap-3 sm:grid-cols-[140px_minmax(0,1fr)]">
+        <div className="space-y-1.5">
+          <label className="text-[12px] font-medium text-foreground">短名</label>
+          <Input
+            value={dialog.skillName}
+            onChange={(event) => dialog.handleSkillNameChange(event.target.value)}
+            onBlur={dialog.handleSkillNameBlur}
+            placeholder="novel-skill"
+            className="font-mono text-[12px]"
+          />
+          <div className="text-[11px] leading-relaxed text-muted-foreground">小写英文 / 数字 / 连字符</div>
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-[12px] font-medium text-foreground">SKILL.md</label>
+          {dialog.loadingSkillDraft && (
+            <div className="rounded-md border border-border/60 bg-muted/35 px-3 py-2 text-[11.5px] text-muted-foreground">
+              正在读取已有 Skill...
+            </div>
+          )}
+          <Textarea
+            value={dialog.skillMd}
+            onChange={(event) => dialog.handleSkillMdChange(event.target.value)}
+            disabled={dialog.loadingSkillDraft}
+            spellCheck={false}
+            className="min-h-[320px] resize-y font-mono text-[12px] leading-relaxed"
+          />
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-border/60 bg-background/40">
+        <button
+          onClick={onToggleAdvanced}
+          className="flex w-full items-center gap-1.5 px-3 py-2 text-[12px] font-medium text-foreground"
+        >
+          {advancedOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          高级：资源文件{dialog.resources.length ? `（${dialog.resources.length}）` : ""}
+        </button>
+        {advancedOpen && (
+          <div className="border-t border-border/60 p-3">
+            <SkillResourcesEditor
+              resources={dialog.resources}
+              disabled={dialog.loadingSkillDraft}
+              onAddResource={dialog.handleAddResource}
+              onUpdateResource={dialog.handleUpdateResource}
+              onRemoveResource={dialog.handleRemoveResource}
+            />
+          </div>
+        )}
+      </div>
+
+      {(dialog.warnings.length > 0 || dialog.createError) && (
+        <div className="space-y-1 rounded-lg border border-border/70 bg-muted/35 p-3 text-[11.5px] leading-relaxed">
+          {dialog.createError && <div className="font-medium text-destructive">{dialog.createError}</div>}
+          {dialog.warnings.map((warning, index) => (
+            <div key={`${warning}-${index}`} className="text-muted-foreground">
+              {warning}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }

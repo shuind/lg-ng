@@ -1,5 +1,4 @@
-// Reference: C:/Users/qdz/Desktop/cli/claude-code-main/src/utils/systemPrompt.ts
-// Mechanism copied: build an effective prompt from default prompt, optional
+// Build an effective prompt from default prompt, optional
 // profile prompt, and append prompt. We keep this as composition, not as a
 // monolithic business prompt, so generic agent behavior remains intact.
 

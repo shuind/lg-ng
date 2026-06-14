@@ -1,5 +1,4 @@
-// Reference: C:/Users/qdz/Desktop/cli/claude-code-main/src/Tool.ts
-// Mechanism copied: each tool owns name, description, input schema,
+// Each tool owns name, description, input schema,
 // permission check, execution, and result rendering. Business actions are not
 // tools; tools expose real workspace capabilities.
 

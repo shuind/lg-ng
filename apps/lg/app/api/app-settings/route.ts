@@ -15,15 +15,19 @@ async function PATCHHandler(request: Request) {
   try {
     const body = await request.json()
     return NextResponse.json(await saveAppSettings({
+      provider: body.provider,
       modelId: body.modelId,
       paymentSource: body.paymentSource,
+      providerApiKey: body.providerApiKey,
+      providerBaseUrl: body.providerBaseUrl,
+      clearProviderApiKey: body.clearProviderApiKey,
       deepSeekApiKey: body.deepSeekApiKey,
       clearDeepSeekApiKey: body.clearDeepSeekApiKey,
     }))
   } catch (err) {
     console.error("[api/app-settings] PATCH error:", err)
     const badRequest = err instanceof Error &&
-      (err.message === "unsupported model" || err.message === "unsupported payment source")
+      (err.message === "unsupported provider" || err.message === "unsupported model" || err.message === "unsupported payment source")
     const message = badRequest ? "保存的设置无效" : "保存设置失败"
     const status = badRequest ? 400 : 500
     return NextResponse.json({ error: message }, { status })

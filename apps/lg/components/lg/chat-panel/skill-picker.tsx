@@ -42,6 +42,11 @@ export function SkillPicker({
                 <span className="shrink-0 rounded bg-muted/60 px-1.5 py-0.5 text-[10px] text-muted-foreground">
                   {skillTypeLabel(skill)}
                 </span>
+                {skill.stage === "experimental" && (
+                  <span className="shrink-0 rounded-full bg-accent/20 px-1.5 py-0.5 text-[10px] text-accent-foreground">
+                    实验中
+                  </span>
+                )}
                 {skill.dirty && (
                   <span className="shrink-0 rounded-full bg-accent/20 px-1.5 py-0.5 text-[10px] text-accent-foreground">
                     需刷新

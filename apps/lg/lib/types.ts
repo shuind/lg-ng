@@ -55,6 +55,7 @@ export interface LedgerEntry {
   checkpointReason?: "interval"
   beforeSnapshot?: string
   afterSnapshot?: string
+  activeSkillIds?: string[]
 }
 
 export interface LedgerListOptions {
@@ -132,7 +133,12 @@ export interface Skill {
   lastSourceModified: string
   lastSummaryGenerated: string
   dirty: boolean
-  source?: "style_guide" | "claude_skill" | "manual"
+  source?: "style_guide" | "workspace_skill" | "manual"
+  stage?: SkillLabStage
+  originObservationId?: string
+  originExperimentId?: string
+  usage?: SkillUsageStats
+  trials?: SkillTrial[]
 }
 
 export interface SkillSummary {
@@ -151,9 +157,9 @@ export interface SkillTextResource {
 export interface SkillDraftRequest {
   nameHint: string
   goal: string
-  triggers: string
-  examples: string
-  resourceKinds: SkillResourceKind[]
+  triggers?: string
+  examples?: string
+  resourceKinds?: SkillResourceKind[]
 }
 
 export interface SkillDraftResponse {
@@ -163,50 +169,128 @@ export interface SkillDraftResponse {
   warnings: string[]
 }
 
-export type SkillCandidateStatus = "candidate" | "drafted" | "dismissed"
+export type SkillSuggestionKind = "new" | "improve"
 
-export interface SkillCandidateEvidence {
-  id: string
-  type: "message" | "diff"
-  label: string
-  text: string
-  ref?: string
+export type SkillLabStage = "experimental" | "active"
+
+export type SkillSuggestionStatus =
+  | "surfacing"
+  | "confirmed"
+  | "incubated"
+  | "dismissed"
+  | "open"
+  | "drafted"
+  | "applied"
+
+export type SkillObservationOrigin = "effective_prompt" | "manual_rewrite" | "ai_diff" | "user_explore" | "manual"
+
+export interface SkillSuggestionEvidence {
+  ledgerEntryId: string
+  targetPath: string
+  note: string
 }
 
-export interface SkillCandidateEvalCase {
-  id: string
-  input: string
-  expectedDirection: string
-  notes?: string
+export interface SkillUsageStats {
+  timesUsed: number
+  timesRewritten: number
+  rewriteRate: number
+  recentRewrites: SkillSuggestionEvidence[]
 }
 
-export interface SkillCandidateVariant {
-  id: string
-  name: string
-  description: string
-  rules: string[]
+export type SkillTrialSampleSource = "ledger" | "editor" | "paste"
+
+export type SkillTrialVerdict = "helped" | "no_diff" | "hurt"
+
+export type SkillExperimentEntry = "scratch" | "from_lead" | "improve_skill"
+
+export type SkillExperimentMode = "with_without" | "a_b"
+
+export interface SkillExperimentRunRequest {
+  entry?: SkillExperimentEntry
+  mode?: SkillExperimentMode
+  instruction: string
+  baselineInstruction?: string
+  sampleText: string
+  sampleSource?: SkillTrialSampleSource
+  targetSkillName?: string
 }
 
-export interface SkillCandidate {
+export interface SkillExperimentResult {
   id: string
-  status: SkillCandidateStatus
+  entry: SkillExperimentEntry
+  mode: SkillExperimentMode
+  instruction: string
+  baselineInstruction?: string
+  sampleText: string
+  sampleSource: SkillTrialSampleSource
+  targetSkillName?: string
+  outputA: string
+  outputB: string
+  createdAt: string
+}
+
+export interface SkillExperimentSaveRequest {
   nameHint: string
+  title?: string
+  instruction: string
+  sampleText?: string
+  sourceSuggestionId?: string
+  originExperimentId?: string
+}
+
+export interface SkillTrial {
+  id: string
+  skillName: string
+  sampleSource: SkillTrialSampleSource
+  sampleText: string
+  outputWithout: string
+  outputWith: string
+  verdict: SkillTrialVerdict | null
+  judgeNote?: string
+  createdAt: string
+}
+
+export interface SkillLabMeta {
+  name: string
+  stage: SkillLabStage
+  originObservationId?: string
+  originExperimentId?: string
+  trials: SkillTrial[]
+}
+
+export interface SkillSuggestion {
+  id: string
+  kind: SkillSuggestionKind
+  status: SkillSuggestionStatus
   title: string
-  summary: string
-  trigger: string
-  rules: string[]
+  observation: string
   confidence: number
-  occurrenceCount: number
-  evidence: SkillCandidateEvidence[]
-  evalCases: SkillCandidateEvalCase[]
-  variants: SkillCandidateVariant[]
+  strength: number
+  seenInAnalyses: number
+  origin: SkillObservationOrigin
+  evidence: SkillSuggestionEvidence[]
+  incubatedSkillName?: string
+  /** kind === "new": a brand-new skill the user could create */
+  proposedName?: string
+  proposedRules?: string[]
+  /** kind === "improve": refine an existing workspace skill */
+  targetSkillName?: string
+  targetSkillTitle?: string
+  proposedChange?: string
   createdAt: string
   updatedAt: string
 }
 
-export interface SkillCandidateListResponse {
-  candidates: SkillCandidate[]
-  updatedAt: string
+export interface SkillLabResponse {
+  suggestions: SkillSuggestion[]
+  analyzedAt: string
+  analyzedRevisionCount: number
+  modelConfigured: boolean
+}
+
+export interface SkillLabAnalyzeRequest {
+  ledgerEntryIds: string[]
+  focus?: string
 }
 
 export interface CreateSkillRequest {

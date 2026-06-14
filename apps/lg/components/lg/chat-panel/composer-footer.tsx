@@ -1,6 +1,6 @@
 "use client"
 
-import { ArrowUp, AtSign, MessageCircle, Plus, Square } from "lucide-react"
+import { ArrowUp, AtSign, MessageCircle, Plus, SearchCheck, Square } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { WorkflowAction } from "@/lib/types"
 import { ToolBtn } from "./pickers"
@@ -19,6 +19,7 @@ export function ComposerFooter({
   onCancel,
   onToggleReadonly,
   onSelectWorkflowAction,
+  onInsertSkillEvidencePrompt,
   onToggleConstraintPicker,
   onToggleReferencePicker,
 }: {
@@ -34,6 +35,7 @@ export function ComposerFooter({
   onCancel: () => void
   onToggleReadonly: () => void
   onSelectWorkflowAction: (action: WorkflowAction) => void
+  onInsertSkillEvidencePrompt: () => void
   onToggleConstraintPicker: () => void
   onToggleReferencePicker: () => void
 }) {
@@ -51,6 +53,12 @@ export function ComposerFooter({
           label="引用设定"
           active={referencePickerOpen}
           onClick={onToggleReferencePicker}
+        />
+        <ToolBtn
+          icon={<SearchCheck className="h-3.5 w-3.5" />}
+          label="在稿里找写法证据"
+          disabled={sending}
+          onClick={onInsertSkillEvidencePrompt}
         />
         <ToolBtn
           icon={<MessageCircle className="h-3.5 w-3.5" />}

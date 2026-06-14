@@ -100,13 +100,15 @@ export default function LoginPage() {
 
         <form className="space-y-3" onSubmit={handleSubmit}>
           <label className="block space-y-1.5">
-            <span className="text-[12px] font-medium text-muted-foreground">邮箱</span>
+            <span className="text-[12px] font-medium text-muted-foreground">
+              {isRegister ? "注册邮箱（仅 QQ 邮箱）" : "邮箱"}
+            </span>
             <Input
               type="email"
               autoComplete="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              placeholder={isRegister ? "your@qq.com" : "you@example.com"}
+              placeholder="请输入邮箱"
             />
           </label>
 

@@ -1,11 +1,19 @@
+import {
+  WORKSPACE_AGENTS_DIR,
+  WORKSPACE_CONFIG_DIR,
+  WORKSPACE_GUIDE_FILE,
+  WORKSPACE_OUTPUT_STYLES_DIR,
+  WORKSPACE_SKILLS_DIR,
+} from "../workspace/layout.js";
+
 export const NOVEL_DIRECTORIES = [
-  ".claude",
-  ".claude/agents",
-  ".claude/output-styles",
-  ".claude/skills",
-  ".claude/skills/archive",
-  ".claude/skills/intake",
-  ".claude/skills/novel-review",
+  WORKSPACE_CONFIG_DIR,
+  WORKSPACE_AGENTS_DIR,
+  WORKSPACE_OUTPUT_STYLES_DIR,
+  WORKSPACE_SKILLS_DIR,
+  `${WORKSPACE_SKILLS_DIR}/archive`,
+  `${WORKSPACE_SKILLS_DIR}/intake`,
+  `${WORKSPACE_SKILLS_DIR}/novel-review`,
   "archive/characters",
   "archive/foreshadowing",
   "archive/plots",
@@ -88,7 +96,7 @@ TODO: 用一句话说明这本书的核心人物、核心欲望、核心阻碍�
 `;
 }
 
-export const CLAUDE_MD = `# 小说工作区工作约定
+export const GUIDE_MD = `# 小说工作区工作约定
 
 - 这是小说创作工作区，不是代码仓库。默认把内容当创作材料。
 - 进项目先读 \`NOVEL.md\`。
@@ -255,16 +263,16 @@ export function templateFiles(projectName: string): Record<string, string> {
   const gitkeep = Object.fromEntries(GITKEEP_FILES.map((file) => [file, "\n"]));
   return {
     "NOVEL.md": createNovelMd(projectName),
-    "CLAUDE.md": CLAUDE_MD,
-    ".claude/settings.json": SETTINGS_JSON,
-    ".claude/output-styles/novel.md": NOVEL_OUTPUT_STYLE_MD,
-    ".claude/skills/intake/SKILL.md": INTAKE_SKILL_MD,
-    ".claude/skills/archive/SKILL.md": ARCHIVE_SKILL_MD,
-    ".claude/skills/novel-review/SKILL.md": NOVEL_REVIEW_SKILL_MD,
-    ".claude/agents/continuity-checker.md": CONTINUITY_AGENT_MD,
-    ".claude/agents/canon-conflict.md": CANON_CONFLICT_AGENT_MD,
-    ".claude/agents/pacing-checker.md": PACING_AGENT_MD,
-    ".claude/agents/voice-checker.md": VOICE_AGENT_MD,
+    [WORKSPACE_GUIDE_FILE]: GUIDE_MD,
+    [`${WORKSPACE_CONFIG_DIR}/settings.json`]: SETTINGS_JSON,
+    [`${WORKSPACE_OUTPUT_STYLES_DIR}/novel.md`]: NOVEL_OUTPUT_STYLE_MD,
+    [`${WORKSPACE_SKILLS_DIR}/intake/SKILL.md`]: INTAKE_SKILL_MD,
+    [`${WORKSPACE_SKILLS_DIR}/archive/SKILL.md`]: ARCHIVE_SKILL_MD,
+    [`${WORKSPACE_SKILLS_DIR}/novel-review/SKILL.md`]: NOVEL_REVIEW_SKILL_MD,
+    [`${WORKSPACE_AGENTS_DIR}/continuity-checker.md`]: CONTINUITY_AGENT_MD,
+    [`${WORKSPACE_AGENTS_DIR}/canon-conflict.md`]: CANON_CONFLICT_AGENT_MD,
+    [`${WORKSPACE_AGENTS_DIR}/pacing-checker.md`]: PACING_AGENT_MD,
+    [`${WORKSPACE_AGENTS_DIR}/voice-checker.md`]: VOICE_AGENT_MD,
     "canon/glossary.md": GLOSSARY_MD,
     ...gitkeep,
   };

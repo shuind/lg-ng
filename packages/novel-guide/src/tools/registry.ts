@@ -1,5 +1,4 @@
-// Reference: C:/Users/qdz/Desktop/cli/claude-code-main/src/tools.ts
-// Mechanism copied: a single source of truth for tool registration. Novel
+// Single source of truth for tool registration. Novel
 // Guide keeps only the platform subset needed for local novel workspaces.
 
 import type { Tools } from "./tool.js";

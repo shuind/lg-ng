@@ -120,7 +120,11 @@ async function sendThreadMessageUnlocked(bookId: string, body: unknown): Promise
       readonlyOnly: input.readonlyOnly,
       workflowAction: input.workflowAction,
     })
-    const changeRecord = await recordAgentFileChanges(bookId, result.fileChanges)
+    const changeRecord = await recordAgentFileChanges(
+      bookId,
+      result.fileChanges,
+      selectedSkills.map(({ skill }) => skill.id),
+    )
     const changedPaths = changeRecord.paths
     const changeSet = buildMessageChangeSet(changeRecord.entries)
     const proposals = await recordAgentProposals(bookId, result.proposals)
@@ -406,7 +410,11 @@ async function streamThreadMessageUnlocked(
 
     if (!finalResult) throw new Error("处理结束但没有返回结果")
     await flushProgressMessage()
-    const changeRecord = await recordAgentFileChanges(bookId, finalResult.fileChanges)
+    const changeRecord = await recordAgentFileChanges(
+      bookId,
+      finalResult.fileChanges,
+      selectedSkills.map(({ skill }) => skill.id),
+    )
     const changedPaths = changeRecord.paths
     const changeSet = buildMessageChangeSet(changeRecord.entries)
     const proposals = await recordAgentProposals(bookId, finalResult.proposals)
@@ -692,10 +700,15 @@ function buildMessageChangeSet(entries: LedgerEntry[]) {
   }
 }
 
-async function recordAgentFileChanges(bookId: string, changes: FileChange[]): Promise<{ paths: string[]; entries: LedgerEntry[] }> {
+async function recordAgentFileChanges(
+  bookId: string,
+  changes: FileChange[],
+  activeSkillIds: string[] = [],
+): Promise<{ paths: string[]; entries: LedgerEntry[] }> {
   const trackedChanges = collectTrackedFileChanges(bookId, changes)
   if (trackedChanges.length === 0) return { paths: [], entries: [] }
 
+  const ledgerSkillIds = [...new Set(activeSkillIds.filter((id) => id.trim().length > 0))]
   const entries: LedgerEntry[] = []
   for (const change of trackedChanges) {
     const action = change.operation === "edit" ? "edit_file" : "write_file"
@@ -706,6 +719,7 @@ async function recordAgentFileChanges(bookId: string, changes: FileChange[]): Pr
       beforeSnapshot: change.beforeContent ?? undefined,
       afterSnapshot: change.afterContent ?? "",
       summary: `AI ${change.operation === "edit" ? "编辑" : "写入"} ${change.path}`,
+      activeSkillIds: ledgerSkillIds.length > 0 ? ledgerSkillIds : undefined,
     })
     entries.push(entry)
     await markDirty(bookId, change.path).catch(() => {})

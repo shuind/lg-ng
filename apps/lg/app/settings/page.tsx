@@ -13,10 +13,10 @@ export default function SettingsPage() {
     <main className="min-h-screen bg-background text-foreground">
       <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col px-5 py-6 sm:px-8">
         <header className="mb-8 flex items-center justify-between gap-4">
-          <Button variant="ghost" size="sm" asChild>
-            <Link href="/">
-              <ArrowLeft className="h-4 w-4" />
-              返回工作台
+          <Button className="h-10 px-4 text-[13px] shadow-sm shadow-primary/15" asChild>
+            <Link href="/" aria-label="返回主页">
+              <ArrowLeft className="h-5 w-5" />
+              返回主页
             </Link>
           </Button>
         </header>

@@ -118,6 +118,7 @@ export const ChatComposer = memo(forwardRef<ChatComposerHandle, ChatComposerProp
       onToggleSkill={composer.handleToggleSkill}
       onToggleReadonly={composer.handleToggleReadonly}
       onSelectWorkflowAction={composer.handleSelectWorkflowAction}
+      onInsertSkillEvidencePrompt={composer.handleInsertSkillEvidencePrompt}
       onAddCitation={onAddCitation}
       onToggleConstraintPicker={composer.handleToggleConstraintPicker}
       onToggleReferencePicker={composer.handleToggleReferencePicker}

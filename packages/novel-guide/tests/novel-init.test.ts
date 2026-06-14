@@ -13,7 +13,7 @@ describe("novel init", () => {
     const cwd = await tempDir();
     const result = await initNovelWorkspace(cwd, "测试小说");
     expect(result.created).toContain("NOVEL.md");
-    expect(result.created).toContain(".claude/skills/intake/SKILL.md");
+    expect(result.created).toContain(".novel-guide/skills/intake/SKILL.md");
     const novel = await readFile(path.join(cwd, "NOVEL.md"), "utf8");
     expect(novel).toContain("project: 测试小说");
     await expect(stat(path.join(cwd, ".git"))).rejects.toThrow();

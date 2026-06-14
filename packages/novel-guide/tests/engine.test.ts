@@ -29,9 +29,9 @@ function mockClient(seenTools: string[]): OpenAI {
 describe("AgentEngine subagents", () => {
   it("runs subagents as isolated readonly turns by default", async () => {
     const cwd = await tempDir();
-    await mkdir(path.join(cwd, ".claude", "agents"), { recursive: true });
+    await mkdir(path.join(cwd, ".novel-guide", "agents"), { recursive: true });
     await writeFile(
-      path.join(cwd, ".claude", "agents", "continuity-checker.md"),
+      path.join(cwd, ".novel-guide", "agents", "continuity-checker.md"),
       [
         "---",
         "name: continuity-checker",
@@ -83,7 +83,7 @@ describe("AgentEngine project context", () => {
       "utf8",
     );
     await writeFile(
-      path.join(cwd, "CLAUDE.md"),
+      path.join(cwd, "GUIDE.md"),
       "# Project Guide\n\nUse the hundred year storm as a recurring omen.",
       "utf8",
     );
@@ -124,7 +124,7 @@ describe("AgentEngine project context", () => {
     )?.content;
     const lastUser = modelMessages.at(-1)?.content;
     expect(projectContext).toContain("LG 旧素材索引");
-    expect(projectContext).toContain("CLAUDE.md");
+    expect(projectContext).toContain("GUIDE.md");
     expect(projectContext).toContain("hundred year storm");
     expect(projectContext).toContain("skills/style.md");
     expect(projectContext).toContain("chapter endings");

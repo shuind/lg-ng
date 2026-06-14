@@ -8,13 +8,21 @@ import {
 } from "novel-guide"
 import {
   APP_MODEL_OPTIONS,
+  APP_PROVIDER_OPTIONS,
   DEFAULT_APP_MODEL_ID,
+  DEFAULT_APP_PROVIDER,
   DEFAULT_PAYMENT_SOURCE,
+  getAppProviderOption,
+  getDefaultModelForProvider,
   isAppPaymentSource,
+  isAppProviderId,
   isAppModelId,
+  isModelForProvider,
   normalizeAppPaymentSource,
+  normalizeAppProviderId,
   normalizeAppModelId,
   type AppPaymentSource,
+  type AppProviderId,
   type AppModelId,
   type AppSettings,
   type AppSettingsPayload,
@@ -30,7 +38,14 @@ import {
 const APP_SETTINGS_FILE = "app-settings.json"
 const DEFAULT_UPDATED_AT = "1970-01-01T00:00:00.000Z"
 
+type ProviderSecretMap = Partial<Record<AppProviderId, string>>
+type ProviderStringMap = Partial<Record<AppProviderId, string>>
+
 type StoredAppSettings = AppSettings & {
+  providerApiKeysEncrypted?: ProviderSecretMap
+  providerKeyPreviews?: ProviderStringMap
+  providerKeyUpdatedAts?: ProviderStringMap
+  providerBaseUrls?: ProviderStringMap
   deepSeekApiKeyEncrypted?: string
   deepSeekKeyPreview?: string
 }
@@ -43,18 +58,64 @@ function appSettingsPath(): string {
   return path.join(getDataRoot(), APP_SETTINGS_FILE)
 }
 
+function normalizeProviderMap(data: unknown): ProviderStringMap | undefined {
+  if (!data || typeof data !== "object") return undefined
+  const output: ProviderStringMap = {}
+  for (const option of APP_PROVIDER_OPTIONS) {
+    const value = (data as Record<string, unknown>)[option.id]
+    if (typeof value === "string" && value.trim()) output[option.id] = value
+  }
+  return Object.keys(output).length ? output : undefined
+}
+
+function normalizeSecretMap(data: unknown): ProviderSecretMap | undefined {
+  return normalizeProviderMap(data) as ProviderSecretMap | undefined
+}
+
+function resolveProviderFromModel(value: unknown): AppProviderId {
+  if (!isAppModelId(value)) return DEFAULT_APP_PROVIDER
+  return APP_MODEL_OPTIONS.find((option) => option.id === value)?.provider ?? DEFAULT_APP_PROVIDER
+}
+
 function normalizeAppSettings(data: unknown): StoredAppSettings {
   const raw = data && typeof data === "object" ? data as Partial<StoredAppSettings> : {}
-  const fallbackPaymentSource = raw.deepSeekApiKeyEncrypted ? "api" : DEFAULT_PAYMENT_SOURCE
+  const provider = isAppProviderId(raw.provider)
+    ? raw.provider
+    : resolveProviderFromModel(raw.modelId)
+  const providerApiKeysEncrypted = normalizeSecretMap(raw.providerApiKeysEncrypted) ?? {}
+  const providerKeyPreviews = normalizeProviderMap(raw.providerKeyPreviews) ?? {}
+  const providerKeyUpdatedAts = normalizeProviderMap(raw.providerKeyUpdatedAts) ?? {}
+  const providerBaseUrls = normalizeProviderMap(raw.providerBaseUrls) ?? {}
+
+  if (typeof raw.deepSeekApiKeyEncrypted === "string" && !providerApiKeysEncrypted.deepseek) {
+    providerApiKeysEncrypted.deepseek = raw.deepSeekApiKeyEncrypted
+  }
+  if (typeof raw.deepSeekKeyPreview === "string" && !providerKeyPreviews.deepseek) {
+    providerKeyPreviews.deepseek = raw.deepSeekKeyPreview
+  }
+  if (typeof raw.deepSeekKeyUpdatedAt === "string" && !providerKeyUpdatedAts.deepseek) {
+    providerKeyUpdatedAts.deepseek = raw.deepSeekKeyUpdatedAt
+  }
+
+  const fallbackPaymentSource = providerApiKeysEncrypted[provider] ? "api" : DEFAULT_PAYMENT_SOURCE
+  const paymentSource = normalizePaymentForProvider(
+    provider,
+    normalizeAppPaymentSource(raw.paymentSource, fallbackPaymentSource),
+  )
+
   return {
-    modelId: normalizeAppModelId(raw.modelId),
-    paymentSource: normalizeAppPaymentSource(raw.paymentSource, fallbackPaymentSource),
+    provider,
+    modelId: normalizeAppModelId(raw.modelId, provider),
+    paymentSource,
     updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : DEFAULT_UPDATED_AT,
-    deepSeekApiKeyEncrypted: typeof raw.deepSeekApiKeyEncrypted === "string"
-      ? raw.deepSeekApiKeyEncrypted
-      : undefined,
-    deepSeekKeyPreview: typeof raw.deepSeekKeyPreview === "string" ? raw.deepSeekKeyPreview : undefined,
-    deepSeekKeyUpdatedAt: typeof raw.deepSeekKeyUpdatedAt === "string" ? raw.deepSeekKeyUpdatedAt : undefined,
+    providerApiKeysEncrypted,
+    providerKeyPreviews,
+    providerKeyUpdatedAts,
+    providerBaseUrls,
+    providerKeyUpdatedAt: providerKeyUpdatedAts[provider],
+    deepSeekApiKeyEncrypted: providerApiKeysEncrypted.deepseek,
+    deepSeekKeyPreview: providerKeyPreviews.deepseek,
+    deepSeekKeyUpdatedAt: providerKeyUpdatedAts.deepseek,
   }
 }
 
@@ -76,54 +137,117 @@ function readSavedAppSettingsSync(): StoredAppSettings | null {
   }
 }
 
-function defaultModelIdFromEnv(): AppModelId {
-  return normalizeAppModelId(process.env.NG_MODEL ?? process.env.DEEPSEEK_MODEL ?? DEFAULT_APP_MODEL_ID)
+function defaultProviderFromEnv(): AppProviderId {
+  return normalizeAppProviderId(process.env.NG_PROVIDER ?? process.env.LLM_PROVIDER ?? DEFAULT_APP_PROVIDER)
 }
 
-function getDeepSeekConfigForSettings(settings: StoredAppSettings): OpenAICompatibleConfig | null {
-  if (!settings.deepSeekApiKeyEncrypted) return null
+function defaultModelIdFromEnv(provider = defaultProviderFromEnv()): AppModelId {
+  const rawModel = process.env.NG_MODEL ?? modelEnvForProvider(provider) ?? DEFAULT_APP_MODEL_ID
+  return normalizeAppModelId(rawModel, provider)
+}
+
+function modelEnvForProvider(provider: AppProviderId): string | undefined {
+  if (provider === "deepseek") return process.env.DEEPSEEK_MODEL
+  if (provider === "mimo") return process.env.MIMO_MODEL
+  if (provider === "claude-relay") return process.env.CLAUDE_RELAY_MODEL ?? process.env.CLAUDE_MODEL
+  return undefined
+}
+
+function baseUrlEnvForProvider(provider: AppProviderId): string | undefined {
+  if (provider === "deepseek") return process.env.DEEPSEEK_BASE_URL
+  if (provider === "mimo") return process.env.MIMO_BASE_URL
+  if (provider === "claude-relay") return process.env.CLAUDE_RELAY_BASE_URL ?? process.env.CLAUDE_BASE_URL
+  return undefined
+}
+
+function apiKeyEnvForProvider(provider: AppProviderId): string | undefined {
+  if (provider === "deepseek") return process.env.DEEPSEEK_API_KEY
+  if (provider === "mimo") return process.env.MIMO_API_KEY
+  if (provider === "claude-relay") return process.env.CLAUDE_RELAY_API_KEY ?? process.env.CLAUDE_API_KEY
+  return undefined
+}
+
+function getDefaultBaseUrl(provider: AppProviderId): string {
+  return baseUrlEnvForProvider(provider) ?? getAppProviderOption(provider).defaultBaseUrl
+}
+
+function normalizePaymentForProvider(provider: AppProviderId, paymentSource: AppPaymentSource): AppPaymentSource {
+  return getAppProviderOption(provider).supportsBalance ? paymentSource : "api"
+}
+
+function getProviderConfigForSettings(settings: StoredAppSettings): OpenAICompatibleConfig | null {
+  const encrypted = settings.providerApiKeysEncrypted?.[settings.provider]
+  const envApiKey = apiKeyEnvForProvider(settings.provider)
+  const apiKey = encrypted ? decryptSecret(encrypted) : envApiKey
+  const baseUrl = settings.providerBaseUrls?.[settings.provider] ?? getDefaultBaseUrl(settings.provider)
+  if (!apiKey || !baseUrl) return null
   return {
-    provider: "deepseek",
-    apiKey: decryptSecret(settings.deepSeekApiKeyEncrypted),
-    baseUrl: process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com",
+    provider: settings.provider,
+    apiKey,
+    baseUrl,
     model: settings.modelId,
   }
 }
 
-function getPlatformDeepSeekConfig(modelId: AppModelId): EffectiveOpenAICompatibleConfig | null {
+function getPlatformProviderConfig(settings: StoredAppSettings): EffectiveOpenAICompatibleConfig | null {
+  if (settings.provider !== "deepseek") return null
   const apiKey = getPlatformBillingApiKey()
   if (!apiKey || !canUseBalanceBillingSync()) return null
   return {
     provider: "deepseek",
     paymentSource: "balance",
     apiKey,
-    baseUrl: process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com",
-    model: modelId,
+    baseUrl: getDefaultBaseUrl("deepseek"),
+    model: settings.modelId,
+  }
+}
+
+function withUserPaymentSource(config: OpenAICompatibleConfig | null): EffectiveOpenAICompatibleConfig | null {
+  return config ? { ...config, paymentSource: "api" } : null
+}
+
+function resolveEffectiveConfig(
+  settings: StoredAppSettings,
+  userConfig: OpenAICompatibleConfig | null,
+): EffectiveOpenAICompatibleConfig | null {
+  if (settings.paymentSource === "api") return withUserPaymentSource(userConfig)
+  return getPlatformProviderConfig(settings) ?? withUserPaymentSource(userConfig)
+}
+
+function createDefaultSettings(): StoredAppSettings {
+  const provider = defaultProviderFromEnv()
+  return {
+    provider,
+    modelId: defaultModelIdFromEnv(provider),
+    paymentSource: normalizePaymentForProvider(provider, DEFAULT_PAYMENT_SOURCE),
+    updatedAt: DEFAULT_UPDATED_AT,
   }
 }
 
 function buildPayload(saved: StoredAppSettings | null): AppSettingsPayload {
-  const settings = saved ?? {
-    modelId: defaultModelIdFromEnv(),
-    paymentSource: DEFAULT_PAYMENT_SOURCE,
-    updatedAt: DEFAULT_UPDATED_AT,
-  }
-  const userConfig = saved ? getDeepSeekConfigForSettings(settings) : null
-  const activeConfig = settings.paymentSource === "api"
-    ? userConfig
-    : getPlatformDeepSeekConfig(settings.modelId)
+  const settings = saved ?? createDefaultSettings()
+  const userConfig = getProviderConfigForSettings(settings)
+  const activeConfig = resolveEffectiveConfig(settings, userConfig)
+  const providerKeyPreview = settings.providerKeyPreviews?.[settings.provider] ?? null
+  const providerKeyUpdatedAt = settings.providerKeyUpdatedAts?.[settings.provider]
 
   return {
+    provider: settings.provider,
     modelId: settings.modelId,
     paymentSource: settings.paymentSource,
     updatedAt: settings.updatedAt,
-    deepSeekKeyUpdatedAt: settings.deepSeekKeyUpdatedAt,
+    providerKeyUpdatedAt,
+    deepSeekKeyUpdatedAt: settings.providerKeyUpdatedAts?.deepseek,
     saved: Boolean(saved),
-    activeProvider: activeConfig ? "deepseek" : "none",
+    activeProvider: activeConfig?.provider ?? "none",
     activeModel: activeConfig?.model ?? null,
-    deepSeekConfigured: Boolean(saved?.deepSeekApiKeyEncrypted),
-    deepSeekKeyPreview: saved?.deepSeekKeyPreview ?? null,
+    providerConfigured: Boolean(settings.providerApiKeysEncrypted?.[settings.provider] ?? apiKeyEnvForProvider(settings.provider)),
+    providerKeyPreview,
+    providerBaseUrl: settings.providerBaseUrls?.[settings.provider] ?? getDefaultBaseUrl(settings.provider) ?? null,
+    providerOptions: APP_PROVIDER_OPTIONS,
     modelOptions: APP_MODEL_OPTIONS,
+    deepSeekConfigured: Boolean(settings.providerApiKeysEncrypted?.deepseek ?? process.env.DEEPSEEK_API_KEY),
+    deepSeekKeyPreview: settings.providerKeyPreviews?.deepseek ?? null,
   }
 }
 
@@ -133,36 +257,70 @@ export async function getAppSettings(): Promise<AppSettingsPayload> {
 
 export async function saveAppSettings(input: UpdateAppSettingsInput): Promise<AppSettingsPayload> {
   const existing = await readSavedAppSettings()
-  const nextModelId = input.modelId ?? existing?.modelId ?? defaultModelIdFromEnv()
-  if (!isAppModelId(nextModelId)) {
+  const current = existing ?? createDefaultSettings()
+  const nextProvider = input.provider === undefined
+    ? current.provider
+    : normalizeAppProviderId(input.provider)
+  if (input.provider !== undefined && !isAppProviderId(input.provider)) {
+    throw new Error("unsupported provider")
+  }
+
+  const rawModelId = input.modelId ?? (current.provider === nextProvider ? current.modelId : getDefaultModelForProvider(nextProvider))
+  if (!isAppModelId(rawModelId) || !isModelForProvider(rawModelId, nextProvider)) {
     throw new Error("unsupported model")
   }
-  const nextPaymentSource = input.paymentSource ?? existing?.paymentSource ?? DEFAULT_PAYMENT_SOURCE
-  if (!isAppPaymentSource(nextPaymentSource)) {
+
+  const incomingProviderApiKey = typeof input.providerApiKey === "string" ? input.providerApiKey.trim() : ""
+  const incomingDeepSeekApiKey = typeof input.deepSeekApiKey === "string" ? input.deepSeekApiKey.trim() : ""
+  const incomingApiKey = incomingProviderApiKey || incomingDeepSeekApiKey
+  const providerApiKeysEncrypted = { ...(current.providerApiKeysEncrypted ?? {}) }
+  const providerKeyPreviews = { ...(current.providerKeyPreviews ?? {}) }
+  const providerKeyUpdatedAts = { ...(current.providerKeyUpdatedAts ?? {}) }
+  const providerBaseUrls = { ...(current.providerBaseUrls ?? {}) }
+
+  const requestedPaymentSource = input.paymentSource ?? (incomingApiKey ? "api" : current.paymentSource)
+  if (!isAppPaymentSource(requestedPaymentSource)) {
     throw new Error("unsupported payment source")
   }
 
   const settings: StoredAppSettings = {
-    ...existing,
-    modelId: nextModelId,
-    paymentSource: nextPaymentSource,
+    ...current,
+    provider: nextProvider,
+    modelId: rawModelId,
+    paymentSource: normalizePaymentForProvider(nextProvider, requestedPaymentSource),
+    providerApiKeysEncrypted,
+    providerKeyPreviews,
+    providerKeyUpdatedAts,
+    providerBaseUrls,
     updatedAt: new Date().toISOString(),
   }
 
-  if (input.clearDeepSeekApiKey === true) {
-    delete settings.deepSeekApiKeyEncrypted
-    delete settings.deepSeekKeyPreview
-    delete settings.deepSeekKeyUpdatedAt
+  if (input.clearProviderApiKey === true || (nextProvider === "deepseek" && input.clearDeepSeekApiKey === true)) {
+    delete providerApiKeysEncrypted[nextProvider]
+    delete providerKeyPreviews[nextProvider]
+    delete providerKeyUpdatedAts[nextProvider]
   }
 
-  if (typeof input.deepSeekApiKey === "string") {
-    const apiKey = input.deepSeekApiKey.trim()
-    if (apiKey) {
-      settings.deepSeekApiKeyEncrypted = encryptSecret(apiKey)
-      settings.deepSeekKeyPreview = maskSecret(apiKey)
-      settings.deepSeekKeyUpdatedAt = settings.updatedAt
+  if (incomingApiKey) {
+    providerApiKeysEncrypted[nextProvider] = encryptSecret(incomingApiKey)
+    providerKeyPreviews[nextProvider] = maskSecret(incomingApiKey)
+    providerKeyUpdatedAts[nextProvider] = settings.updatedAt
+    settings.paymentSource = "api"
+  }
+
+  if (typeof input.providerBaseUrl === "string") {
+    const trimmedBaseUrl = input.providerBaseUrl.trim()
+    if (trimmedBaseUrl) {
+      providerBaseUrls[nextProvider] = trimmedBaseUrl
+    } else {
+      delete providerBaseUrls[nextProvider]
     }
   }
+
+  settings.providerKeyUpdatedAt = providerKeyUpdatedAts[nextProvider]
+  settings.deepSeekApiKeyEncrypted = providerApiKeysEncrypted.deepseek
+  settings.deepSeekKeyPreview = providerKeyPreviews.deepseek
+  settings.deepSeekKeyUpdatedAt = providerKeyUpdatedAts.deepseek
 
   await fsp.mkdir(getDataRoot(), { recursive: true })
   await fsp.writeFile(appSettingsPath(), `${JSON.stringify(settings, null, 2)}\n`, "utf8")
@@ -171,18 +329,16 @@ export async function saveAppSettings(input: UpdateAppSettingsInput): Promise<Ap
 
 export function getEffectiveOpenAICompatibleConfig(): EffectiveOpenAICompatibleConfig | null {
   const saved = readSavedAppSettingsSync()
-  const userConfig = saved ? getDeepSeekConfigForSettings(saved) : null
-  const paymentSource = saved?.paymentSource ?? (userConfig ? "api" : DEFAULT_PAYMENT_SOURCE)
-  if (paymentSource === "api") {
-    return userConfig ? { ...userConfig, paymentSource: "api" } : null
-  }
-  return getPlatformDeepSeekConfig(saved?.modelId ?? defaultModelIdFromEnv())
+  const settings = saved ?? createDefaultSettings()
+  const userConfig = getProviderConfigForSettings(settings)
+  return resolveEffectiveConfig(settings, userConfig)
 }
 
-export async function testAppSettingsLlm(): Promise<{ ok: true; model: string }> {
+export async function testAppSettingsLlm(): Promise<{ ok: true; model: string; provider: AppProviderId }> {
   const saved = await readSavedAppSettings()
-  const config = saved ? getDeepSeekConfigForSettings(saved) : null
-  if (!config) throw new Error("deepseek api key missing")
+  const settings = saved ?? createDefaultSettings()
+  const config = getProviderConfigForSettings(settings)
+  if (!config) throw new Error("provider api key missing")
 
   await createChatCompletion({
     client: createOpenAICompatibleClient(config),
@@ -194,5 +350,5 @@ export async function testAppSettingsLlm(): Promise<{ ok: true; model: string }>
     maxTokens: 8,
     timeoutMs: 20000,
   })
-  return { ok: true, model: config.model }
+  return { ok: true, model: config.model, provider: settings.provider }
 }

@@ -126,7 +126,7 @@ async function doctor(): Promise<void> {
 const program = new Command();
 program
   .name("ng")
-  .description("Novel Guide - a Claude-Code-like native agent for novel workspaces")
+  .description("Novel Guide - a native agent for novel workspaces")
   .version("0.1.0")
   .option("-p, --print <prompt>", "run one non-interactive prompt and exit")
   .option("-C, --cwd <dir>", "workspace directory", process.cwd())

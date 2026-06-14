@@ -65,6 +65,8 @@ function displayAction(entry: LedgerEntry): { key: string; label: string } {
   if (/^手动保存\s+/.test(summary)) return { key: "manual_save", label: "保存" }
 
   switch (action) {
+    case "import_file":
+      return { key: "import_file", label: "导入材料" }
     case "edit_file":
       return { key: "edit_file", label: "编辑" }
     case "write_file":

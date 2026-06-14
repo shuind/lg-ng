@@ -1,5 +1,6 @@
 import type { SkillDraftRequest, SkillDraftResponse, SkillResourceKind, SkillTextResource } from "@/lib/types"
 import { callChatCompletion, getConfig } from "@/lib/server/llm"
+import { parseJsonFromModel } from "@/lib/server/llm-json"
 import {
   normalizeResourceKinds,
   normalizeResourcePath,
@@ -19,8 +20,8 @@ function fallbackSkillName(nameHint: string): { name: string; warnings: string[]
 
 function createTemplateSkillMd(name: string, input: SkillDraftRequest): string {
   const goal = input.goal.trim() || "说明这个 Skill 要沉淀哪一种可复用的小说写作能力。"
-  const triggers = input.triggers.trim() || "当用户明确需要这套流程时使用。"
-  const examples = input.examples.trim()
+  const triggers = (input.triggers ?? "").trim() || "当用户明确需要这套流程时使用。"
+  const examples = (input.examples ?? "").trim()
   const examplesBlock = examples
     ? `\n## 示例\n\n${examples}\n`
     : ""
@@ -70,16 +71,6 @@ function createTemplateResources(kinds: SkillResourceKind[]): SkillTextResource[
   return resources
 }
 
-function extractJsonObject(content: string): unknown {
-  const trimmed = content.trim()
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)
-  const raw = fenced ? fenced[1].trim() : trimmed
-  const start = raw.indexOf("{")
-  const end = raw.lastIndexOf("}")
-  if (start < 0 || end <= start) throw new Error("没有找到 JSON 对象。")
-  return JSON.parse(raw.slice(start, end + 1))
-}
-
 function normalizeDraftResponse(raw: unknown, fallbackName: string, fallback: SkillDraftResponse): SkillDraftResponse {
   const data = raw && typeof raw === "object" ? raw as Partial<SkillDraftResponse> : {}
   const warnings = Array.isArray(data.warnings)
@@ -115,7 +106,7 @@ function normalizeDraftResponse(raw: unknown, fallbackName: string, fallback: Sk
   }
 }
 
-export async function draftClaudeSkill(input: SkillDraftRequest): Promise<SkillDraftResponse> {
+export async function draftWorkspaceSkill(input: SkillDraftRequest): Promise<SkillDraftResponse> {
   const resourceKinds = normalizeResourceKinds(input.resourceKinds)
   const { name, warnings } = fallbackSkillName(input.nameHint)
   const fallback: SkillDraftResponse = {
@@ -128,7 +119,7 @@ export async function draftClaudeSkill(input: SkillDraftRequest): Promise<SkillD
   if (!config) {
     return {
       ...fallback,
-      warnings: [...fallback.warnings, "当前没有配置可用模型，已先生成可编辑的模板草稿。"],
+      warnings: [...fallback.warnings, "当前没有可用的模型通道，已先生成可编辑的模板草稿。"],
     }
   }
 
@@ -160,7 +151,7 @@ export async function draftClaudeSkill(input: SkillDraftRequest): Promise<SkillD
       },
     ], { temperature: 0.2, maxTokens: 2400, feature: "skill_draft" })
 
-    return normalizeDraftResponse(extractJsonObject(result.content), name, fallback)
+    return normalizeDraftResponse(parseJsonFromModel(result.content), name, fallback)
   } catch (error) {
     return {
       ...fallback,

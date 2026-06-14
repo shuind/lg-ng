@@ -1,10 +1,7 @@
-// Reference: C:/Users/qdz/Desktop/cli/claude-code-main/src/tools/AgentTool/loadAgentsDir.ts
-// Mechanism copied: project agents are markdown files under .claude/agents
-// with frontmatter metadata and prompt body.
-
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import matter from "gray-matter";
+import { WORKSPACE_AGENT_DIRS } from "../workspace/layout.js";
 
 export interface AgentDefinition {
   name: string;
@@ -22,33 +19,39 @@ function parseTools(value: unknown): string[] | undefined {
 }
 
 export async function loadAgentsDir(cwd: string): Promise<AgentDefinition[]> {
-  const agentsPath = path.join(cwd, ".claude", "agents");
-  let entries;
-  try {
-    entries = await readdir(agentsPath, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-
   const agents: AgentDefinition[] = [];
-  for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".md")) continue;
-    const filePath = path.join(agentsPath, entry.name);
+  const seen = new Set<string>();
+
+  for (const agentsDir of WORKSPACE_AGENT_DIRS) {
+    const agentsPath = path.join(cwd, agentsDir);
+    let entries;
     try {
-      const raw = await readFile(filePath, "utf8");
-      const parsed = matter(raw);
-      const name = typeof parsed.data.name === "string" ? parsed.data.name : entry.name.replace(/\.md$/i, "");
-      const description = typeof parsed.data.description === "string" ? parsed.data.description : "Project subagent";
-      agents.push({
-        name,
-        description,
-        tools: parseTools(parsed.data.tools),
-        model: typeof parsed.data.model === "string" ? parsed.data.model : undefined,
-        prompt: parsed.content.trim(),
-        filePath,
-      });
+      entries = await readdir(agentsPath, { withFileTypes: true });
     } catch {
-      // Skip invalid agent files; agents are optional.
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".md")) continue;
+      const filePath = path.join(agentsPath, entry.name);
+      try {
+        const raw = await readFile(filePath, "utf8");
+        const parsed = matter(raw);
+        const name = typeof parsed.data.name === "string" ? parsed.data.name : entry.name.replace(/\.md$/i, "");
+        if (seen.has(name)) continue;
+        seen.add(name);
+        const description = typeof parsed.data.description === "string" ? parsed.data.description : "Project subagent";
+        agents.push({
+          name,
+          description,
+          tools: parseTools(parsed.data.tools),
+          model: typeof parsed.data.model === "string" ? parsed.data.model : undefined,
+          prompt: parsed.content.trim(),
+          filePath,
+        });
+      } catch {
+        // Skip invalid agent files; agents are optional.
+      }
     }
   }
   return agents;

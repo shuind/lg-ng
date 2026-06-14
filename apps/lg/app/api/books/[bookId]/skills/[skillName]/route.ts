@@ -1,12 +1,12 @@
 import { withAuthRoute } from "@/lib/server/auth-route"
 import { NextResponse } from "next/server"
 import {
-  deleteClaudeSkill,
-  readClaudeSkillDraft,
+  deleteWorkspaceSkill,
+  readWorkspaceSkillDraft,
   SkillConflictError,
   SkillNotFoundError,
   SkillValidationError,
-  updateClaudeSkill,
+  updateWorkspaceSkill,
 } from "@/lib/server/skill-service"
 
 async function GETHandler(
@@ -15,7 +15,7 @@ async function GETHandler(
 ) {
   try {
     const { bookId, skillName } = await params
-    const draft = await readClaudeSkillDraft(bookId, decodeURIComponent(skillName))
+    const draft = await readWorkspaceSkillDraft(bookId, decodeURIComponent(skillName))
     return NextResponse.json(draft)
   } catch (err) {
     if (err instanceof SkillNotFoundError) {
@@ -37,7 +37,7 @@ async function PUTHandler(
   try {
     const { bookId, skillName } = await params
     const body = await request.json()
-    const skill = await updateClaudeSkill(bookId, {
+    const skill = await updateWorkspaceSkill(bookId, {
       ...body,
       originalName: decodeURIComponent(skillName),
     })
@@ -64,7 +64,7 @@ async function DELETEHandler(
 ) {
   try {
     const { bookId, skillName } = await params
-    await deleteClaudeSkill(bookId, decodeURIComponent(skillName))
+    await deleteWorkspaceSkill(bookId, decodeURIComponent(skillName))
     return NextResponse.json({ ok: true })
   } catch (err) {
     if (err instanceof SkillNotFoundError) {

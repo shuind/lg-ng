@@ -1,5 +1,4 @@
-// Reference: C:/Users/qdz/Desktop/cli/claude-code-main/src/query.ts
-// Mechanism copied: call the model, execute requested tools, append tool
+// Query loop: call the model, execute requested tools, append tool
 // results, and continue the same turn until the assistant stops or the turn
 // budget is exhausted.
 

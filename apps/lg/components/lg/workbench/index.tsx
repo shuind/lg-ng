@@ -5,6 +5,7 @@ import type { WorkbenchGroup } from "@/lib/types"
 import { listWorkbenchTree, readWorkbenchFile, writeWorkbenchFile } from "@/lib/api"
 import { EditorPane } from "./editor-pane"
 import { LedgerPane } from "./ledger-pane"
+import { SkillLabPane } from "./skill-lab"
 import { SkillPane } from "./skill-pane"
 import type { Tab, WorkbenchProps } from "./types"
 import { WorkbenchFileSidebar } from "./workbench-file-sidebar"
@@ -126,6 +127,7 @@ export function Workbench({ book, onClose, initialPath, initialLine, initialTab,
             />
           )}
           {tab === "skill" && <SkillPane bookId={book.id} onOpenFile={openFileInEditor} />}
+          {tab === "lab" && <SkillLabPane bookId={book.id} onOpenFile={openFileInEditor} />}
         </div>
 
         {tab === "editor" && (

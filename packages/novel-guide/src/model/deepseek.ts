@@ -17,7 +17,7 @@ export interface DeepSeekConfig {
 }
 
 export interface OpenAICompatibleConfig extends DeepSeekConfig {
-  provider: "deepseek" | "mimo";
+  provider: "deepseek" | "mimo" | "claude-relay";
 }
 
 export interface ModelUsage {

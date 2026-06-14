@@ -1,5 +1,4 @@
-// Reference: C:/Users/qdz/Desktop/cli/claude-code-main/src/types/command.ts
-// Mechanism copied: slash commands are either prompt-expansion commands or
+// Slash commands are either prompt-expansion commands or
 // local commands. Prompt commands may be user-invoked or model-invoked.
 
 import type { ToolContext, ToolResult } from "../tools/tool.js";

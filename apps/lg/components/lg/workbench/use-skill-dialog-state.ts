@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import type { Skill, SkillDraftResponse, SkillResourceKind, SkillTextResource } from "@/lib/types"
+import type { Skill, SkillDraftResponse, SkillTextResource } from "@/lib/types"
 import { createSkill, draftSkill, getSkillDraft, updateSkill } from "@/lib/api"
 import {
   createDefaultSkillMd,
@@ -9,6 +9,8 @@ import {
   skillDirectoryName,
   syncSkillMdName,
 } from "./skill-pane-utils"
+
+export type SkillDialogStep = "intent" | "preview"
 
 export function useSkillDialogState({
   bookId,
@@ -20,15 +22,14 @@ export function useSkillDialogState({
   onOpenFile: (path: string) => void
 }) {
   const [open, setOpen] = useState(false)
+  const [step, setStep] = useState<SkillDialogStep>("intent")
   const [editingSkillName, setEditingSkillName] = useState<string | null>(null)
   const [skillName, setSkillName] = useState("novel-skill")
-  const [goal, setGoal] = useState("")
-  const [triggers, setTriggers] = useState("")
-  const [examples, setExamples] = useState("")
-  const [resourceKinds, setResourceKinds] = useState<SkillResourceKind[]>(["references", "scripts", "assets"])
+  const [intent, setIntent] = useState("")
   const [skillMd, setSkillMd] = useState(() => createDefaultSkillMd("novel-skill"))
   const [resources, setResources] = useState<SkillTextResource[]>([])
   const [warnings, setWarnings] = useState<string[]>([])
+  const [hint, setHint] = useState("")
   const [createError, setCreateError] = useState("")
   const [generating, setGenerating] = useState(false)
   const [savingSkill, setSavingSkill] = useState(false)
@@ -57,33 +58,43 @@ export function useSkillDialogState({
   function openCreateSkillDialog() {
     setEditingSkillName(null)
     setSkillName("novel-skill")
-    setGoal("")
-    setTriggers("")
-    setExamples("")
-    setResourceKinds(["references", "scripts", "assets"])
+    setIntent("")
     setSkillMd(createDefaultSkillMd("novel-skill"))
     setResources([])
     setWarnings([])
+    setHint("")
     setCreateError("")
     setSkillMdEdited(false)
+    setStep("intent")
     setOpen(true)
   }
 
-  async function openEditSkillDialog(skill: Skill) {
-    const directoryName = skillDirectoryName(skill)
-    if (!directoryName) return
+  // Lab "new" suggestion already produced a draft — jump straight to preview.
+  function openDraftSkillDialog(draft: SkillDraftResponse) {
+    setEditingSkillName(null)
+    setIntent("")
+    setSkillName(draft.name)
+    setSkillMd(draft.skillMd)
+    setResources(draft.resources)
+    setWarnings(draft.warnings)
+    setHint("")
+    setCreateError("")
+    setSkillMdEdited(true)
+    setStep("preview")
+    setOpen(true)
+  }
 
+  async function loadSkillByName(directoryName: string, nextHint: string) {
     setEditingSkillName(directoryName)
     setSkillName(directoryName)
-    setGoal("")
-    setTriggers("")
-    setExamples("")
-    setResourceKinds(["references", "scripts", "assets"])
+    setIntent("")
     setSkillMd("")
     setResources([])
     setWarnings([])
+    setHint(nextHint)
     setCreateError("")
     setSkillMdEdited(true)
+    setStep("preview")
     setOpen(true)
     setLoadingSkillDraft(true)
     try {
@@ -99,48 +110,39 @@ export function useSkillDialogState({
     }
   }
 
-  function openDraftSkillDialog(draft: SkillDraftResponse) {
-    setEditingSkillName(null)
-    setSkillName(draft.name)
-    setGoal("")
-    setTriggers("")
-    setExamples("")
-    setResourceKinds(["references"])
-    setSkillMd(draft.skillMd)
-    setResources(draft.resources)
-    setWarnings(draft.warnings)
-    setCreateError("")
-    setSkillMdEdited(true)
-    setOpen(true)
+  async function openEditSkillDialog(skill: Skill) {
+    const directoryName = skillDirectoryName(skill)
+    if (!directoryName) return
+    await loadSkillByName(directoryName, "")
   }
 
-  function handleToggleResourceKind(kind: SkillResourceKind, checked: boolean) {
-    setResourceKinds((current) =>
-      checked ? Array.from(new Set([...current, kind])) : current.filter((item) => item !== kind),
-    )
+  // Lab "improve" suggestion — open the target skill with the proposed change as a banner.
+  async function openImproveSkillDialog(directoryName: string, proposedChange: string) {
+    await loadSkillByName(directoryName, proposedChange)
   }
 
   async function handleGenerateDraft() {
     setGenerating(true)
     setCreateError("")
     try {
-      const draft = await draftSkill(bookId, {
-        nameHint: skillName,
-        goal,
-        triggers,
-        examples,
-        resourceKinds,
-      })
+      const draft = await draftSkill(bookId, { nameHint: skillName, goal: intent })
       setSkillName(draft.name)
       setSkillMd(draft.skillMd)
       setResources(draft.resources)
       setWarnings(draft.warnings)
       setSkillMdEdited(false)
+      setStep("preview")
     } catch (error) {
       setCreateError(error instanceof Error ? error.message : "生成草稿失败。")
     } finally {
       setGenerating(false)
     }
+  }
+
+  function skipToManualDraft() {
+    const name = normalizeSkillInputName(skillName) || "novel-skill"
+    if (!skillMdEdited) setSkillMd(createDefaultSkillMd(name))
+    setStep("preview")
   }
 
   async function handleSaveSkill() {
@@ -166,21 +168,16 @@ export function useSkillDialogState({
     }
   }
 
-  function handleAddResource(kind: SkillResourceKind = "references") {
+  function handleAddResource() {
     setResources((current) => [
       ...current,
-      {
-        path: `${kind}/notes-${current.length + 1}.md`,
-        content: "# 说明\n\n",
-      },
+      { path: `references/notes-${current.length + 1}.md`, content: "# 说明\n\n" },
     ])
   }
 
   function handleUpdateResource(index: number, patch: Partial<SkillTextResource>) {
     setResources((current) =>
-      current.map((resource, currentIndex) =>
-        currentIndex === index ? { ...resource, ...patch } : resource,
-      ),
+      current.map((resource, currentIndex) => (currentIndex === index ? { ...resource, ...patch } : resource)),
     )
   }
 
@@ -188,34 +185,26 @@ export function useSkillDialogState({
     setResources((current) => current.filter((_, currentIndex) => currentIndex !== index))
   }
 
-  function handleCancel() {
-    setOpen(false)
-    setEditingSkillName(null)
-  }
-
   return {
     open,
+    step,
     isEditingSkill,
     skillName,
-    goal,
-    triggers,
-    examples,
-    resourceKinds,
+    intent,
     skillMd,
     resources,
     warnings,
+    hint,
     createError,
     generating,
     savingSkill,
     loadingSkillDraft,
+    setIntent,
     handleOpenChange,
     handleSkillNameChange,
     handleSkillNameBlur: () => setSkillName((current) => normalizeSkillInputName(current) || "novel-skill"),
-    setGoal,
-    setTriggers,
-    setExamples,
-    handleToggleResourceKind,
     handleGenerateDraft,
+    skipToManualDraft,
     handleSkillMdChange: (value: string) => {
       setSkillMd(value)
       setSkillMdEdited(true)
@@ -223,10 +212,16 @@ export function useSkillDialogState({
     handleAddResource,
     handleUpdateResource,
     handleRemoveResource,
-    handleCancel,
+    handleCancel: () => {
+      setOpen(false)
+      setEditingSkillName(null)
+    },
     handleSaveSkill,
     openCreateSkillDialog,
     openEditSkillDialog,
+    openImproveSkillDialog,
     openDraftSkillDialog,
   }
 }
+
+export type SkillDialogController = ReturnType<typeof useSkillDialogState>

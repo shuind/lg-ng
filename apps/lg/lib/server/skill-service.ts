@@ -3,15 +3,27 @@ import path from "path"
 import type { Dirent } from "node:fs"
 import type {
   CreateSkillRequest,
+  LedgerEntry,
   Skill,
   SkillDraftResponse,
+  SkillLabMeta,
+  SkillLabStage,
   SkillSummary,
+  SkillTrial,
   SkillTextResource,
+  SkillUsageStats,
   UpdateSkillRequest,
 } from "@/lib/types"
 import { readBookFile, getBookFileMtime } from "@/lib/server/book-store"
+import { listLedgerEntries } from "@/lib/server/ledger"
 import { getBookDir } from "@/lib/server/paths"
 import { rebuildBookIndexes, updateIndexedFile } from "@/lib/server/book-index"
+import {
+  LEGACY_WORKSPACE_SKILLS_DIR,
+  WORKSPACE_SKILLS_DIR,
+  WORKSPACE_SKILL_SOURCE,
+  isWorkspaceSkillSource,
+} from "@/lib/workspace-layout"
 import {
   RESOURCE_ROOTS,
   SkillConflictError,
@@ -34,9 +46,10 @@ export {
 const SOURCE_FILE = "创作指南.md"
 const SUMMARY_FILE = "skills/style_guide_summary.md"
 const META_FILE = "skills/style_guide.skill.json"
-const CLAUDE_SKILLS_DIR = ".claude/skills"
+const SKILL_LAB_FILE = "skill-lab.json"
 
 const SUMMARY_MAX_CHARS = 500
+const USAGE_LEDGER_SCAN_LIMIT = 1000
 
 const KEYWORD_LINES = ["文风", "语感", "禁忌", "人物", "结构", "节奏", "偏好", "塑造", "风格", "写法"]
 
@@ -44,6 +57,10 @@ const KEYWORD_LINES = ["文风", "语感", "禁忌", "人物", "结构", "节奏
 
 function metaPath(bookId: string): string {
   return path.join(getBookDir(bookId), META_FILE)
+}
+
+function skillLabPath(bookId: string): string {
+  return path.join(getBookDir(bookId), SKILL_LAB_FILE)
 }
 
 function estimateTokens(content: string): number {
@@ -54,12 +71,201 @@ function toRelativePath(...parts: string[]): string {
   return parts.filter(Boolean).join("/")
 }
 
-function claudeSkillsRoot(bookId: string): string {
-  return path.join(getBookDir(bookId), CLAUDE_SKILLS_DIR)
+function workspaceSkillsRoot(bookId: string): string {
+  return path.join(getBookDir(bookId), WORKSPACE_SKILLS_DIR)
 }
 
-function claudeSkillDir(bookId: string, name: string): string {
-  return path.join(claudeSkillsRoot(bookId), name)
+function legacyWorkspaceSkillsRoot(bookId: string): string {
+  return path.join(getBookDir(bookId), LEGACY_WORKSPACE_SKILLS_DIR)
+}
+
+function workspaceSkillDir(bookId: string, name: string): string {
+  return path.join(workspaceSkillsRoot(bookId), name)
+}
+
+function legacyWorkspaceSkillDir(bookId: string, name: string): string {
+  return path.join(legacyWorkspaceSkillsRoot(bookId), name)
+}
+
+async function resolveExistingWorkspaceSkillDir(bookId: string, name: string): Promise<string | null> {
+  const modernDir = workspaceSkillDir(bookId, name)
+  if (await fileExists(path.join(modernDir, "SKILL.md"))) return modernDir
+
+  const legacyDir = legacyWorkspaceSkillDir(bookId, name)
+  if (await fileExists(path.join(legacyDir, "SKILL.md"))) return legacyDir
+
+  return null
+}
+
+function emptyUsage(): SkillUsageStats {
+  return {
+    timesUsed: 0,
+    timesRewritten: 0,
+    rewriteRate: 0,
+    recentRewrites: [],
+  }
+}
+
+function normalizeTrial(value: unknown): SkillTrial | null {
+  if (!value || typeof value !== "object") return null
+  const trial = value as Partial<SkillTrial>
+  if (
+    typeof trial.id !== "string" ||
+    typeof trial.skillName !== "string" ||
+    typeof trial.sampleText !== "string" ||
+    typeof trial.outputWithout !== "string" ||
+    typeof trial.outputWith !== "string" ||
+    typeof trial.createdAt !== "string"
+  ) {
+    return null
+  }
+  return {
+    id: trial.id,
+    skillName: trial.skillName,
+    sampleSource: trial.sampleSource === "ledger" || trial.sampleSource === "editor" ? trial.sampleSource : "paste",
+    sampleText: trial.sampleText,
+    outputWithout: trial.outputWithout,
+    outputWith: trial.outputWith,
+    verdict: trial.verdict === "helped" || trial.verdict === "no_diff" || trial.verdict === "hurt" ? trial.verdict : null,
+    judgeNote: typeof trial.judgeNote === "string" ? trial.judgeNote : undefined,
+    createdAt: trial.createdAt,
+  }
+}
+
+function normalizeLabStage(value: unknown): SkillLabStage {
+  return value === "experimental" ? "experimental" : "active"
+}
+
+function normalizeSkillLabMeta(name: string, value: unknown): SkillLabMeta {
+  const meta = value && typeof value === "object" ? value as Partial<SkillLabMeta> : {}
+  return {
+    name,
+    stage: normalizeLabStage(meta.stage),
+    originObservationId: typeof meta.originObservationId === "string" ? meta.originObservationId : undefined,
+    originExperimentId: typeof meta.originExperimentId === "string" ? meta.originExperimentId : undefined,
+    trials: Array.isArray(meta.trials) ? meta.trials.map(normalizeTrial).filter((trial): trial is SkillTrial => trial !== null) : [],
+  }
+}
+
+type SkillLabSidecar = {
+  skillMeta?: Record<string, unknown>
+  [key: string]: unknown
+}
+
+async function readSkillLabSidecar(bookId: string): Promise<SkillLabSidecar> {
+  try {
+    const raw = await fs.readFile(skillLabPath(bookId), "utf-8")
+    const data = JSON.parse(raw)
+    return data && typeof data === "object" ? data as SkillLabSidecar : {}
+  } catch {
+    return {}
+  }
+}
+
+async function writeSkillLabSidecar(bookId: string, sidecar: SkillLabSidecar): Promise<void> {
+  const filePath = skillLabPath(bookId)
+  await fs.mkdir(path.dirname(filePath), { recursive: true })
+  await fs.writeFile(filePath, JSON.stringify(sidecar, null, 2), "utf-8")
+}
+
+export async function readSkillLabMetaMap(bookId: string): Promise<Record<string, SkillLabMeta>> {
+  const sidecar = await readSkillLabSidecar(bookId)
+  const rawMeta = sidecar.skillMeta && typeof sidecar.skillMeta === "object" ? sidecar.skillMeta : {}
+  const meta: Record<string, SkillLabMeta> = {}
+  for (const [name, value] of Object.entries(rawMeta)) {
+    meta[name] = normalizeSkillLabMeta(name, value)
+  }
+  return meta
+}
+
+async function writeSkillLabMetaMap(bookId: string, meta: Record<string, SkillLabMeta>): Promise<void> {
+  const sidecar = await readSkillLabSidecar(bookId)
+  sidecar.skillMeta = meta
+  await writeSkillLabSidecar(bookId, sidecar)
+}
+
+export async function upsertSkillLabMeta(
+  bookId: string,
+  skillName: string,
+  patch: Partial<SkillLabMeta>,
+): Promise<SkillLabMeta> {
+  const name = normalizeSkillName(skillName)
+  if (!name || !isValidSkillName(name)) {
+    throw new SkillValidationError("Skill 短名只能使用小写英文字母、数字和连字符。")
+  }
+  const meta = await readSkillLabMetaMap(bookId)
+  const current = meta[name] ?? normalizeSkillLabMeta(name, null)
+  const next: SkillLabMeta = {
+    ...current,
+    ...patch,
+    name,
+    stage: normalizeLabStage(patch.stage ?? current.stage),
+    trials: patch.trials ?? current.trials,
+  }
+  meta[name] = next
+  await writeSkillLabMetaMap(bookId, meta)
+  return next
+}
+
+export async function appendSkillTrial(bookId: string, skillName: string, trial: SkillTrial): Promise<SkillTrial> {
+  const name = normalizeSkillName(skillName)
+  if (!name || !isValidSkillName(name)) {
+    throw new SkillValidationError("Skill 短名只能使用小写英文字母、数字和连字符。")
+  }
+  const meta = await readSkillLabMetaMap(bookId)
+  const current = meta[name] ?? normalizeSkillLabMeta(name, null)
+  meta[name] = {
+    ...current,
+    name,
+    trials: [trial, ...current.trials].slice(0, 20),
+  }
+  await writeSkillLabMetaMap(bookId, meta)
+  return trial
+}
+
+export async function setSkillTrialVerdict(
+  bookId: string,
+  trialId: string,
+  verdict: SkillTrial["verdict"],
+  judgeNote?: string,
+): Promise<SkillTrial> {
+  const meta = await readSkillLabMetaMap(bookId)
+  for (const [name, item] of Object.entries(meta)) {
+    const trialIndex = item.trials.findIndex((trial) => trial.id === trialId)
+    if (trialIndex < 0) continue
+    const trial = {
+      ...item.trials[trialIndex],
+      verdict,
+      judgeNote: judgeNote?.trim() || item.trials[trialIndex].judgeNote,
+    }
+    const trials = [...item.trials]
+    trials[trialIndex] = trial
+    meta[name] = { ...item, trials }
+    await writeSkillLabMetaMap(bookId, meta)
+    return trial
+  }
+  throw new SkillNotFoundError("找不到这次 A/B 探针记录。")
+}
+
+async function renameSkillLabMeta(bookId: string, fromName: string, toName: string): Promise<void> {
+  if (fromName === toName) return
+  const meta = await readSkillLabMetaMap(bookId)
+  const current = meta[fromName]
+  if (!current) return
+  delete meta[fromName]
+  meta[toName] = {
+    ...current,
+    name: toName,
+    trials: current.trials.map((trial) => ({ ...trial, skillName: toName })),
+  }
+  await writeSkillLabMetaMap(bookId, meta)
+}
+
+async function deleteSkillLabMeta(bookId: string, skillName: string): Promise<void> {
+  const meta = await readSkillLabMetaMap(bookId)
+  if (!meta[skillName]) return
+  delete meta[skillName]
+  await writeSkillLabMetaMap(bookId, meta)
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -101,30 +307,31 @@ function resolveResourceWritePath(skillRoot: string, resourcePath: string): stri
   return absPath
 }
 
-function toClaudeSkillRecord(
+function toWorkspaceSkillRecord(
   bookId: string,
   directoryName: string,
   skillMd: string,
   meta: Record<string, string>,
   mtimeIso: string,
+  sourceDir = WORKSPACE_SKILLS_DIR,
 ): Skill {
   return {
-    id: `claude-skill-${directoryName}`,
-    type: "claude_skill",
+    id: `workspace-skill-${directoryName}`,
+    type: "workspace_skill",
     name: meta.name || directoryName,
     description: meta.description || meta.when_to_use || "",
     scope: "book",
     bookId,
-    sourceFile: toRelativePath(CLAUDE_SKILLS_DIR, directoryName, "SKILL.md"),
+    sourceFile: toRelativePath(sourceDir, directoryName, "SKILL.md"),
     summaryTokenCount: estimateTokens(skillMd),
     lastSourceModified: mtimeIso,
     lastSummaryGenerated: mtimeIso,
     dirty: false,
-    source: "claude_skill",
+    source: WORKSPACE_SKILL_SOURCE,
   }
 }
 
-async function writeClaudeSkillContents(
+async function writeWorkspaceSkillContents(
   targetDir: string,
   skillMd: string,
   resources: SkillTextResource[],
@@ -221,10 +428,10 @@ async function removeExistingTextResources(targetDir: string): Promise<void> {
   }
 }
 
-export async function createClaudeSkill(bookId: string, input: CreateSkillRequest): Promise<Skill> {
+export async function createWorkspaceSkill(bookId: string, input: CreateSkillRequest): Promise<Skill> {
   const { name, skillMd, resources, meta } = validateSkillDraft(input)
-  const skillsDir = claudeSkillsRoot(bookId)
-  const targetDir = claudeSkillDir(bookId, name)
+  const skillsDir = workspaceSkillsRoot(bookId)
+  const targetDir = workspaceSkillDir(bookId, name)
 
   try {
     await fs.mkdir(targetDir, { recursive: false })
@@ -240,7 +447,7 @@ export async function createClaudeSkill(bookId: string, input: CreateSkillReques
   }
 
   try {
-    await writeClaudeSkillContents(targetDir, skillMd, resources)
+    await writeWorkspaceSkillContents(targetDir, skillMd, resources)
     await touchBookUpdatedAt(bookId)
     await rebuildBookIndexes(bookId).catch(() => {})
   } catch (error) {
@@ -249,21 +456,23 @@ export async function createClaudeSkill(bookId: string, input: CreateSkillReques
   }
 
   const stat = await fs.stat(path.join(targetDir, "SKILL.md"))
-  return toClaudeSkillRecord(bookId, name, skillMd, meta, stat.mtime.toISOString())
+  const skill = toWorkspaceSkillRecord(bookId, name, skillMd, meta, stat.mtime.toISOString())
+  await upsertSkillLabMeta(bookId, name, { stage: "active" }).catch(() => {})
+  return { ...skill, stage: "active", usage: emptyUsage(), trials: [] }
 }
 
-export async function readClaudeSkillDraft(bookId: string, rawName: string): Promise<SkillDraftResponse> {
+export async function readWorkspaceSkillDraft(bookId: string, rawName: string): Promise<SkillDraftResponse> {
   const name = normalizeSkillName(rawName)
   if (!name || !isValidSkillName(name)) {
     throw new SkillValidationError("Skill 短名只能使用小写英文字母、数字和连字符。")
   }
 
-  const targetDir = claudeSkillDir(bookId, name)
-  const skillPath = path.join(targetDir, "SKILL.md")
-  if (!(await fileExists(skillPath))) {
+  const targetDir = await resolveExistingWorkspaceSkillDir(bookId, name)
+  if (!targetDir) {
     throw new SkillNotFoundError(`找不到这个 Skill：${name}`)
   }
 
+  const skillPath = path.join(targetDir, "SKILL.md")
   const [skillMd, resourceResult] = await Promise.all([
     fs.readFile(skillPath, "utf-8"),
     readTextResourcesFromDir(targetDir),
@@ -277,20 +486,24 @@ export async function readClaudeSkillDraft(bookId: string, rawName: string): Pro
   }
 }
 
-export async function updateClaudeSkill(bookId: string, input: UpdateSkillRequest): Promise<Skill> {
+export async function updateWorkspaceSkill(bookId: string, input: UpdateSkillRequest): Promise<Skill> {
   const originalName = normalizeSkillName(input.originalName)
   if (!originalName || !isValidSkillName(originalName)) {
     throw new SkillValidationError("原 Skill 短名只能使用小写英文字母、数字和连字符。")
   }
 
   const { name, skillMd, resources, meta } = validateSkillDraft(input)
-  const originalDir = claudeSkillDir(bookId, originalName)
-  const targetDir = claudeSkillDir(bookId, name)
-  const originalSkillPath = path.join(originalDir, "SKILL.md")
-
-  if (!(await fileExists(originalSkillPath))) {
+  const originalDir = await resolveExistingWorkspaceSkillDir(bookId, originalName)
+  if (!originalDir) {
     throw new SkillNotFoundError(`找不到这个 Skill：${originalName}`)
   }
+
+  const originalRoot = path.dirname(originalDir)
+  const targetRoot = originalRoot === legacyWorkspaceSkillsRoot(bookId)
+    ? legacyWorkspaceSkillsRoot(bookId)
+    : workspaceSkillsRoot(bookId)
+  const targetDir = path.join(targetRoot, name)
+
   if (name !== originalName && await dirExists(targetDir)) {
     throw new SkillConflictError(`同名 Skill 已存在：${name}`)
   }
@@ -305,7 +518,7 @@ export async function updateClaudeSkill(bookId: string, input: UpdateSkillReques
 
   try {
     await removeExistingTextResources(activeDir)
-    await writeClaudeSkillContents(activeDir, skillMd, resources)
+    await writeWorkspaceSkillContents(activeDir, skillMd, resources)
     await touchBookUpdatedAt(bookId)
     await rebuildBookIndexes(bookId).catch(() => {})
   } catch (error) {
@@ -316,22 +529,26 @@ export async function updateClaudeSkill(bookId: string, input: UpdateSkillReques
   }
 
   const stat = await fs.stat(path.join(activeDir, "SKILL.md"))
-  return toClaudeSkillRecord(bookId, name, skillMd, meta, stat.mtime.toISOString())
+  const sourceDir = originalRoot === legacyWorkspaceSkillsRoot(bookId)
+    ? LEGACY_WORKSPACE_SKILLS_DIR
+    : WORKSPACE_SKILLS_DIR
+  await renameSkillLabMeta(bookId, originalName, name).catch(() => {})
+  return toWorkspaceSkillRecord(bookId, name, skillMd, meta, stat.mtime.toISOString(), sourceDir)
 }
 
-export async function deleteClaudeSkill(bookId: string, rawName: string): Promise<void> {
+export async function deleteWorkspaceSkill(bookId: string, rawName: string): Promise<void> {
   const name = normalizeSkillName(rawName)
   if (!name || !isValidSkillName(name)) {
     throw new SkillValidationError("Skill 短名只能使用小写英文字母、数字和连字符。")
   }
 
-  const targetDir = claudeSkillDir(bookId, name)
-  const skillPath = path.join(targetDir, "SKILL.md")
-  if (!(await fileExists(skillPath))) {
+  const targetDir = await resolveExistingWorkspaceSkillDir(bookId, name)
+  if (!targetDir) {
     throw new SkillNotFoundError(`找不到这个 Skill：${name}`)
   }
 
   await fs.rm(targetDir, { recursive: true, force: true })
+  await deleteSkillLabMeta(bookId, name).catch(() => {})
   await touchBookUpdatedAt(bookId)
   await rebuildBookIndexes(bookId).catch(() => {})
 }
@@ -366,6 +583,72 @@ async function readMeta(bookId: string): Promise<Skill | null> {
 async function writeMeta(skill: Skill): Promise<void> {
   await fs.mkdir(path.dirname(metaPath(skill.bookId!)), { recursive: true })
   await fs.writeFile(metaPath(skill.bookId!), JSON.stringify(skill, null, 2), "utf-8")
+}
+
+async function collectUsageLedgerEntries(bookId: string): Promise<LedgerEntry[]> {
+  const entries: LedgerEntry[] = []
+  let cursor: string | undefined
+  do {
+    const page = await listLedgerEntries(bookId, { limit: 200, cursor }).catch(() => ({ entries: [] as LedgerEntry[], nextCursor: undefined }))
+    entries.push(...page.entries)
+    cursor = page.nextCursor
+  } while (cursor && entries.length < USAGE_LEDGER_SCAN_LIMIT)
+
+  return entries
+    .slice(0, USAGE_LEDGER_SCAN_LIMIT)
+    .sort((a, b) => (a.timestamp ?? "").localeCompare(b.timestamp ?? ""))
+}
+
+function ensureUsage(map: Map<string, SkillUsageStats>, skillId: string): SkillUsageStats {
+  const current = map.get(skillId)
+  if (current) return current
+  const next = emptyUsage()
+  map.set(skillId, next)
+  return next
+}
+
+export async function collectSkillUsageStats(bookId: string): Promise<Map<string, SkillUsageStats>> {
+  const entries = await collectUsageLedgerEntries(bookId)
+  const stats = new Map<string, SkillUsageStats>()
+  const pendingByPath = new Map<string, { skillIds: string[]; entry: LedgerEntry }>()
+
+  for (const entry of entries) {
+    if (!entry.targetPath) continue
+
+    if (entry.actor === "agent" && Array.isArray(entry.activeSkillIds) && entry.activeSkillIds.length > 0) {
+      const skillIds = [...new Set(entry.activeSkillIds.filter((id): id is string => typeof id === "string" && id.trim().length > 0))]
+      if (skillIds.length === 0) continue
+      for (const skillId of skillIds) {
+        ensureUsage(stats, skillId).timesUsed += 1
+      }
+      pendingByPath.set(entry.targetPath, { skillIds, entry })
+      continue
+    }
+
+    if (entry.actor !== "user") continue
+    const pending = pendingByPath.get(entry.targetPath)
+    if (!pending) continue
+
+    for (const skillId of pending.skillIds) {
+      const usage = ensureUsage(stats, skillId)
+      usage.timesRewritten += 1
+      usage.recentRewrites.unshift({
+        ledgerEntryId: entry.id,
+        targetPath: entry.targetPath,
+        note: entry.summary || `用户随后改写了 ${entry.targetPath}`,
+      })
+      usage.recentRewrites = usage.recentRewrites.slice(0, 5)
+    }
+    pendingByPath.delete(entry.targetPath)
+  }
+
+  for (const usage of stats.values()) {
+    usage.rewriteRate = usage.timesUsed > 0
+      ? Number((usage.timesRewritten / usage.timesUsed).toFixed(2))
+      : 0
+  }
+
+  return stats
 }
 
 // ─── Summary Generation (rule-based, no LLM) ─────────────────
@@ -457,46 +740,50 @@ export async function getStyleGuideSkill(bookId: string): Promise<{ skill: Skill
   return { skill, summary }
 }
 
-async function listClaudeSkills(bookId: string): Promise<Skill[]> {
+async function listWorkspaceSkills(bookId: string): Promise<Skill[]> {
   const bookDir = getBookDir(bookId)
-  const skillsDir = path.join(bookDir, CLAUDE_SKILLS_DIR)
-  let entries: Dirent<string>[]
-
-  try {
-    entries = await fs.readdir(skillsDir, { withFileTypes: true })
-  } catch {
-    return []
-  }
-
+  const [metaMap, usageMap] = await Promise.all([
+    readSkillLabMetaMap(bookId).catch(() => ({} as Record<string, SkillLabMeta>)),
+    collectSkillUsageStats(bookId).catch(() => new Map<string, SkillUsageStats>()),
+  ])
   const skills: Skill[] = []
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue
+  const seen = new Set<string>()
 
-    const sourceFile = toRelativePath(CLAUDE_SKILLS_DIR, entry.name, "SKILL.md")
-    const sourceAbs = path.join(bookDir, sourceFile)
+  for (const sourceDir of [WORKSPACE_SKILLS_DIR, LEGACY_WORKSPACE_SKILLS_DIR]) {
+    const skillsDir = path.join(bookDir, sourceDir)
+    let entries: Dirent<string>[]
+
     try {
-      const [content, stat] = await Promise.all([
-        fs.readFile(sourceAbs, "utf-8"),
-        fs.stat(sourceAbs),
-      ])
-      const meta = parseSkillFrontmatter(content)
-      const skillName = meta.name || entry.name
-      skills.push({
-        id: `claude-skill-${entry.name}`,
-        type: "claude_skill",
-        name: skillName,
-        description: meta.description || meta.when_to_use || "",
-        scope: "book",
-        bookId,
-        sourceFile,
-        summaryTokenCount: estimateTokens(content),
-        lastSourceModified: stat.mtime.toISOString(),
-        lastSummaryGenerated: stat.mtime.toISOString(),
-        dirty: false,
-        source: "claude_skill",
-      })
+      entries = await fs.readdir(skillsDir, { withFileTypes: true })
     } catch {
-      // Ignore malformed skill directories.
+      continue
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory() || seen.has(entry.name)) continue
+
+      const sourceFile = toRelativePath(sourceDir, entry.name, "SKILL.md")
+      const sourceAbs = path.join(bookDir, sourceFile)
+      try {
+        const [content, stat] = await Promise.all([
+          fs.readFile(sourceAbs, "utf-8"),
+          fs.stat(sourceAbs),
+        ])
+        const meta = parseSkillFrontmatter(content)
+        const skill = toWorkspaceSkillRecord(bookId, entry.name, content, meta, stat.mtime.toISOString(), sourceDir)
+        const labMeta = metaMap[entry.name] ?? normalizeSkillLabMeta(entry.name, null)
+        skills.push({
+          ...skill,
+          stage: labMeta.stage,
+          originObservationId: labMeta.originObservationId,
+          originExperimentId: labMeta.originExperimentId,
+          usage: usageMap.get(skill.id) ?? emptyUsage(),
+          trials: labMeta.trials,
+        })
+        seen.add(entry.name)
+      } catch {
+        // Ignore malformed skill directories.
+      }
     }
   }
 
@@ -509,8 +796,27 @@ function skillDisplaySortKey(skill: Skill): string {
 
 export async function listSkills(bookId: string): Promise<Skill[]> {
   const { skill } = await getStyleGuideSkill(bookId)
-  const claudeSkills = await listClaudeSkills(bookId)
-  return [skill, ...claudeSkills]
+  const workspaceSkills = await listWorkspaceSkills(bookId)
+  return [skill, ...workspaceSkills]
+}
+
+export async function promoteSkill(bookId: string, rawName: string): Promise<Skill> {
+  const name = normalizeSkillName(rawName)
+  if (!name || !isValidSkillName(name)) {
+    throw new SkillValidationError("Skill 短名只能使用小写英文字母、数字和连字符。")
+  }
+  const targetDir = await resolveExistingWorkspaceSkillDir(bookId, name)
+  if (!targetDir) {
+    throw new SkillNotFoundError(`找不到这个 Skill：${name}`)
+  }
+  await upsertSkillLabMeta(bookId, name, { stage: "active" })
+  const skills = await listSkills(bookId)
+  const sourceDir = path.dirname(targetDir) === legacyWorkspaceSkillsRoot(bookId)
+    ? LEGACY_WORKSPACE_SKILLS_DIR
+    : WORKSPACE_SKILLS_DIR
+  const skill = skills.find((item) => item.sourceFile.replace(/\\/g, "/") === toRelativePath(sourceDir, name, "SKILL.md"))
+  if (!skill) throw new SkillNotFoundError(`找不到这个 Skill：${name}`)
+  return skill
 }
 
 export async function resolveSkillSummaries(bookId: string, skillIds: string[]): Promise<SkillSummary[]> {
@@ -525,7 +831,7 @@ export async function resolveSkillSummaries(bookId: string, skillIds: string[]):
     let summary = ""
     if (skill.type === "style_guide") {
       summary = await readStyleGuideSummary(bookId)
-    } else if (skill.source === "claude_skill") {
+    } else if (isWorkspaceSkillSource(skill.source)) {
       summary = await readBookFile(bookId, skill.sourceFile) ?? ""
     }
 

@@ -7,9 +7,9 @@ async function POSTHandler() {
     return NextResponse.json(await testAppSettingsLlm())
   } catch (err) {
     console.error("[api/app-settings/test-llm] error:", err)
-    const message = err instanceof Error && err.message === "deepseek api key missing"
-      ? "请先保存 DeepSeek API Key"
-      : "DeepSeek 连通性测试失败"
+    const message = err instanceof Error && err.message === "provider api key missing"
+      ? "请先保存当前供应商的 API Key"
+      : "模型连通性测试失败"
     return NextResponse.json({ error: message }, { status: 400 })
   }
 }

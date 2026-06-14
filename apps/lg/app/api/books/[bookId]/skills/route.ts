@@ -1,7 +1,7 @@
 import { withAuthRoute } from "@/lib/server/auth-route"
 import { NextResponse } from "next/server"
 import {
-  createClaudeSkill,
+  createWorkspaceSkill,
   listSkills,
   SkillConflictError,
   SkillValidationError,
@@ -28,7 +28,7 @@ async function POSTHandler(
   try {
     const { bookId } = await params
     const body = await request.json()
-    const skill = await createClaudeSkill(bookId, body)
+    const skill = await createWorkspaceSkill(bookId, body)
     return NextResponse.json({ skill }, { status: 201 })
   } catch (err) {
     if (err instanceof SkillConflictError) {

@@ -1,6 +1,6 @@
 import { withAuthRoute } from "@/lib/server/auth-route"
 import { NextResponse } from "next/server"
-import { draftClaudeSkill } from "@/lib/server/skill-draft-service"
+import { draftWorkspaceSkill } from "@/lib/server/skill-draft-service"
 
 async function POSTHandler(
   request: Request,
@@ -9,7 +9,7 @@ async function POSTHandler(
   try {
     await params
     const body = await request.json()
-    const draft = await draftClaudeSkill(body)
+    const draft = await draftWorkspaceSkill(body)
     return NextResponse.json(draft)
   } catch (err) {
     console.error("[api/books/skills/draft] error:", err)

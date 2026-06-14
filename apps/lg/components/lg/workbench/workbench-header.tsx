@@ -1,7 +1,7 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { ArrowLeft, BookText, CheckCircle2, Circle, FileText, PenLine, Save, Sparkles } from "lucide-react"
+import { ArrowLeft, Beaker, BookText, CheckCircle2, Circle, FileText, PenLine, Save, Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { Tab } from "./types"
 
@@ -48,6 +48,9 @@ export function WorkbenchHeader({
         </TopTab>
         <TopTab active={tab === "skill"} onClick={() => onTabChange("skill")} icon={<Sparkles className="h-3 w-3" />}>
           Skill
+        </TopTab>
+        <TopTab active={tab === "lab"} onClick={() => onTabChange("lab")} icon={<Beaker className="h-3 w-3" />}>
+          Skill Lab
         </TopTab>
       </nav>
 

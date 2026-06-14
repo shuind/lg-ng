@@ -3,6 +3,7 @@ import path from "node:path";
 import fg from "fast-glob";
 import type { Tool } from "./tool.js";
 import { normalizeSlashPath } from "../utils/paths.js";
+import { WORKSPACE_GUIDE_FILES } from "../workspace/layout.js";
 
 function str(value: unknown): string {
   return typeof value === "string" ? value : "";
@@ -161,7 +162,7 @@ export const SearchCanonTool: Tool = {
     const patterns = scope ? [scope] : [
       "NOVEL.md",
       "创作指南.md",
-      "CLAUDE.md",
+      ...WORKSPACE_GUIDE_FILES,
       "canon/**/*.md",
       "drafts/**/*.md",
       "章节正文/**/*.md",

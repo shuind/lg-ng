@@ -16,7 +16,6 @@ const WORLD_ROOTS = new Set(["世界观", "settings"])
 const NOVEL_ENTITY_ROOTS = new Set(["canon", "candidates", "archive"])
 
 const HIDDEN_SEGMENTS = new Set([
-  ".claude",
   ".lg-checkpoints",
   ".next",
   ".novel-guide",
