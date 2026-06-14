@@ -1,7 +1,17 @@
 // Slash commands are either prompt-expansion commands or
 // local commands. Prompt commands may be user-invoked or model-invoked.
 
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import type { ToolContext, ToolResult } from "../tools/tool.js";
+
+export interface CommandRuntimeEngine {
+  getSessionId(): string;
+  getMessagesSnapshot(): ChatCompletionMessageParam[];
+}
+
+export interface CommandContext extends ToolContext {
+  engine?: CommandRuntimeEngine;
+}
 
 export type PromptCommand = {
   type: "prompt";
@@ -12,7 +22,7 @@ export type PromptCommand = {
   userInvocable: boolean;
   disableModelInvocation: boolean;
   source: "builtin" | "skills" | "project";
-  getPromptForCommand(args: string, context: ToolContext): Promise<string>;
+  getPromptForCommand(args: string, context: CommandContext): Promise<string>;
 };
 
 export type LocalCommand = {
@@ -22,7 +32,7 @@ export type LocalCommand = {
   argumentHint?: string;
   userInvocable: boolean;
   source: "builtin" | "project";
-  execute(args: string, context: ToolContext): Promise<ToolResult>;
+  execute(args: string, context: CommandContext): Promise<ToolResult>;
 };
 
 export type Command = PromptCommand | LocalCommand;

@@ -43,16 +43,16 @@ export const APP_MODEL_OPTIONS = [
     description: "更强的 DeepSeek 模型，适合复杂推理。",
   },
   {
+    id: "claude-opus-4-6",
+    label: "Claude Opus 4.6",
+    provider: "claude-relay",
+    description: "Claude 中转站高能力模型，成本通常更高。",
+  },
+  {
     id: "claude-sonnet-4-6",
     label: "Claude Sonnet 4.6",
     provider: "claude-relay",
     description: "Claude 中转站常用模型。",
-  },
-  {
-    id: "claude-opus-4-8",
-    label: "Claude Opus 4.8",
-    provider: "claude-relay",
-    description: "Claude 高能力模型，成本通常更高。",
   },
   {
     id: "claude-haiku-4-5",

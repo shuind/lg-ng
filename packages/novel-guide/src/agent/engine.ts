@@ -81,6 +81,14 @@ export class AgentEngine {
     this.tools = getTools({ readonlyOnly: config.readonlyOnly, proposalOnly: config.proposalOnly });
   }
 
+  getSessionId(): string {
+    return this.sessionId;
+  }
+
+  getMessagesSnapshot(): ChatCompletionMessageParam[] {
+    return JSON.parse(JSON.stringify(this.messages)) as ChatCompletionMessageParam[];
+  }
+
   private async buildProjectContext(): Promise<string> {
     const [skills, agents, memoryCard] = await Promise.all([
       loadSkillsDir(this.config.cwd),

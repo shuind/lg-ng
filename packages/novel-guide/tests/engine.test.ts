@@ -26,6 +26,40 @@ function mockClient(seenTools: string[]): OpenAI {
   } as unknown as OpenAI;
 }
 
+describe("AgentEngine session snapshot", () => {
+  it("exposes session id and returns defensive message copies without a model call", async () => {
+    const cwd = await tempDir();
+    let calls = 0;
+    const client = {
+      chat: {
+        completions: {
+          create: async () => {
+            calls += 1;
+            return {
+              choices: [{ message: { role: "assistant", content: "unused" } }],
+              usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+            };
+          },
+        },
+      },
+    } as unknown as OpenAI;
+    const engine = new AgentEngine({
+      cwd,
+      client,
+      model: "mock",
+      sessionId: "snapshot-session",
+      initialMessages: [{ role: "user", content: "previous request" }],
+    });
+
+    const snapshot = engine.getMessagesSnapshot();
+    snapshot[0].content = "mutated";
+
+    expect(engine.getSessionId()).toBe("snapshot-session");
+    expect(engine.getMessagesSnapshot()[0].content).toBe("previous request");
+    expect(calls).toBe(0);
+  });
+});
+
 describe("AgentEngine subagents", () => {
   it("runs subagents as isolated readonly turns by default", async () => {
     const cwd = await tempDir();

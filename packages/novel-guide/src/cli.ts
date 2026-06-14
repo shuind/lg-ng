@@ -8,7 +8,7 @@ import { createDeepSeekClient, getDeepSeekConfig } from "./model/deepseek.js";
 import { AgentEngine } from "./agent/engine.js";
 import { initNovelWorkspace } from "./novel/init.js";
 import { getCommands } from "./commands/loader.js";
-import { parseSlashInput } from "./commands/types.js";
+import { parseSlashInput, type CommandRuntimeEngine } from "./commands/types.js";
 
 interface CliOptions {
   confirmPermissions?: boolean;
@@ -46,7 +46,7 @@ async function runPrint(prompt: string, cwd: string, options: CliOptions): Promi
   }
 }
 
-async function runSlashCommand(inputText: string, cwd: string, options: CliOptions): Promise<string | null> {
+async function runSlashCommand(inputText: string, cwd: string, options: CliOptions, activeEngine?: CommandRuntimeEngine): Promise<string | null> {
   const parsed = parseSlashInput(inputText);
   if (!parsed) return null;
   const command = (await getCommands(cwd)).find((item) => item.name === parsed.name);
@@ -55,12 +55,17 @@ async function runSlashCommand(inputText: string, cwd: string, options: CliOptio
     cwd,
     permissionMode: options.confirmPermissions ? "confirm" as const : "bypass" as const,
     askConfirmation,
+    engine: activeEngine,
   };
   if (command.type === "local") {
     const result = await command.execute(parsed.args, toolContext);
     return result.content;
   }
   const expanded = await command.getPromptForCommand(parsed.args, toolContext);
+  if (activeEngine instanceof AgentEngine) {
+    const result = await activeEngine.submitMessage(expanded, { systemMeta: true });
+    return result.text;
+  }
   const engine = await createEngine(cwd, options);
   const result = await engine.submitMessage(expanded, { systemMeta: true });
   return result.text;
@@ -84,7 +89,7 @@ async function runRepl(cwd: string, options: CliOptions): Promise<void> {
         continue;
       }
       if (trimmed.startsWith("/")) {
-        const slashResult = await runSlashCommand(trimmed, cwd, options);
+        const slashResult = await runSlashCommand(trimmed, cwd, options, engine);
         if (slashResult !== null) {
           console.log(slashResult);
           continue;

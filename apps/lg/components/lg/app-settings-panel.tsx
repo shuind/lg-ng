@@ -102,6 +102,7 @@ export function AppSettingsPanel({ className }: { className?: string }) {
   const [loggingOut, setLoggingOut] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [keyMessage, setKeyMessage] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<"model" | "access" | "usage" | "account">("model")
 
   const currentProviderOption = getAppProviderOption(selectedProvider)
   const recommendedModelOption = APP_MODEL_OPTIONS.find((option) => option.id === DEFAULT_APP_MODEL_ID) ?? APP_MODEL_OPTIONS[0]
@@ -128,6 +129,12 @@ export function AppSettingsPanel({ className }: { className?: string }) {
       detail: settings?.providerConfigured ? "个人 Key 已配置" : "需要保存 API Key",
       disabled: false,
     },
+  ]
+  const tabs = [
+    { id: "model" as const, label: "模型", description: selectedModelId },
+    { id: "access" as const, label: "接入", description: currentProviderOption.label },
+    { id: "usage" as const, label: "用量", description: formatMoney(billing?.estimatedCostCny ?? 0) },
+    { id: "account" as const, label: "账号", description: billing ? formatMoney(billing.balanceCny) : "-" },
   ]
 
   useEffect(() => {
@@ -340,7 +347,53 @@ export function AppSettingsPanel({ className }: { className?: string }) {
   }
 
   return (
-    <section className={cn("space-y-7", className)}>
+    <section className={cn("space-y-5", className)}>
+      <div className="grid gap-2 rounded-xl border border-border/70 bg-muted/20 p-1 sm:grid-cols-4" role="tablist" aria-label="设置分类">
+        {tabs.map((tab) => {
+          const active = activeTab === tab.id
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                "rounded-lg px-3 py-2 text-left transition",
+                active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:bg-background/60 hover:text-foreground",
+              )}
+            >
+              <span className="block text-[13px] font-medium">{tab.label}</span>
+              <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{tab.description}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      <div className="min-h-5 text-[12px] leading-relaxed text-muted-foreground">
+        {loading ? (
+          <span className="inline-flex items-center gap-2">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            正在读取设置...
+          </span>
+        ) : error ? (
+          <span className="text-destructive">{error}</span>
+        ) : keyMessage ? (
+          <span className="text-foreground">{keyMessage}</span>
+        ) : selectedPaymentSource === "balance" ? (
+          billing?.canUseBalance
+            ? `当前使用余额，模型：${settings?.activeModel ?? selectedModelId}`
+            : settings?.providerConfigured && settings.activeProvider !== "none"
+              ? `余额通道不可用，已改用自己的 API，模型：${settings.activeModel ?? selectedModelId}`
+          : "当前选择余额；余额为 0 或平台 Key 未配置时，AI 请求会被拦截。"
+        ) : settings?.providerConfigured ? (
+          `当前使用自己的 API，供应商：${currentProviderOption.label}，模型：${settings.activeModel ?? selectedModelId}`
+        ) : (
+          `当前选择自己的 API；请先保存 ${currentProviderOption.label} API Key。`
+        )}
+      </div>
+
+      {activeTab === "model" ? (
       <div className="space-y-5">
         <div className="space-y-1">
           <h2 className="text-[13px] font-medium text-foreground">AI 模型</h2>
@@ -524,7 +577,9 @@ export function AppSettingsPanel({ className }: { className?: string }) {
           </div>
         </div>
       </div>
+      ) : null}
 
+      {activeTab === "access" ? (
       <div className={cn(
         "space-y-4 rounded-xl border p-4",
         selectedProvider === DEFAULT_APP_PROVIDER
@@ -609,31 +664,10 @@ export function AppSettingsPanel({ className }: { className?: string }) {
           </Button>
         </div>
       </div>
+      ) : null}
 
-      <div className="min-h-5 text-[12px] leading-relaxed text-muted-foreground">
-        {loading ? (
-          <span className="inline-flex items-center gap-2">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            正在读取设置...
-          </span>
-        ) : error ? (
-          <span className="text-destructive">{error}</span>
-        ) : keyMessage ? (
-          <span className="text-foreground">{keyMessage}</span>
-        ) : selectedPaymentSource === "balance" ? (
-          billing?.canUseBalance
-            ? `当前使用余额，模型：${settings?.activeModel ?? selectedModelId}`
-            : settings?.providerConfigured && settings.activeProvider !== "none"
-              ? `余额通道不可用，已改用自己的 API，模型：${settings.activeModel ?? selectedModelId}`
-          : "当前选择余额；余额为 0 或平台 Key 未配置时，AI 请求会被拦截。"
-        ) : settings?.providerConfigured ? (
-          `当前使用自己的 API，供应商：${currentProviderOption.label}，模型：${settings.activeModel ?? selectedModelId}`
-        ) : (
-          `当前选择自己的 API；请先保存 ${currentProviderOption.label} API Key。`
-        )}
-      </div>
-
-      <div className="space-y-4 border-t border-border/70 pt-6">
+      {activeTab === "usage" ? (
+      <div className="space-y-4">
         <div className="space-y-1">
           <h2 className="text-[13px] font-medium text-foreground">用量</h2>
           <p className="text-[12px] leading-relaxed text-muted-foreground">
@@ -704,13 +738,44 @@ export function AppSettingsPanel({ className }: { className?: string }) {
           </div>
         </div>
       </div>
+      ) : null}
 
-      <div className="border-t border-border/70 pt-5">
-        <Button type="button" variant="ghost" disabled={loggingOut} onClick={() => void handleLogout()}>
-          {loggingOut ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
-          退出登录
-        </Button>
+      {activeTab === "account" ? (
+      <div className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-lg border border-border/70 bg-background p-3">
+            <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+              <Wallet className="h-3.5 w-3.5" />
+              余额
+            </div>
+            <div className="mt-2 text-xl font-semibold tracking-normal">{formatMoney(billing?.balanceCny ?? 0)}</div>
+          </div>
+          <div className="rounded-lg border border-border/70 bg-background p-3">
+            <div className="text-[12px] text-muted-foreground">余额已用</div>
+            <div className="mt-2 text-xl font-semibold tracking-normal">{formatMoney(billing?.usedBalanceCny ?? 0)}</div>
+          </div>
+          <div className="rounded-lg border border-border/70 bg-background p-3">
+            <div className="text-[12px] text-muted-foreground">AI 请求</div>
+            <div className="mt-2 text-xl font-semibold tracking-normal">{billing?.requestCount ?? 0}</div>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-border/70 bg-background p-4">
+          <div className="space-y-1">
+            <h2 className="text-[13px] font-medium text-foreground">账号</h2>
+            <p className="text-[12px] leading-relaxed text-muted-foreground">
+              登录状态和账号相关操作。
+            </p>
+          </div>
+          <div className="mt-4">
+            <Button type="button" variant="ghost" disabled={loggingOut} onClick={() => void handleLogout()}>
+              {loggingOut ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
+              退出登录
+            </Button>
+          </div>
+        </div>
       </div>
+      ) : null}
     </section>
   )
 }

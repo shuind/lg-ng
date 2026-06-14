@@ -14,6 +14,8 @@ export const NOVEL_DIRECTORIES = [
   `${WORKSPACE_SKILLS_DIR}/archive`,
   `${WORKSPACE_SKILLS_DIR}/intake`,
   `${WORKSPACE_SKILLS_DIR}/novel-review`,
+  `${WORKSPACE_SKILLS_DIR}/handoff`,
+  "handoff",
   "archive/characters",
   "archive/foreshadowing",
   "archive/plots",
@@ -187,6 +189,40 @@ argument-hint: "[章节或范围，如 ch05 或 ch03-ch07]"
 只报告，不擅自改。用户要求修改时再动手；改正典走 archive 流程。
 `;
 
+export const HANDOFF_SKILL_MD = `---
+name: handoff
+description: 生成可投喂给外部模型或下一次会话的小说项目交接提示词，冷启动、基于文件状态、抽取式输出。
+when_to_use: 用户说“交接/接力/导出提示词/给网页模型/下次继续/生成 handoff”。
+argument-hint: "[目标章节或范围，如 ch05 / 下一章 / 本章大纲]"
+---
+
+# Handoff 提示词编译
+
+你要把当前小说工作区的文件状态编译成一份可复制给外部模型或下一次会话的提示词。默认只输出内容，不写文件；只有用户明确要求“写入/保存/导出到文件”时，才写入 \`handoff/\` 目录。
+
+## 核心原则
+
+- **冷启动**：只依赖工作区文件当前状态，不依赖当前 REPL 会话历史。
+- **抽取优先**：选取、摘录、排版和确定性改写；不要补剧情、补设定或代写正文。
+- **文件为准**：先读 \`NOVEL.md\` 和 \`GUIDE.md\`，再按用户目标检索 \`canon/\`、\`candidates/\`、\`drafts/\`、\`handoff/\`。
+- **精准读取**：优先 glob/search/读取目标文件；不要无差别读取整库或整章正文。需要上一章章尾时，只摘取必要结尾片段。
+- **缺失回退**：缺 canon、找不到上一章或缺本章大纲时，输出“缺失项清单 + 需要作者补充的最小问题”，不要凭空补剧情。
+- **去内部黑话**：不要把 \`fs:slug\`、\`sort_key\`、checker id、候选/正典内部实现标识直接漏给外部模型；改成人类可读表达。
+
+## 输出结构：6 张卡
+
+1. **任务卡**：这次要写/改/续的章节或目标，以及外部模型应扮演的角色。
+2. **项目卡**：题材、基调、视角、当前章节位置、读者承诺。
+3. **正典卡**：本次必须遵守的人物、关系、设定、时间线和红线，只列相关项。
+4. **承接卡**：上一章章尾、未解决冲突、正在推进的情绪/信息差。
+5. **本章卡**：本章大纲、必须出现/不能提前揭示的内容、伏笔推进要求。
+6. **写法卡**：文风参考、节奏要求、输出格式和“不要做什么”。
+
+## 最终格式
+
+用中文 Markdown 输出。末尾附一段“可直接复制的下一步提示词”，让外部模型能直接开始工作。若信息不足，先给缺失项与最小追问，再给一个保守版提示词框架。
+`;
+
 export const CONTINUITY_AGENT_MD = `---
 name: continuity-checker
 description: 检查小说连续性的只读评审员：逾期伏笔、时间线、关系图、POV。返回结构化报告，不改文件。
@@ -269,6 +305,7 @@ export function templateFiles(projectName: string): Record<string, string> {
     [`${WORKSPACE_SKILLS_DIR}/intake/SKILL.md`]: INTAKE_SKILL_MD,
     [`${WORKSPACE_SKILLS_DIR}/archive/SKILL.md`]: ARCHIVE_SKILL_MD,
     [`${WORKSPACE_SKILLS_DIR}/novel-review/SKILL.md`]: NOVEL_REVIEW_SKILL_MD,
+    [`${WORKSPACE_SKILLS_DIR}/handoff/SKILL.md`]: HANDOFF_SKILL_MD,
     [`${WORKSPACE_AGENTS_DIR}/continuity-checker.md`]: CONTINUITY_AGENT_MD,
     [`${WORKSPACE_AGENTS_DIR}/canon-conflict.md`]: CANON_CONFLICT_AGENT_MD,
     [`${WORKSPACE_AGENTS_DIR}/pacing-checker.md`]: PACING_AGENT_MD,
