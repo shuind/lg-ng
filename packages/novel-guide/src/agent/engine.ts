@@ -254,6 +254,7 @@ export class AgentEngine {
         proposals: [],
         usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
         sessionId: this.sessionId,
+        contextWindow: this.getContextWindowState(),
       } };
       return;
     }
