@@ -342,6 +342,7 @@ export async function* runNovelGuideAgentStream(input: {
         toolTrace: [],
         failedTools: ["model_config: missing API key"],
         usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        contextWindow: emptyContextWindow(),
         billing: null,
         workspacePath: getBookDir(input.bookId),
         fileChanges: [],
@@ -427,7 +428,6 @@ export async function runNovelGuideReview(input: {
       toolTrace: [],
       failedTools: ["model_config: missing API key"],
       usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-      contextWindow: emptyContextWindow(),
       billing: null,
       workspacePath: getBookDir(input.bookId),
     }
