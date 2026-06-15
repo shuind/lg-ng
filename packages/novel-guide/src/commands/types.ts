@@ -7,6 +7,8 @@ import type { ToolContext, ToolResult } from "../tools/tool.js";
 export interface CommandRuntimeEngine {
   getSessionId(): string;
   getMessagesSnapshot(): ChatCompletionMessageParam[];
+  polishHandoffDraft?(draft: string, options: { profile: string; chapter: string; target: string }): Promise<string>;
+  runReadonlySubAgent?(input: { agent: string; prompt: string }): Promise<string>;
 }
 
 export interface CommandContext extends ToolContext {

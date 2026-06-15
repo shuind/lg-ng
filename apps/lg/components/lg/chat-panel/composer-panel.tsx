@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import type { RefObject } from "react"
-import type { ChatReference, ImportedMaterial, SettingCard } from "@/lib/types"
+import type { ChatReference, ImportedMaterial, MessageContextWindow, SettingCard } from "@/lib/types"
 import type { ResponseConstraint, Skill, WorkflowAction } from "@/lib/types"
 import { ComposerChipStack } from "./composer-chip-stack"
 import { ComposerFooter } from "./composer-footer"
@@ -17,7 +17,6 @@ export function ChatComposerPanel({
   sending,
   sendBlocked,
   latestUserTurnId,
-  activeThreadTitle,
   activeResponseConstraints,
   temporaryConstraints,
   selectedSkills,
@@ -29,6 +28,7 @@ export function ChatComposerPanel({
   plusTab,
   responseConstraints,
   activeResponseConstraintIds,
+  contextWindow,
   skills,
   skillIds,
   settingCards,
@@ -62,7 +62,6 @@ export function ChatComposerPanel({
   sending: boolean
   sendBlocked: boolean
   latestUserTurnId: string | null
-  activeThreadTitle: string
   activeResponseConstraints: ResponseConstraint[]
   temporaryConstraints: string[]
   selectedSkills: Skill[]
@@ -74,6 +73,7 @@ export function ChatComposerPanel({
   plusTab: "constraints" | "skills"
   responseConstraints: ResponseConstraint[]
   activeResponseConstraintIds: string[]
+  contextWindow?: MessageContextWindow
   skills: Skill[]
   skillIds: string[]
   settingCards: SettingCard[]
@@ -238,7 +238,7 @@ export function ChatComposerPanel({
             input={input}
             sending={sending}
             sendBlocked={sendBlocked}
-            activeThreadTitle={activeThreadTitle}
+            contextWindow={contextWindow}
             readonlyOnly={readonlyOnly}
             workflowAction={workflowAction}
             constraintPickerOpen={constraintPickerOpen}

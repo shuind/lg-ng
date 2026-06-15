@@ -175,6 +175,7 @@ async function sendThreadMessageUnlocked(bookId: string, body: unknown): Promise
       content: assistantContent,
       brief,
       events,
+      contextWindow: result.contextWindow,
       changeSet,
       proposalSet,
     })
@@ -466,6 +467,7 @@ async function streamThreadMessageUnlocked(
       content: assistantContent,
       brief,
       events,
+      contextWindow: finalResult.contextWindow,
       changeSet,
       proposalSet,
     })

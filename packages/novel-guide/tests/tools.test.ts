@@ -6,6 +6,7 @@ import { EditFileTool, ProposeFileChangeTool, ReadFileTool, WriteFileTool } from
 import { GrepTool, SearchCanonTool } from "../src/tools/search.js";
 import { ShellTool } from "../src/tools/shell.js";
 import { getTools } from "../src/tools/registry.js";
+import { GitInitTool, GitStatusTool } from "../src/tools/git.js";
 import { runTool } from "../src/tools/tool.js";
 
 async function tempDir(): Promise<string> {
@@ -185,11 +186,26 @@ describe("workspace tools", () => {
     await expect(readFile(target, "utf8")).resolves.toBe("old");
   });
 
+  it("can initialize git before checking status in a new workspace", async () => {
+    const cwd = await tempDir();
+
+    const before = await runTool(GitStatusTool, {}, { cwd });
+    expect(before.ok).toBe(true);
+    expect(before.content).toContain("不是 git 仓库");
+
+    const init = await runTool(GitInitTool, {}, { cwd });
+    expect(init.ok).toBe(true);
+
+    const after = await runTool(GitStatusTool, {}, { cwd });
+    expect(after.ok).toBe(true);
+    expect(after.content).toBe("工作区干净。");
+  });
+
   it("proposal mode exposes read tools and propose_file_change only", () => {
     const names = getTools({ proposalOnly: true }).map((tool) => tool.name);
     expect(names).toContain("read_file");
     expect(names).toContain("grep");
-    expect(names).toContain("run_agent");
+    expect(names).not.toContain("run_agent");
     expect(names).toContain("propose_file_change");
     expect(names).not.toContain("write_file");
     expect(names).not.toContain("edit_file");

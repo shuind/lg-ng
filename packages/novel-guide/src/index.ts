@@ -1,4 +1,4 @@
-export { AgentEngine, type EngineStreamEvent } from "./agent/engine.js";
+export { AgentEngine, type EngineContextWindowState, type EngineStreamEvent } from "./agent/engine.js";
 export { loadSession, saveSession, type SessionCompactionState, type SessionState } from "./agent/session.js";
 export { type QueryEvent } from "./agent/query.js";
 export { initNovelWorkspace } from "./novel/init.js";

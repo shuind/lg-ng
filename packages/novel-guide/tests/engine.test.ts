@@ -58,10 +58,45 @@ describe("AgentEngine session snapshot", () => {
     expect(engine.getMessagesSnapshot()[0].content).toBe("previous request");
     expect(calls).toBe(0);
   });
+
+  it("polishes handoff drafts with one direct model call without mutating session history", async () => {
+    const cwd = await tempDir();
+    let calls = 0;
+    let modelInput: { messages?: { role?: string; content?: unknown }[]; tools?: unknown } = {};
+    const client = {
+      chat: {
+        completions: {
+          create: async (input: { messages?: { role?: string; content?: unknown }[]; tools?: unknown }) => {
+            calls += 1;
+            modelInput = input;
+            return {
+              choices: [{ message: { role: "assistant", content: "polished draft" } }],
+              usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+            };
+          },
+        },
+      },
+    } as unknown as OpenAI;
+    const engine = new AgentEngine({
+      cwd,
+      client,
+      model: "mock",
+      sessionId: "polish-session",
+      initialMessages: [{ role: "user", content: "keep me" }],
+    });
+
+    const result = await engine.polishHandoffDraft("raw draft", { profile: "chatgpt", chapter: "ch01", target: "chatgpt" });
+
+    expect(result).toBe("polished draft");
+    expect(calls).toBe(1);
+    expect(modelInput.tools).toBeUndefined();
+    expect(JSON.stringify(modelInput.messages)).toContain("禁止新增事实");
+    expect(engine.getMessagesSnapshot()).toEqual([{ role: "user", content: "keep me" }]);
+  });
 });
 
 describe("AgentEngine subagents", () => {
-  it("runs subagents as isolated readonly turns by default", async () => {
+  it("runs subagents as full-access isolated turns by default", async () => {
     const cwd = await tempDir();
     await mkdir(path.join(cwd, ".novel-guide", "agents"), { recursive: true });
     await writeFile(
@@ -94,9 +129,44 @@ describe("AgentEngine subagents", () => {
     expect(result.text).toContain("ok");
     expect(seenTools).toContain("read_file");
     expect(seenTools).toContain("grep");
-    expect(seenTools).not.toContain("write_file");
-    expect(seenTools).not.toContain("edit_file");
+    expect(seenTools).toContain("write_file");
+    expect(seenTools).toContain("edit_file");
     await expect(access(sessionPath(cwd, result.sessionId))).rejects.toThrow();
+  });
+
+  it("exposes a readonly subagent wrapper for local commands", async () => {
+    const cwd = await tempDir();
+    await mkdir(path.join(cwd, ".novel-guide", "agents"), { recursive: true });
+    await writeFile(
+      path.join(cwd, ".novel-guide", "agents", "chapter-delta.md"),
+      [
+        "---",
+        "name: chapter-delta",
+        "description: readonly chapter delta",
+        "tools: [read_file, grep, glob]",
+        "---",
+        "Return chapter delta.",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const seenTools: string[] = [];
+    const engine = new AgentEngine({
+      cwd,
+      client: mockClient(seenTools),
+      model: "mock",
+      sessionId: "main-session",
+      permissionMode: "bypass",
+    });
+
+    const text = await engine.runReadonlySubAgent({ agent: "chapter-delta", prompt: "drafts/ch01.md" });
+
+    expect(text).toContain("ok");
+    expect(seenTools).toContain("read_file");
+    expect(seenTools).toContain("git_status");
+    expect(seenTools).toContain("git_diff");
+    expect(seenTools).not.toContain("git_init");
+    expect(seenTools).not.toContain("write_file");
   });
 });
 
@@ -254,6 +324,45 @@ describe("AgentEngine project context", () => {
 });
 
 describe("AgentEngine compaction", () => {
+  it("does not compact deepseek sessions below the larger default budget", async () => {
+    const cwd = await tempDir();
+    let calls = 0;
+    const client = {
+      chat: {
+        completions: {
+          create: async () => {
+            calls += 1;
+            return {
+              choices: [{ message: { role: "assistant", content: "done" } }],
+              usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+            };
+          },
+        },
+      },
+    } as unknown as OpenAI;
+    const initialMessages = [
+      { role: "system" as const, content: "system" },
+      ...Array.from({ length: 40 }, (_, index) => ({
+        role: (index % 2 === 0 ? "user" : "assistant") as const,
+        content: `history-${index} ${"x".repeat(2200)}`,
+      })),
+    ];
+    const engine = new AgentEngine({
+      cwd,
+      client,
+      model: "deepseek-v4-flash",
+      sessionId: "large-default-budget",
+      initialMessages,
+    });
+
+    const result = await engine.submitMessage("new request", { save: false });
+    const rendered = JSON.stringify(result.messages);
+
+    expect(calls).toBe(1);
+    expect(rendered).not.toContain("NG_COMPACTION_MEMO");
+    expect(rendered).toContain("history-0");
+  });
+
   it("summarizes old messages and keeps recent messages", async () => {
     const cwd = await tempDir();
     let calls = 0;

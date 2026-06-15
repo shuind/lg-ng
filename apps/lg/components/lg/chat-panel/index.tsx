@@ -1,7 +1,7 @@
 ﻿"use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import type { ChatReference, ImportedMaterial, Message, SettingCard, Thread, Turn } from "@/lib/types"
+import type { ChatReference, ImportedMaterial, Message, MessageContextWindow, SettingCard, Thread, Turn } from "@/lib/types"
 import type { ResponseConstraint } from "@/lib/types"
 import { ChatCommandPalette } from "./chat-command-palette"
 import { ChatPanelHeader } from "./chat-panel-header"
@@ -9,6 +9,17 @@ import { ChatComposer, type ChatComposerHandle } from "./composer"
 import { ChatTranscript } from "./message-rendering"
 import type { ChatCitation, ChatSendOptions, TurnBranchNavigation } from "./types"
 import { useChatTranscriptNavigation } from "./use-chat-transcript-navigation"
+
+function estimateThreadContextWindow(messages: Message[]): MessageContextWindow {
+  const estimatedTokens = Math.max(1, Math.ceil(messages.reduce((sum, message) => sum + message.content.length, 0) / 2.4))
+  const budgetTokens = 128000
+  return {
+    estimatedTokens,
+    budgetTokens,
+    ratio: estimatedTokens / budgetTokens,
+    triggerRatio: 0.85,
+  }
+}
 
 interface ChatPanelProps {
   bookId: string
@@ -90,6 +101,10 @@ export function ChatPanel({
     () => threads.find((thread) => thread.id === activeThreadId),
     [threads, activeThreadId],
   )
+  const contextWindow = useMemo(
+    () => [...messages].reverse().find((message) => message.role === "assistant" && message.contextWindow)?.contextWindow ?? estimateThreadContextWindow(messages),
+    [messages],
+  )
   const {
     scrollRef,
     liveTailRef,
@@ -158,12 +173,12 @@ export function ChatPanel({
         ref={composerRef}
         bookId={bookId}
         activeThreadId={activeThreadId}
-        activeThreadTitle={activeThread?.title ?? "任务线程"}
         citations={citations}
         settingCards={settingCards}
         importedMaterials={importedMaterials}
         responseConstraints={responseConstraints}
         activeResponseConstraintIds={activeResponseConstraintIds}
+        contextWindow={contextWindow}
         latestUserTurnId={latestUserTurnId}
         sendBlocked={Boolean(runningTurn)}
         onQuestionJump={handleQuestionJump}

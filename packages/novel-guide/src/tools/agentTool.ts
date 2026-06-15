@@ -4,8 +4,8 @@ export function createAgentTools(): Tool[] {
   return [
     {
       name: "run_agent",
-      description: "在隔离上下文运行项目子智能体。适合连续性、正典冲突等只读评审。",
-      readonly: true,
+      description: "在隔离上下文运行项目子智能体。默认拥有完整工具权限；需要只读评审时传 readonly=true。",
+      readonly: false,
       parameters: {
         type: "object",
         properties: {
@@ -30,7 +30,7 @@ export function createAgentTools(): Tool[] {
         const output = await context.runAgent({
           agent: agentName,
           prompt,
-          readonly: input.readonly !== false,
+          readonly: input.readonly === true,
         });
         return { ok: true, content: output };
       },

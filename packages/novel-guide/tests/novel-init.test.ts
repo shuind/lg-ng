@@ -16,10 +16,13 @@ describe("novel init", () => {
     expect(result.created).toContain("GUIDE.md");
     expect(result.created).toContain(".novel-guide/skills/intake/SKILL.md");
     expect(result.created).toContain(".novel-guide/skills/handoff/SKILL.md");
+    expect(result.created).toContain(".novel-guide/agents/chapter-delta.md");
     const novel = await readFile(path.join(cwd, "NOVEL.md"), "utf8");
     const handoffSkill = await readFile(path.join(cwd, ".novel-guide", "skills", "handoff", "SKILL.md"), "utf8");
+    const chapterDeltaAgent = await readFile(path.join(cwd, ".novel-guide", "agents", "chapter-delta.md"), "utf8");
     expect(novel).toContain("project: 测试小说");
     expect(handoffSkill).toContain("name: handoff");
+    expect(chapterDeltaAgent).toContain("name: chapter-delta");
     expect((await stat(path.join(cwd, "handoff"))).isDirectory()).toBe(true);
     await expect(stat(path.join(cwd, ".git"))).rejects.toThrow();
   });

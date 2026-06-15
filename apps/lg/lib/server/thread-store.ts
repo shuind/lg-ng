@@ -432,6 +432,7 @@ export function createAssistantMessage(args: {
   content: string
   brief?: Message["brief"]
   events?: AgentEvent[]
+  contextWindow?: Message["contextWindow"]
   changeSet?: Message["changeSet"]
   proposalSet?: Message["proposalSet"]
 }): Message {
@@ -445,6 +446,7 @@ export function createAssistantMessage(args: {
     createdAt: nowIso(),
     brief: args.brief,
     events: args.events,
+    contextWindow: args.contextWindow,
     changeSet: args.changeSet,
     proposalSet: args.proposalSet,
   }

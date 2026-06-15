@@ -1,7 +1,7 @@
 ﻿"use client"
 
 import { forwardRef, memo, useImperativeHandle } from "react"
-import type { ChatReference, ImportedMaterial, SettingCard } from "@/lib/types"
+import type { ChatReference, ImportedMaterial, MessageContextWindow, SettingCard } from "@/lib/types"
 import type { ResponseConstraint } from "@/lib/types"
 import { ChatComposerPanel } from "./composer-panel"
 import type { ChatCitation, ChatSendOptions } from "./types"
@@ -15,12 +15,12 @@ export type ChatComposerHandle = {
 interface ChatComposerProps {
   bookId: string
   activeThreadId: string
-  activeThreadTitle: string
   citations: ChatCitation[]
   settingCards: SettingCard[]
   importedMaterials: ImportedMaterial[]
   responseConstraints: ResponseConstraint[]
   activeResponseConstraintIds: string[]
+  contextWindow?: MessageContextWindow
   latestUserTurnId: string | null
   sendBlocked?: boolean
   onQuestionJump: () => void
@@ -37,12 +37,12 @@ interface ChatComposerProps {
 export const ChatComposer = memo(forwardRef<ChatComposerHandle, ChatComposerProps>(function ChatComposer({
   bookId,
   activeThreadId,
-  activeThreadTitle,
   citations,
   settingCards,
   importedMaterials,
   responseConstraints,
   activeResponseConstraintIds,
+  contextWindow,
   latestUserTurnId,
   sendBlocked = false,
   onQuestionJump,
@@ -83,7 +83,6 @@ export const ChatComposer = memo(forwardRef<ChatComposerHandle, ChatComposerProp
       sending={composer.sending}
       sendBlocked={sendBlocked}
       latestUserTurnId={latestUserTurnId}
-      activeThreadTitle={activeThreadTitle}
       activeResponseConstraints={composer.activeResponseConstraints}
       temporaryConstraints={composer.temporaryConstraints}
       selectedSkills={composer.selectedSkills}
@@ -95,6 +94,7 @@ export const ChatComposer = memo(forwardRef<ChatComposerHandle, ChatComposerProp
       plusTab={composer.plusTab}
       responseConstraints={responseConstraints}
       activeResponseConstraintIds={activeResponseConstraintIds}
+      contextWindow={contextWindow}
       skills={composer.skills}
       skillIds={composer.skillIds}
       settingCards={settingCards}

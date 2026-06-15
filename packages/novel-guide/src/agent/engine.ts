@@ -11,14 +11,15 @@ import { queryEvents, type QueryEvent, type QueryResult } from "./query.js";
 import { createSessionId, saveSession, type SessionCompactionState, type SessionState } from "./session.js";
 import { findAgent, loadAgentsDir } from "../agents/loadAgentsDir.js";
 import { loadSkillsDir } from "../skills/loadSkillsDir.js";
+import { estimateMessagesTokens } from "./tokenEstimate.js";
 import { WORKSPACE_GUIDE_FILES } from "../workspace/layout.js";
 
 const COMPACTION_PREFIX = "NG_COMPACTION_MEMO:";
 const PROJECT_CONTEXT_PREFIX = "NG_PROJECT_CONTEXT:";
 const CHANGE_MEMO_PREFIX = "NG_CHANGE_MEMO:";
-const DEFAULT_CONTEXT_BUDGET_TOKENS = 64000;
-const DEFAULT_COMPACTION_TRIGGER_RATIO = 0.8;
-const DEFAULT_RECENT_MESSAGE_COUNT = 16;
+const DEFAULT_CONTEXT_BUDGET_TOKENS = 128000;
+const DEFAULT_COMPACTION_TRIGGER_RATIO = 0.85;
+const DEFAULT_RECENT_MESSAGE_COUNT = 24;
 const DEFAULT_MAX_LOOPS = 32;
 const DEFAULT_SUBAGENT_MAX_LOOPS = 10;
 
@@ -41,6 +42,14 @@ export interface EngineConfig {
   recentMessageCount?: number;
 }
 
+export interface EngineContextWindowState {
+  estimatedTokens: number;
+  budgetTokens: number;
+  ratio: number;
+  triggerRatio: number;
+  lastCompactedAt?: string;
+}
+
 export interface EngineTurnResult {
   text: string;
   messages: ChatCompletionMessageParam[];
@@ -50,12 +59,19 @@ export interface EngineTurnResult {
   proposals: FileProposal[];
   usage: ModelUsage;
   sessionId: string;
+  contextWindow: EngineContextWindowState;
 }
 
 export interface EngineSubAgentInput {
   agent: string;
   prompt: string;
   readonly?: boolean;
+}
+
+export interface PolishHandoffOptions {
+  profile: string;
+  chapter: string;
+  target: string;
 }
 
 export interface EngineSubmitOptions {
@@ -87,6 +103,18 @@ export class AgentEngine {
 
   getMessagesSnapshot(): ChatCompletionMessageParam[] {
     return JSON.parse(JSON.stringify(this.messages)) as ChatCompletionMessageParam[];
+  }
+
+  getContextWindowState(messages: ChatCompletionMessageParam[] = this.messages): EngineContextWindowState {
+    const budgetTokens = this.config.contextBudgetTokens ?? contextBudgetForModel(this.config.model);
+    const estimatedTokens = estimateMessagesTokens(messages);
+    return {
+      estimatedTokens,
+      budgetTokens,
+      ratio: budgetTokens > 0 ? estimatedTokens / budgetTokens : 0,
+      triggerRatio: this.config.compactionTriggerRatio ?? DEFAULT_COMPACTION_TRIGGER_RATIO,
+      lastCompactedAt: this.compaction?.lastCompactedAt,
+    };
   }
 
   private async buildProjectContext(): Promise<string> {
@@ -137,13 +165,55 @@ export class AgentEngine {
       askConfirmation: this.config.askConfirmation,
       permissionMode: this.config.permissionMode,
       maxLoops: Math.min(this.config.maxLoops ?? DEFAULT_MAX_LOOPS, DEFAULT_SUBAGENT_MAX_LOOPS),
-      readonlyOnly: input.readonly !== false,
-      appendSystemPrompt: `你正在作为子智能体 ${agent.name} 运行。返回结构化报告；除非明确允许，不要改文件。`,
+      readonlyOnly: input.readonly === true,
+      appendSystemPrompt: `你正在作为子智能体 ${agent.name} 运行。默认拥有完整工具权限；如果任务要求只读，不要改文件。`,
     });
     return await subEngine.submitMessage(`${agent.prompt}\n\n# 任务\n${input.prompt}`, {
       save: false,
       systemMeta: true,
     });
+  }
+
+  async runReadonlySubAgent(input: { agent: string; prompt: string }): Promise<string> {
+    const result = await this.runSubAgent({
+      agent: input.agent,
+      prompt: input.prompt,
+      readonly: true,
+    });
+    return result.text;
+  }
+
+  async polishHandoffDraft(draft: string, options: PolishHandoffOptions): Promise<string> {
+    const response = await createChatCompletion({
+      client: this.config.client,
+      model: this.config.model,
+      messages: [
+        {
+          role: "system",
+          content: [
+            "你在轻收敛一份小说项目 handoff。",
+            "只允许整理结构、合并重复、补清晰小标题、压缩冗余。",
+            "禁止新增事实、剧情、设定、人物关系、伏笔、章节正文或风格承诺。",
+            "如果原稿信息不足，保留缺失项和最小追问；不要替作者补。",
+            "输出中文 Markdown，保留文件路径和 profile/mode 元信息。",
+          ].join("\n"),
+        },
+        {
+          role: "user",
+          content: [
+            `profile: ${options.profile}`,
+            `chapter: ${options.chapter}`,
+            `target: ${options.target}`,
+            "",
+            draft.slice(0, 80_000),
+          ].join("\n"),
+        },
+      ],
+      temperature: 0.1,
+      maxTokens: 2200,
+      timeoutMs: 60000,
+    });
+    return stringifyMessageContent(response.message.content) || draft;
   }
 
   async submitMessage(
@@ -165,6 +235,7 @@ export class AgentEngine {
       proposals: [],
       usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
       sessionId: this.sessionId,
+      contextWindow: this.getContextWindowState(),
     };
   }
 
@@ -249,6 +320,7 @@ export class AgentEngine {
       proposals: result.proposals,
       usage: result.usage,
       sessionId: this.sessionId,
+      contextWindow: this.getContextWindowState(),
     } };
   }
 
@@ -264,7 +336,7 @@ export class AgentEngine {
   private async compactMessagesIfNeeded(signal?: AbortSignal): Promise<void> {
     if (this.messages.length <= 1) return;
 
-    const budget = this.config.contextBudgetTokens ?? DEFAULT_CONTEXT_BUDGET_TOKENS;
+    const budget = this.config.contextBudgetTokens ?? contextBudgetForModel(this.config.model);
     const triggerRatio = this.config.compactionTriggerRatio ?? DEFAULT_COMPACTION_TRIGGER_RATIO;
     if (estimateMessagesTokens(this.messages) <= budget * triggerRatio) return;
 
@@ -327,6 +399,13 @@ export class AgentEngine {
     }
     return null;
   }
+}
+
+function contextBudgetForModel(model: string): number {
+  const normalized = model.toLowerCase();
+  if (normalized.includes("mimo")) return 128000;
+  if (normalized.includes("deepseek")) return 128000;
+  return DEFAULT_CONTEXT_BUDGET_TOKENS;
 }
 
 function isGeneratedSystemMessage(message: ChatCompletionMessageParam | undefined): boolean {
@@ -553,15 +632,6 @@ function extractAliases(content: string): string[] {
     aliases.push(...match[1].split(/[、,，;；|/]/).map((item) => item.trim()).filter(Boolean));
   }
   return [...new Set(aliases)].slice(0, 8);
-}
-
-function estimateMessagesTokens(messages: ChatCompletionMessageParam[]): number {
-  return messages.reduce((sum, message) => {
-    const rendered = renderMessageForCompaction(message);
-    const cjkChars = (rendered.match(/[\u3400-\u9fff\uf900-\ufaff]/g) ?? []).length;
-    const otherChars = Math.max(0, rendered.length - cjkChars);
-    return sum + Math.ceil(cjkChars / 1.7 + otherChars / 3.5 + 8);
-  }, 0);
 }
 
 function findSafeRecentStart(messages: ChatCompletionMessageParam[], targetStart: number): number {

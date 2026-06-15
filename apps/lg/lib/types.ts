@@ -472,6 +472,14 @@ export interface Turn {
   updatedAt: string
 }
 
+export interface MessageContextWindow {
+  estimatedTokens: number
+  budgetTokens: number
+  ratio: number
+  triggerRatio: number
+  lastCompactedAt?: string
+}
+
 export interface Message {
   id: string
   threadId: string
@@ -487,6 +495,7 @@ export interface Message {
   constraints?: AppliedResponseConstraint[]
   brief?: IntentBrief
   events?: AgentEvent[]
+  contextWindow?: MessageContextWindow
   changeSet?: MessageChangeSet
   proposalSet?: MessageProposalSet
 }

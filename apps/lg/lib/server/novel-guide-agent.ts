@@ -1,6 +1,7 @@
 import {
   AgentEngine,
   createOpenAICompatibleClient,
+  type EngineContextWindowState,
   type EngineStreamEvent,
   type FileChange,
   type FileProposal,
@@ -22,6 +23,7 @@ export interface NovelGuideAgentResult {
   toolTrace: string[]
   failedTools: string[]
   usage: ModelUsage
+  contextWindow: EngineContextWindowState
   billing: BillingLedgerEntry | null
   workspacePath: string
   fileChanges: FileChange[]
@@ -41,6 +43,15 @@ export interface NovelGuideReviewResult {
 export type NovelGuideAgentStreamEvent =
   | { type: "engine_event"; event: EngineStreamEvent }
   | { type: "done"; result: NovelGuideAgentResult }
+
+function emptyContextWindow(): EngineContextWindowState {
+  return {
+    estimatedTokens: 0,
+    budgetTokens: 128000,
+    ratio: 0,
+    triggerRatio: 0.85,
+  }
+}
 
 function formatReferences(references: ChatReference[]): string {
   if (references.length === 0) return ""
@@ -242,6 +253,7 @@ export async function runNovelGuideAgent(input: {
       toolTrace: [],
       failedTools: ["model_config: missing API key"],
       usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      contextWindow: emptyContextWindow(),
       billing: null,
       workspacePath: getBookDir(input.bookId),
       fileChanges: [],
@@ -298,6 +310,7 @@ export async function runNovelGuideAgent(input: {
     toolTrace: result.toolTrace,
     failedTools: result.failedTools,
     usage: result.usage,
+    contextWindow: result.contextWindow,
     billing,
     workspacePath,
     fileChanges: result.fileChanges,
@@ -391,6 +404,7 @@ export async function* runNovelGuideAgentStream(input: {
         toolTrace: event.result.toolTrace,
         failedTools: event.result.failedTools,
         usage: event.result.usage,
+        contextWindow: event.result.contextWindow,
         billing,
         workspacePath,
         fileChanges: event.result.fileChanges,
@@ -413,6 +427,7 @@ export async function runNovelGuideReview(input: {
       toolTrace: [],
       failedTools: ["model_config: missing API key"],
       usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      contextWindow: emptyContextWindow(),
       billing: null,
       workspacePath: getBookDir(input.bookId),
     }

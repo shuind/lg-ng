@@ -2,7 +2,8 @@
 
 import { ArrowUp, AtSign, MessageCircle, Plus, SearchCheck, Square } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { WorkflowAction } from "@/lib/types"
+import type { MessageContextWindow, WorkflowAction } from "@/lib/types"
+import { ContextWindowIndicator } from "./context-window-indicator"
 import { ToolBtn } from "./pickers"
 import { WorkflowActionMenu } from "./workflow-action-menu"
 
@@ -10,7 +11,7 @@ export function ComposerFooter({
   input,
   sending,
   sendBlocked,
-  activeThreadTitle,
+  contextWindow,
   readonlyOnly,
   workflowAction,
   constraintPickerOpen,
@@ -26,7 +27,7 @@ export function ComposerFooter({
   input: string
   sending: boolean
   sendBlocked: boolean
-  activeThreadTitle: string
+  contextWindow?: MessageContextWindow
   readonlyOnly: boolean
   workflowAction?: WorkflowAction
   constraintPickerOpen: boolean
@@ -72,24 +73,24 @@ export function ComposerFooter({
           disabled={sending}
           onSelectWorkflowAction={onSelectWorkflowAction}
         />
-        <span className="ml-2 max-w-[180px] truncate text-[11px] text-muted-foreground/70">
-          {activeThreadTitle}
-        </span>
       </div>
-      <button
-        onClick={sending ? onCancel : onSend}
-        disabled={!sending && (sendBlocked || !input.trim())}
-        className={cn(
-          "flex h-8 w-8 items-center justify-center rounded-full transition",
-          sending || (input.trim() && !sendBlocked)
-            ? "bg-foreground text-background hover:scale-105"
-            : "bg-muted text-muted-foreground/50",
-        )}
-        title={!sending && sendBlocked ? "上一轮还在运行" : undefined}
-        aria-label={sending ? "停止" : "发送"}
-      >
-        {sending ? <Square className="h-3.5 w-3.5 fill-current" /> : <ArrowUp className="h-4 w-4" />}
-      </button>
+      <div className="flex items-center gap-1.5">
+        <ContextWindowIndicator contextWindow={contextWindow} />
+        <button
+          onClick={sending ? onCancel : onSend}
+          disabled={!sending && (sendBlocked || !input.trim())}
+          className={cn(
+            "flex h-8 w-8 items-center justify-center rounded-full transition",
+            sending || (input.trim() && !sendBlocked)
+              ? "bg-foreground text-background hover:scale-105"
+              : "bg-muted text-muted-foreground/50",
+          )}
+          title={!sending && sendBlocked ? "上一轮还在运行" : undefined}
+          aria-label={sending ? "停止" : "发送"}
+        >
+          {sending ? <Square className="h-3.5 w-3.5 fill-current" /> : <ArrowUp className="h-4 w-4" />}
+        </button>
+      </div>
     </div>
   )
 }

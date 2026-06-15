@@ -5,7 +5,13 @@ const longText = "x".repeat(1500);
 
 describe("handoff renderer", () => {
   it("parses chapter-target shorthand into a handoff path", () => {
-    expect(parseEjectArgs("ch12-revision")).toEqual({ chapter: "ch12", target: "revision" });
+    expect(parseEjectArgs("ch12-revision")).toEqual({
+      chapter: "ch12",
+      target: "revision",
+      profile: "session",
+      mode: "extract",
+      copy: false,
+    });
 
     const rendered = renderEjectHandoff({
       cwd: "/workspace/book",
@@ -64,5 +70,46 @@ describe("handoff renderer", () => {
     expect(rendered.content).toContain("GUIDE.md");
     expect(rendered.content).toContain("canon/settings/world.md");
     expect(rendered.content).toContain("drafts/ch02.md");
+  });
+
+  it("parses profile, polish, and clipboard flags", () => {
+    expect(parseEjectArgs("--chapter 8 --for chatgpt --polish --copy")).toEqual({
+      chapter: "ch08",
+      target: "chatgpt",
+      profile: "chatgpt",
+      mode: "polish",
+      copy: true,
+    });
+    expect(parseEjectArgs("ch09 --for long-context --copy --no-copy")).toEqual({
+      chapter: "ch09",
+      target: "long-context",
+      profile: "long-context",
+      mode: "extract",
+      copy: false,
+    });
+  });
+
+  it("renders profile-specific sections without product branding", () => {
+    const chatgpt = renderEjectHandoff({
+      cwd: "/workspace/book",
+      sessionId: "session-1",
+      args: "ch03 --for chatgpt",
+      nowIso: "2026-06-15T00:00:00.000Z",
+      messages: [],
+    });
+    const longContext = renderEjectHandoff({
+      cwd: "/workspace/book",
+      sessionId: "session-1",
+      args: "ch03 --for long-context",
+      nowIso: "2026-06-15T00:00:00.000Z",
+      messages: [],
+    });
+
+    expect(chatgpt.profile).toBe("chatgpt");
+    expect(chatgpt.content).toContain("## ChatGPT setup");
+    expect(chatgpt.estimatedTokens).toBeGreaterThan(0);
+    expect(longContext.profile).toBe("long-context");
+    expect(longContext.content).toContain("<handoff>");
+    expect(`${chatgpt.content}\n${longContext.content}`).not.toMatch(/Claude|Anthropic/i);
   });
 });
