@@ -10,10 +10,46 @@ export interface SessionState {
   updatedAt: string;
 }
 
+export type CompactionBoundaryTrigger = "manual" | "auto" | "reactive";
+export type CompactionBoundaryStrategy = "microcompact" | "full-summary";
+
+export interface CompactionMessageRange {
+  start: number;
+  end: number;
+}
+
+export interface DroppedCompactionMessageGroup {
+  startIndex: number;
+  endIndex: number;
+  messageCount: number;
+  reason: "prompt_too_long";
+  roles: string[];
+}
+
+export interface CompactionBoundary {
+  id: string;
+  createdAt: string;
+  trigger: CompactionBoundaryTrigger;
+  tokenBefore: number;
+  tokenAfter: number;
+  originalMessageCount: number;
+  compactedMessageCount: number;
+  compactedTurnIds: string[];
+  preservedRecentTurnIds: string[];
+  summaryMessageId?: string;
+  strategy: CompactionBoundaryStrategy;
+  compactedMessageRange?: CompactionMessageRange;
+  preservedRecentMessageRange?: CompactionMessageRange;
+  retryCount?: number;
+  droppedMessageGroups?: DroppedCompactionMessageGroup[];
+  microcompactedToolResults?: number;
+}
+
 export interface SessionCompactionState {
   lastCompactedAt: string;
   originalMessageCount: number;
   compactedMessageCount: number;
+  boundaries?: CompactionBoundary[];
 }
 
 export function createSessionId(): string {

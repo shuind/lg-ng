@@ -11,14 +11,35 @@ import type { ChatCitation, ChatSendOptions, TurnBranchNavigation } from "./type
 import { useChatTranscriptNavigation } from "./use-chat-transcript-navigation"
 
 function estimateThreadContextWindow(messages: Message[]): MessageContextWindow {
-  const estimatedTokens = Math.max(1, Math.ceil(messages.reduce((sum, message) => sum + message.content.length, 0) / 2.4))
+  const sessionMessages = Math.max(1, Math.ceil(messages.reduce((sum, message) => sum + message.content.length, 0) / 2.4))
+  const expectedOutputReserve = 4096
+  const estimatedTokens = sessionMessages + expectedOutputReserve
   const budgetTokens = 128000
+  const triggerRatio = 0.75
+  const ratio = estimatedTokens / budgetTokens
   return {
     estimatedTokens,
     budgetTokens,
-    ratio: estimatedTokens / budgetTokens,
-    triggerRatio: 0.85,
+    ratio,
+    triggerRatio,
+    level: contextLevelFromRatio(ratio, triggerRatio),
+    reserveTokens: expectedOutputReserve,
+    components: {
+      sessionMessages,
+      projectContext: 0,
+      currentPrompt: 0,
+      expectedOutputReserve,
+      total: estimatedTokens,
+    },
   }
+}
+
+function contextLevelFromRatio(ratio: number, triggerRatio: number): MessageContextWindow["level"] {
+  if (ratio >= 1) return "blocking"
+  if (ratio >= triggerRatio) return "auto_compact"
+  if (ratio >= 0.65) return "should_compact"
+  if (ratio >= 0.5) return "warning"
+  return "normal"
 }
 
 interface ChatPanelProps {
@@ -138,7 +159,9 @@ export function ChatPanel({
   return (
     <section className="relative flex h-full min-h-0 flex-col">
       <ChatPanelHeader
+        bookId={bookId}
         bookTitle={bookTitle}
+        activeThreadId={activeThreadId}
         activeThread={activeThread}
         messages={messages}
         selectedTurnId={selectedTurnId}

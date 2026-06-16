@@ -43,6 +43,7 @@ const INTERNAL_CHANGE_FILES = new Set([
   "pending-action-plan.json",
   "proposals.jsonl",
   "response-constraints.json",
+  "thread-memory.json",
   "thread-messages.jsonl",
   "threads.json",
   "turns.jsonl",
@@ -138,18 +139,6 @@ async function sendThreadMessageUnlocked(bookId: string, body: unknown): Promise
         message: failure,
       })),
       ...(usageEvent ? [usageEvent] : []),
-      createAgentEvent(turn.id, {
-        type: "done",
-        text: changedPaths.length > 0
-          ? `已写入 ${changedPaths.length} 个项目文件。`
-          : proposals.length > 0
-            ? `已生成 ${proposals.length} 个待采纳 proposal。`
-          : result.toolTrace.length > 0
-            ? "已读取项目资料并生成回复。"
-            : "处理完成。",
-        paths: changedPaths.length > 0 ? changedPaths : undefined,
-        ledgerEntryIds: changeRecord.entries.map((entry) => entry.id),
-      }),
     ]
 
     const brief = result.toolTrace.length > 0 ||
@@ -167,6 +156,18 @@ async function sendThreadMessageUnlocked(bookId: string, body: unknown): Promise
     const assistantContent = changedPaths.length > 0
       ? `${result.reply.trim()}\n\n${summarizeChangedPaths(changedPaths)}`
       : result.reply
+    events.push(createAgentEvent(turn.id, {
+      type: "done",
+      text: changedPaths.length > 0
+        ? `已写入 ${changedPaths.length} 个项目文件。`
+        : proposals.length > 0
+          ? `已生成 ${proposals.length} 个待采纳 proposal。`
+        : result.toolTrace.length > 0
+          ? "已读取项目资料并生成回复。"
+          : "处理完成。",
+      paths: changedPaths.length > 0 ? changedPaths : undefined,
+      ledgerEntryIds: changeRecord.entries.map((entry) => entry.id),
+    }))
 
     const assistantMessage = createAssistantMessage({
       id: turn.assistantMessageId,
@@ -178,6 +179,7 @@ async function sendThreadMessageUnlocked(bookId: string, body: unknown): Promise
       contextWindow: result.contextWindow,
       changeSet,
       proposalSet,
+      usedMemory: result.usedMemory.length > 0 ? result.usedMemory : undefined,
     })
     await appendThreadMessages(bookId, [assistantMessage])
     const completedTurn = await updateTurn(bookId, turn.id, {
@@ -430,21 +432,6 @@ async function streamThreadMessageUnlocked(
       events.push(usageEvent)
       emitSse(controller, "agent_event", usageEvent)
     }
-    const doneEvent = createAgentEvent(turn.id, {
-      type: "done",
-      text: changedPaths.length > 0
-        ? `已写入 ${changedPaths.length} 个项目文件。`
-        : proposals.length > 0
-          ? `已生成 ${proposals.length} 个待采纳 proposal。`
-        : finalResult.toolTrace.length > 0
-          ? "已读取项目资料并生成回复。"
-          : "处理完成。",
-      paths: changedPaths.length > 0 ? changedPaths : undefined,
-      ledgerEntryIds: changeRecord.entries.map((entry) => entry.id),
-    })
-    events.push(doneEvent)
-    emitSse(controller, "agent_event", doneEvent)
-
     const brief = finalResult.toolTrace.length > 0 ||
       finalResult.failedTools.length > 0 ||
       finalResult.usage.totalTokens > 0 ||
@@ -460,6 +447,20 @@ async function streamThreadMessageUnlocked(
     assistantContent = changedPaths.length > 0
       ? `${finalResult.reply.trim()}\n\n${summarizeChangedPaths(changedPaths)}`
       : finalResult.reply
+    const doneEvent = createAgentEvent(turn.id, {
+      type: "done",
+      text: changedPaths.length > 0
+        ? `已写入 ${changedPaths.length} 个项目文件。`
+        : proposals.length > 0
+          ? `已生成 ${proposals.length} 个待采纳 proposal。`
+        : finalResult.toolTrace.length > 0
+          ? "已读取项目资料并生成回复。"
+          : "处理完成。",
+      paths: changedPaths.length > 0 ? changedPaths : undefined,
+      ledgerEntryIds: changeRecord.entries.map((entry) => entry.id),
+    })
+    events.push(doneEvent)
+    emitSse(controller, "agent_event", doneEvent)
     const assistantMessage = createAssistantMessage({
       id: turn.assistantMessageId,
       threadId: thread.id,
@@ -470,6 +471,7 @@ async function streamThreadMessageUnlocked(
       contextWindow: finalResult.contextWindow,
       changeSet,
       proposalSet,
+      usedMemory: finalResult.usedMemory.length > 0 ? finalResult.usedMemory : undefined,
     })
     await appendThreadMessages(bookId, [assistantMessage])
     const completedTurn = await updateTurn(bookId, turn.id, {

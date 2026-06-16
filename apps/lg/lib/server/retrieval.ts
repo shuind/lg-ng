@@ -12,6 +12,7 @@ const SKIP_FILES = new Set([
   "pending-action-plan.json",
   "book.json",
   "messages.jsonl",
+  "thread-memory.json",
   "threads.json",
   "turns.jsonl",
   "thread-messages.jsonl",

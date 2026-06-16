@@ -33,6 +33,7 @@ const HIDDEN_FILE_NAMES = new Set([
   "proposals.jsonl",
   "response-constraints.json",
   "skill-candidates.json",
+  "thread-memory.json",
   "thread-messages.jsonl",
   "threads.json",
   "turns.jsonl",

@@ -239,6 +239,7 @@ function isReviewableDirtyPath(filePath: string): boolean {
   return ![
     "ledger.jsonl",
     "proposals.jsonl",
+    "thread-memory.json",
     "thread-messages.jsonl",
     "threads.json",
     "turns.json",

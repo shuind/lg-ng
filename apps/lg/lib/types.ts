@@ -472,12 +472,76 @@ export interface Turn {
   updatedAt: string
 }
 
+export type ContextWindowLevel =
+  | "normal"
+  | "warning"
+  | "should_compact"
+  | "auto_compact"
+  | "blocking"
+
+export interface MessageContextWindowComponents {
+  sessionMessages: number
+  projectContext: number
+  currentPrompt: number
+  expectedOutputReserve: number
+  total: number
+}
+
 export interface MessageContextWindow {
   estimatedTokens: number
   budgetTokens: number
   ratio: number
   triggerRatio: number
+  level?: ContextWindowLevel
+  reserveTokens?: number
+  components?: MessageContextWindowComponents
   lastCompactedAt?: string
+}
+
+export type UserMemoryScope = "global" | "book"
+
+export interface UserMemorySource {
+  threadId: string
+  messageIds: string[]
+}
+
+export interface UserMemoryItem {
+  id: string
+  text: string
+  enabled: boolean
+  scope: UserMemoryScope
+  bookId?: string
+  tags: string[]
+  source?: UserMemorySource
+  createdAt: string
+  updatedAt: string
+}
+
+export interface UserMemoryCandidate {
+  id: string
+  text: string
+  reason: string
+  scope: UserMemoryScope
+  bookId?: string
+  tags: string[]
+  source?: UserMemorySource
+  createdAt: string
+  updatedAt: string
+}
+
+export interface UserMemoryStore {
+  enabled: boolean
+  items: UserMemoryItem[]
+  candidates: UserMemoryCandidate[]
+  updatedAt: string
+}
+
+export interface UserMemoryUsageSnapshot {
+  id: string
+  text: string
+  scope: UserMemoryScope
+  bookId?: string
+  tags: string[]
 }
 
 export interface Message {
@@ -498,6 +562,7 @@ export interface Message {
   contextWindow?: MessageContextWindow
   changeSet?: MessageChangeSet
   proposalSet?: MessageProposalSet
+  usedMemory?: UserMemoryUsageSnapshot[]
 }
 
 export interface SettingCard {

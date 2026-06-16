@@ -435,6 +435,7 @@ export function createAssistantMessage(args: {
   contextWindow?: Message["contextWindow"]
   changeSet?: Message["changeSet"]
   proposalSet?: Message["proposalSet"]
+  usedMemory?: Message["usedMemory"]
 }): Message {
   return {
     id: args.id ?? makeId("msg"),
@@ -449,6 +450,7 @@ export function createAssistantMessage(args: {
     contextWindow: args.contextWindow,
     changeSet: args.changeSet,
     proposalSet: args.proposalSet,
+    usedMemory: args.usedMemory,
   }
 }
 
