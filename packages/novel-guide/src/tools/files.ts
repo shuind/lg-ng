@@ -1,6 +1,7 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { Tool } from "./tool.js";
+import { DRAFT_POLICY_TOOL_HINT } from "../prompts/novelRules.js";
 import { normalizeSlashPath, relativeTo, resolveInside } from "../utils/paths.js";
 
 function stringInput(value: unknown, fallback = ""): string {
@@ -41,7 +42,7 @@ export const ReadFileTool: Tool = {
 
 export const WriteFileTool: Tool = {
   name: "write_file",
-  description: "写 UTF-8 文本文件并创建父目录。小说工作区生成章节正文默认写 drafts/；仅用户明确要求直存正文时用 章节正文/。",
+  description: `写 UTF-8 文本文件并创建父目录。${DRAFT_POLICY_TOOL_HINT}`,
   readonly: false,
   parameters: {
     type: "object",
@@ -88,7 +89,7 @@ export const WriteFileTool: Tool = {
 
 export const EditFileTool: Tool = {
   name: "edit_file",
-  description: "精确替换文本来编辑 UTF-8 文件。小说工作区生成章节正文默认改 drafts/；用户明确要求直存正文时才改 章节正文/。",
+  description: `精确替换文本来编辑 UTF-8 文件。${DRAFT_POLICY_TOOL_HINT}`,
   readonly: false,
   parameters: {
     type: "object",
@@ -139,7 +140,7 @@ export const EditFileTool: Tool = {
 
 export const ProposeFileChangeTool: Tool = {
   name: "propose_file_change",
-  description: "创建可审阅文件变更提案，不改目标文件。用于 /续写、/改稿。生成章节正文默认提案到 drafts/；用户明确要求直存正文时才用 章节正文/。",
+  description: `创建可审阅文件变更提案，不改目标文件。用于 /续写、/改稿。${DRAFT_POLICY_TOOL_HINT}`,
   readonly: false,
   parameters: {
     type: "object",

@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import fg from "fast-glob";
 import type { Tool } from "./tool.js";
+import { SEARCH_CANON_TOOL_HINT } from "../prompts/novelRules.js";
 import { normalizeSlashPath } from "../utils/paths.js";
 import { WORKSPACE_GUIDE_FILES } from "../workspace/layout.js";
 
@@ -140,13 +141,13 @@ function extractAliasTerms(content: string, fileName: string): string[] {
 
 export const SearchCanonTool: Tool = {
   name: "search_canon",
-  description: "按别名优先、段落锚点搜索小说正典和正文。查人物、设定、伏笔、长文连续性时优先于 grep。",
+  description: `按别名优先、段落锚点搜索小说正典和正文。${SEARCH_CANON_TOOL_HINT}`,
   readonly: true,
   parameters: {
     type: "object",
     properties: {
       query: { type: "string" },
-      scope: { type: "string", description: "可选 glob 范围。默认搜 canon/drafts/章节/设定 markdown。" },
+      scope: { type: "string", description: "可选 glob 范围。默认搜 canon/drafts/章节正文/人物设定/世界观/卷纲/章节大纲/章节摘要/剧情管理/状态追踪/读者体验/写作约束/检查报告。" },
       limit: { type: "number" },
     },
     required: ["query"],

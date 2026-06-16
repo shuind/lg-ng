@@ -8,20 +8,34 @@ import { buildEffectiveSystemPrompt } from "../prompts/systemPrompt.js";
 import { getTools } from "../tools/registry.js";
 import type { FileChange, FileProposal, ToolContext, Tools } from "../tools/tool.js";
 import { queryEvents, type QueryEvent, type QueryResult } from "./query.js";
-import { createSessionId, saveSession, type SessionCompactionState, type SessionState } from "./session.js";
+import {
+  createSessionId,
+  saveSession,
+  type CompactionBoundary,
+  type DroppedCompactionMessageGroup,
+  type SessionCompactionState,
+  type SessionState,
+} from "./session.js";
 import { findAgent, loadAgentsDir } from "../agents/loadAgentsDir.js";
 import { loadSkillsDir } from "../skills/loadSkillsDir.js";
-import { estimateMessagesTokens } from "./tokenEstimate.js";
+import { estimateMessagesTokens, estimateTextTokens } from "./tokenEstimate.js";
 import { WORKSPACE_GUIDE_FILES } from "../workspace/layout.js";
 
 const COMPACTION_PREFIX = "NG_COMPACTION_MEMO:";
 const PROJECT_CONTEXT_PREFIX = "NG_PROJECT_CONTEXT:";
+const USER_MEMORY_PREFIX = "NG_USER_MEMORY:";
 const CHANGE_MEMO_PREFIX = "NG_CHANGE_MEMO:";
+const MICROCOMPACTION_PREFIX = "NG_MICROCOMPACTED_TOOL_RESULT:";
 const DEFAULT_CONTEXT_BUDGET_TOKENS = 128000;
-const DEFAULT_COMPACTION_TRIGGER_RATIO = 0.85;
-const DEFAULT_RECENT_MESSAGE_COUNT = 24;
+const DEFAULT_COMPACTION_TRIGGER_RATIO = 0.75;
+const DEFAULT_MICROCOMPACTION_TRIGGER_RATIO = 0.65;
+const DEFAULT_EXPECTED_OUTPUT_RESERVE_TOKENS = 4096;
+const DEFAULT_RECENT_MESSAGE_COUNT = 5;
 const DEFAULT_MAX_LOOPS = 32;
 const DEFAULT_SUBAGENT_MAX_LOOPS = 10;
+const MICROCOMPACT_MIN_TOOL_TOKENS = 600;
+const MICROCOMPACT_PREVIEW_CHARS = 1200;
+const MAX_COMPACTION_BOUNDARIES = 40;
 
 export interface EngineConfig {
   cwd: string;
@@ -32,6 +46,7 @@ export interface EngineConfig {
   initialCompaction?: SessionCompactionState;
   appendSystemPrompt?: string;
   projectContext?: string;
+  userMemoryContext?: string;
   askConfirmation?: (question: string) => Promise<boolean>;
   permissionMode?: "bypass" | "confirm";
   maxLoops?: number;
@@ -40,6 +55,22 @@ export interface EngineConfig {
   contextBudgetTokens?: number;
   compactionTriggerRatio?: number;
   recentMessageCount?: number;
+  expectedOutputReserveTokens?: number;
+}
+
+export type EngineContextWindowLevel =
+  | "normal"
+  | "warning"
+  | "should_compact"
+  | "auto_compact"
+  | "blocking";
+
+export interface EngineContextWindowComponents {
+  sessionMessages: number;
+  projectContext: number;
+  currentPrompt: number;
+  expectedOutputReserve: number;
+  total: number;
 }
 
 export interface EngineContextWindowState {
@@ -47,7 +78,35 @@ export interface EngineContextWindowState {
   budgetTokens: number;
   ratio: number;
   triggerRatio: number;
+  level: EngineContextWindowLevel;
+  reserveTokens: number;
+  components: EngineContextWindowComponents;
   lastCompactedAt?: string;
+}
+
+interface ContextWindowEstimateOptions {
+  projectContext?: string;
+  currentPrompt?: string;
+  expectedOutputReserveTokens?: number;
+}
+
+interface MicrocompactResult {
+  changedMessageCount: number;
+  messageIndexes: number[];
+}
+
+interface CompactionMessageGroup {
+  messages: ChatCompletionMessageParam[];
+  startIndex: number;
+  endIndex: number;
+}
+
+interface CompactionSummaryResult {
+  summary: string;
+  retryCount: number;
+  droppedMessageGroups: DroppedCompactionMessageGroup[];
+  summarizedMessageCount: number;
+  summarizedMessageRange?: { start: number; end: number };
 }
 
 export interface EngineTurnResult {
@@ -92,7 +151,7 @@ export class AgentEngine {
 
   constructor(private readonly config: EngineConfig) {
     this.sessionId = config.sessionId ?? createSessionId();
-    this.messages = stripProjectContextMessages(config.initialMessages ?? []);
+    this.messages = stripRuntimeContextMessages(config.initialMessages ?? []);
     this.compaction = config.initialCompaction;
     this.tools = getTools({ readonlyOnly: config.readonlyOnly, proposalOnly: config.proposalOnly });
   }
@@ -105,14 +164,39 @@ export class AgentEngine {
     return JSON.parse(JSON.stringify(this.messages)) as ChatCompletionMessageParam[];
   }
 
-  getContextWindowState(messages: ChatCompletionMessageParam[] = this.messages): EngineContextWindowState {
+  getContextWindowState(
+    messages: ChatCompletionMessageParam[] = this.messages,
+    options: ContextWindowEstimateOptions = {},
+  ): EngineContextWindowState {
     const budgetTokens = this.config.contextBudgetTokens ?? contextBudgetForModel(this.config.model);
-    const estimatedTokens = estimateMessagesTokens(messages);
+    const triggerRatio = this.config.compactionTriggerRatio ?? DEFAULT_COMPACTION_TRIGGER_RATIO;
+    const reserveTokens = options.expectedOutputReserveTokens
+      ?? this.config.expectedOutputReserveTokens
+      ?? DEFAULT_EXPECTED_OUTPUT_RESERVE_TOKENS;
+    const sessionMessages = estimateMessagesTokens(messages);
+    const projectContext = options.projectContext?.trim()
+      ? estimateTextTokens(options.projectContext) + 8
+      : 0;
+    const currentPrompt = options.currentPrompt?.trim()
+      ? estimateTextTokens(options.currentPrompt) + 8
+      : 0;
+    const components: EngineContextWindowComponents = {
+      sessionMessages,
+      projectContext,
+      currentPrompt,
+      expectedOutputReserve: reserveTokens,
+      total: sessionMessages + projectContext + currentPrompt + reserveTokens,
+    };
+    const estimatedTokens = components.total;
+    const ratio = budgetTokens > 0 ? estimatedTokens / budgetTokens : 0;
     return {
       estimatedTokens,
       budgetTokens,
-      ratio: budgetTokens > 0 ? estimatedTokens / budgetTokens : 0,
-      triggerRatio: this.config.compactionTriggerRatio ?? DEFAULT_COMPACTION_TRIGGER_RATIO,
+      ratio,
+      triggerRatio,
+      level: contextWindowLevel(ratio, triggerRatio),
+      reserveTokens,
+      components,
       lastCompactedAt: this.compaction?.lastCompactedAt,
     };
   }
@@ -167,6 +251,8 @@ export class AgentEngine {
       maxLoops: Math.min(this.config.maxLoops ?? DEFAULT_MAX_LOOPS, DEFAULT_SUBAGENT_MAX_LOOPS),
       readonlyOnly: input.readonly === true,
       appendSystemPrompt: `你正在作为子智能体 ${agent.name} 运行。默认拥有完整工具权限；如果任务要求只读，不要改文件。`,
+      projectContext: this.config.projectContext,
+      userMemoryContext: this.config.userMemoryContext,
     });
     return await subEngine.submitMessage(`${agent.prompt}\n\n# 任务\n${input.prompt}`, {
       save: false,
@@ -254,7 +340,7 @@ export class AgentEngine {
         proposals: [],
         usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
         sessionId: this.sessionId,
-        contextWindow: this.getContextWindowState(),
+        contextWindow: this.getContextWindowState(this.messages, { currentPrompt: prompt }),
       } };
       return;
     }
@@ -263,13 +349,19 @@ export class AgentEngine {
     await this.compactMessagesIfNeeded(options.signal);
 
     const projectContext = await this.buildProjectContext();
+    const userMemoryContext = this.config.userMemoryContext?.trim() || "";
+    const runtimeContextForBudget = [projectContext, userMemoryContext].filter(Boolean).join("\n\n");
     const content = options.systemMeta
       ? prompt
       : `用户请求：\n${prompt}`;
     const turnMessages: ChatCompletionMessageParam[] = [
-      ...withProjectContext(this.messages, projectContext),
+      ...withRuntimeContexts(this.messages, projectContext, userMemoryContext),
       { role: "user", content },
     ];
+    const contextWindow = this.getContextWindowState(this.messages, {
+      projectContext: runtimeContextForBudget,
+      currentPrompt: content,
+    });
 
     let result: QueryResult | null = null;
     for await (const event of queryEvents({
@@ -297,7 +389,7 @@ export class AgentEngine {
       };
     }
     this.messages = appendChangeMemo(
-      stripProjectContextMessages(result.messages),
+      stripRuntimeContextMessages(result.messages),
       buildChangeMemo(result.fileChanges, result.proposals),
     );
 
@@ -321,7 +413,7 @@ export class AgentEngine {
       proposals: result.proposals,
       usage: result.usage,
       sessionId: this.sessionId,
-      contextWindow: this.getContextWindowState(),
+      contextWindow,
     } };
   }
 
@@ -339,58 +431,172 @@ export class AgentEngine {
 
     const budget = this.config.contextBudgetTokens ?? contextBudgetForModel(this.config.model);
     const triggerRatio = this.config.compactionTriggerRatio ?? DEFAULT_COMPACTION_TRIGGER_RATIO;
+    const recentCount = this.config.recentMessageCount ?? DEFAULT_RECENT_MESSAGE_COUNT;
+    const tokenBeforeMicrocompact = estimateMessagesTokens(this.messages);
+    if (tokenBeforeMicrocompact > budget * DEFAULT_MICROCOMPACTION_TRIGGER_RATIO) {
+      const microcompact = this.microcompactOldToolMessages(recentCount);
+      if (microcompact.changedMessageCount > 0) {
+        const createdAt = new Date().toISOString();
+        this.recordCompactionBoundary({
+          id: createCompactionBoundaryId("boundary"),
+          createdAt,
+          trigger: "auto",
+          tokenBefore: tokenBeforeMicrocompact,
+          tokenAfter: estimateMessagesTokens(this.messages),
+          originalMessageCount: this.messages.length,
+          compactedMessageCount: this.messages.length,
+          compactedTurnIds: [],
+          preservedRecentTurnIds: [],
+          strategy: "microcompact",
+          microcompactedToolResults: microcompact.changedMessageCount,
+          compactedMessageRange: buildIndexRange(microcompact.messageIndexes),
+        });
+      }
+    }
+
     if (estimateMessagesTokens(this.messages) <= budget * triggerRatio) return;
 
+    const tokenBeforeFullCompaction = estimateMessagesTokens(this.messages);
     const systemMessage = this.messages[0];
     const rest = this.messages.slice(1);
-    const existingMemos = rest.filter(isCompactionMemo);
-    const compactableMessages = rest.filter((message) => !isCompactionMemo(message));
-    const recentCount = this.config.recentMessageCount ?? DEFAULT_RECENT_MESSAGE_COUNT;
-    const targetRecentStart = Math.max(0, compactableMessages.length - recentCount);
-    const recentStart = findSafeRecentStart(compactableMessages, targetRecentStart);
-    const compacted = compactableMessages.slice(0, recentStart);
-    const recent = compactableMessages.slice(recentStart);
-    if (compacted.length < 4 || recent.length === 0) return;
+    const rawMessages = rest.filter((message) => !isCompactionMemo(message) && !isChangeMemo(message));
+    const targetRecentStart = Math.max(0, rawMessages.length - recentCount);
+    const recentStart = findSafeRecentStart(rawMessages, targetRecentStart);
+    const compactedRaw = rawMessages.slice(0, recentStart);
+    const recent = rawMessages.slice(recentStart);
+    if (compactedRaw.length < 4 || recent.length === 0) return;
 
-    const summary = await this.summarizeForCompaction(compacted, signal);
+    const compactedRawSet = new Set<ChatCompletionMessageParam>(compactedRaw);
+    const compactableForSummary = rest.filter((message) =>
+      isCompactionMemo(message) || isChangeMemo(message) || compactedRawSet.has(message)
+    );
+    const summary = await this.summarizeForCompaction(compactableForSummary, signal);
+    const createdAt = new Date().toISOString();
+    const memoId = createCompactionBoundaryId("memo");
     const memo: ChatCompletionMessageParam = {
       role: "system",
       content: [
         COMPACTION_PREFIX,
-        `updated_at: ${new Date().toISOString()}`,
+        `memo_id: ${memoId}`,
+        `updated_at: ${createdAt}`,
         "",
-        summary.trim(),
+        summary.summary.trim(),
       ].join("\n"),
     };
-    this.messages = [systemMessage, ...existingMemos, memo, ...recent];
-    this.compaction = {
-      lastCompactedAt: new Date().toISOString(),
+    this.messages = [systemMessage, memo, ...recent];
+    this.recordCompactionBoundary({
+      id: createCompactionBoundaryId("boundary"),
+      createdAt,
+      trigger: "auto",
+      tokenBefore: tokenBeforeFullCompaction,
+      tokenAfter: estimateMessagesTokens(this.messages),
       originalMessageCount: rest.length + 1,
       compactedMessageCount: this.messages.length,
+      compactedTurnIds: [],
+      preservedRecentTurnIds: [],
+      summaryMessageId: memoId,
+      strategy: "full-summary",
+      compactedMessageRange: summary.summarizedMessageRange,
+      preservedRecentMessageRange: recent.length > 0
+        ? { start: recentStart, end: rawMessages.length - 1 }
+        : undefined,
+      retryCount: summary.retryCount,
+      droppedMessageGroups: summary.droppedMessageGroups.length > 0
+        ? summary.droppedMessageGroups
+        : undefined,
+    });
+  }
+
+  private microcompactOldToolMessages(recentCount: number): MicrocompactResult {
+    const protectedStart = Math.max(0, this.messages.length - recentCount);
+    const messageIndexes: number[] = [];
+    this.messages = this.messages.map((message, index) => {
+      if (index >= protectedStart || message.role !== "tool") return message;
+      const content = stringifyMessageContent(message.content);
+      if (!content || content.startsWith(MICROCOMPACTION_PREFIX)) return message;
+      const estimatedTokens = estimateTextTokens(content);
+      if (estimatedTokens < MICROCOMPACT_MIN_TOOL_TOKENS) return message;
+
+      messageIndexes.push(index);
+      return {
+        ...message,
+        content: buildMicrocompactedToolResult(
+          content,
+          estimatedTokens,
+          summarizeToolMessageMetadata(message, this.messages.slice(0, index)),
+        ),
+      } as ChatCompletionMessageParam;
+    });
+    return {
+      changedMessageCount: messageIndexes.length,
+      messageIndexes,
+    };
+  }
+
+  private recordCompactionBoundary(boundary: CompactionBoundary): void {
+    const boundaries = [
+      ...(this.compaction?.boundaries ?? []),
+      boundary,
+    ].slice(-MAX_COMPACTION_BOUNDARIES);
+    this.compaction = {
+      lastCompactedAt: boundary.createdAt,
+      originalMessageCount: boundary.originalMessageCount,
+      compactedMessageCount: boundary.compactedMessageCount,
+      boundaries,
     };
   }
 
   private async summarizeForCompaction(
     messages: ChatCompletionMessageParam[],
     signal?: AbortSignal,
-  ): Promise<string> {
-    const rendered = messages.map(renderMessageForCompaction).join("\n\n").slice(0, 120_000);
-    const response = await createChatCompletion({
-      client: this.config.client,
-      model: this.config.model,
-      messages: [
-        {
-          role: "system",
-          content: "为后续连续性总结此前工作区智能体对话。保留用户目标、决策、文件路径、工具结果、未解决任务和重要约束；不要编造。",
-        },
-        { role: "user", content: rendered },
-      ],
-      temperature: 0.1,
-      maxTokens: 1400,
-      timeoutMs: 60000,
-      signal,
-    });
-    return stringifyMessageContent(response.message.content) || "未生成历史上下文摘要。";
+  ): Promise<CompactionSummaryResult> {
+    let groups = groupMessagesForCompaction(messages);
+    const droppedMessageGroups: DroppedCompactionMessageGroup[] = [];
+    let retryCount = 0;
+
+    while (groups.length > 0) {
+      const rendered = renderCompactionGroups(groups, droppedMessageGroups);
+      try {
+        const response = await createChatCompletion({
+          client: this.config.client,
+          model: this.config.model,
+          messages: [
+            {
+              role: "system",
+              content: structuredCompactionPrompt(),
+            },
+            { role: "user", content: rendered },
+          ],
+          temperature: 0.1,
+          maxTokens: 3200,
+          timeoutMs: 60000,
+          signal,
+        });
+        return {
+          summary: stringifyMessageContent(response.message.content) || "未生成历史上下文摘要。",
+          retryCount,
+          droppedMessageGroups,
+          summarizedMessageCount: groups.reduce((sum, group) => sum + group.messages.length, 0),
+          summarizedMessageRange: groups.length > 0
+            ? { start: groups[0].startIndex, end: groups[groups.length - 1].endIndex }
+            : undefined,
+        };
+      } catch (error) {
+        if (!isPromptTooLongError(error) || groups.length <= 1) throw error;
+        const dropCount = Math.max(1, Math.ceil(groups.length * 0.2));
+        const dropped = groups.slice(0, Math.min(dropCount, groups.length - 1));
+        droppedMessageGroups.push(...dropped.map(toDroppedCompactionMessageGroup));
+        groups = groups.slice(dropped.length);
+        retryCount += 1;
+      }
+    }
+
+    return {
+      summary: "未生成历史上下文摘要。",
+      retryCount,
+      droppedMessageGroups,
+      summarizedMessageCount: 0,
+    };
   }
 
   private trySimpleLocalReply(prompt: string): string | null {
@@ -409,11 +615,20 @@ function contextBudgetForModel(model: string): number {
   return DEFAULT_CONTEXT_BUDGET_TOKENS;
 }
 
+function contextWindowLevel(ratio: number, triggerRatio: number): EngineContextWindowLevel {
+  if (ratio >= 1) return "blocking";
+  if (ratio >= triggerRatio) return "auto_compact";
+  if (ratio >= DEFAULT_MICROCOMPACTION_TRIGGER_RATIO) return "should_compact";
+  if (ratio >= 0.5) return "warning";
+  return "normal";
+}
+
 function isGeneratedSystemMessage(message: ChatCompletionMessageParam | undefined): boolean {
   if (!message || message.role !== "system") return false;
   const content = stringifyMessageContent(message.content);
   return (
     content.startsWith(PROJECT_CONTEXT_PREFIX) ||
+    content.startsWith(USER_MEMORY_PREFIX) ||
     content.startsWith(COMPACTION_PREFIX) ||
     content.startsWith(CHANGE_MEMO_PREFIX)
   );
@@ -427,21 +642,37 @@ function isProjectContextMessage(message: ChatCompletionMessageParam): boolean {
   return message.role === "system" && stringifyMessageContent(message.content).startsWith(PROJECT_CONTEXT_PREFIX);
 }
 
-function stripProjectContextMessages(messages: ChatCompletionMessageParam[]): ChatCompletionMessageParam[] {
-  return messages.filter((message) => !isProjectContextMessage(message));
+function isUserMemoryMessage(message: ChatCompletionMessageParam): boolean {
+  return message.role === "system" && stringifyMessageContent(message.content).startsWith(USER_MEMORY_PREFIX);
 }
 
-function withProjectContext(
+function stripRuntimeContextMessages(messages: ChatCompletionMessageParam[]): ChatCompletionMessageParam[] {
+  return messages.filter((message) => !isProjectContextMessage(message) && !isUserMemoryMessage(message));
+}
+
+function withRuntimeContexts(
   messages: ChatCompletionMessageParam[],
   projectContext: string,
+  userMemoryContext: string,
 ): ChatCompletionMessageParam[] {
-  const cleanMessages = stripProjectContextMessages(messages);
-  const contextMessage: ChatCompletionMessageParam = { role: "system", content: projectContext };
-  if (cleanMessages.length === 0) return [contextMessage];
-  if (isPrimarySystemMessage(cleanMessages[0])) {
-    return [cleanMessages[0], contextMessage, ...cleanMessages.slice(1)];
+  const cleanMessages = stripRuntimeContextMessages(messages);
+  const contextMessages: ChatCompletionMessageParam[] = [];
+  if (projectContext.trim()) {
+    contextMessages.push({ role: "system", content: projectContext });
   }
-  return [contextMessage, ...cleanMessages];
+  if (userMemoryContext.trim()) {
+    contextMessages.push({
+      role: "system",
+      content: userMemoryContext.startsWith(USER_MEMORY_PREFIX)
+        ? userMemoryContext
+        : `${USER_MEMORY_PREFIX}\n${userMemoryContext}`,
+    });
+  }
+  if (cleanMessages.length === 0) return contextMessages;
+  if (isPrimarySystemMessage(cleanMessages[0])) {
+    return [cleanMessages[0], ...contextMessages, ...cleanMessages.slice(1)];
+  }
+  return [...contextMessages, ...cleanMessages];
 }
 
 function buildChangeMemo(
@@ -645,6 +876,220 @@ function findSafeRecentStart(messages: ChatCompletionMessageParam[], targetStart
 
 function isCompactionMemo(message: ChatCompletionMessageParam): boolean {
   return message.role === "system" && stringifyMessageContent(message.content).startsWith(COMPACTION_PREFIX);
+}
+
+function isChangeMemo(message: ChatCompletionMessageParam): boolean {
+  return message.role === "system" && stringifyMessageContent(message.content).startsWith(CHANGE_MEMO_PREFIX);
+}
+
+function createCompactionBoundaryId(prefix: string): string {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function buildIndexRange(indexes: number[]): { start: number; end: number } | undefined {
+  if (indexes.length === 0) return undefined;
+  return {
+    start: Math.min(...indexes),
+    end: Math.max(...indexes),
+  };
+}
+
+interface ToolMessageMetadata {
+  toolCallId?: string;
+  toolName?: string;
+  status: "success" | "failure" | "unknown";
+  target?: string;
+  argsPreview?: string;
+}
+
+function buildMicrocompactedToolResult(
+  content: string,
+  estimatedTokens: number,
+  metadata: ToolMessageMetadata,
+): string {
+  const normalized = content.replace(/\s+/g, " ").trim();
+  const preview = normalized.length > MICROCOMPACT_PREVIEW_CHARS
+    ? `${normalized.slice(0, MICROCOMPACT_PREVIEW_CHARS).trim()}...`
+    : normalized;
+  return [
+    MICROCOMPACTION_PREFIX,
+    metadata.toolName ? `tool_name: ${metadata.toolName}` : "",
+    metadata.toolCallId ? `tool_call_id: ${metadata.toolCallId}` : "",
+    `status: ${metadata.status}`,
+    metadata.target ? `target: ${metadata.target}` : "",
+    `original_chars: ${content.length}`,
+    `original_estimated_tokens: ${estimatedTokens}`,
+    metadata.argsPreview ? `args_preview: ${metadata.argsPreview}` : "",
+    "",
+    "摘要/预览：",
+    preview || "（原始工具结果为空白。）",
+  ].filter((line) => line !== "").join("\n");
+}
+
+function summarizeToolMessageMetadata(
+  message: ChatCompletionMessageParam,
+  previousMessages: ChatCompletionMessageParam[],
+): ToolMessageMetadata {
+  const toolCallId = "tool_call_id" in message && typeof message.tool_call_id === "string"
+    ? message.tool_call_id
+    : undefined;
+  const toolCall = toolCallId ? findToolCall(previousMessages, toolCallId) : null;
+  const functionToolCall = toolCall && "function" in toolCall ? toolCall : null;
+  const args = functionToolCall?.function?.arguments;
+  const argsPreview = typeof args === "string" && args.trim()
+    ? clipSingleLine(args, 360)
+    : undefined;
+  return {
+    toolCallId,
+    toolName: functionToolCall?.function?.name,
+    status: inferToolResultStatus(stringifyMessageContent(message.content)),
+    target: inferToolTarget(args),
+    argsPreview,
+  };
+}
+
+function findToolCall(previousMessages: ChatCompletionMessageParam[], toolCallId: string) {
+  for (let index = previousMessages.length - 1; index >= 0; index -= 1) {
+    const message = previousMessages[index];
+    if (!("tool_calls" in message) || !Array.isArray(message.tool_calls)) continue;
+    const found = message.tool_calls.find((toolCall) => toolCall.id === toolCallId);
+    if (found) return found;
+  }
+  return null;
+}
+
+function inferToolResultStatus(content: string): ToolMessageMetadata["status"] {
+  const normalized = content.trim().toLowerCase();
+  if (!normalized) return "unknown";
+  if (
+    normalized.startsWith("error") ||
+    normalized.includes("\"ok\":false") ||
+    normalized.includes("\"success\":false") ||
+    normalized.includes("failed") ||
+    normalized.includes("失败") ||
+    normalized.includes("错误")
+  ) {
+    return "failure";
+  }
+  return "success";
+}
+
+function inferToolTarget(args?: string): string | undefined {
+  if (!args) return undefined;
+  try {
+    const parsed = JSON.parse(args) as Record<string, unknown>;
+    for (const key of ["path", "file", "targetPath", "query", "pattern", "glob", "command"]) {
+      const value = parsed[key];
+      if (typeof value === "string" && value.trim()) return clipSingleLine(value, 240);
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+function clipSingleLine(value: string, maxChars: number): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.length > maxChars ? `${normalized.slice(0, maxChars).trim()}...` : normalized;
+}
+
+function structuredCompactionPrompt(): string {
+  return [
+    "你正在执行长对话 checkpoint 压缩。输出给下一轮 LLM 接手使用的结构化中文 Markdown，不要编造。",
+    "必须保留用户明确纠正、偏好、禁止事项、已确认事实、废弃假设、关键文件/章节/设定/角色、工具结果、未完成任务和下一步。",
+    "同一事实或目标多次变化时，以用户最后一次明确拍板为准，并把早先被推翻的版本标成废弃假设。",
+    "特别保留当前章节/文件目标、正在处理的路径、已经承诺但尚未完成的写入或检查。",
+    "如果输入开头声明有旧消息组因 compact 请求过长被丢弃，请在“工具调用和重要结果”或“未完成任务”中明确说明信息边界。",
+    "按以下 9 节输出，缺失则写“无”或“未确认”：",
+    "1. 用户目标与当前任务",
+    "2. 用户明确纠正 / 偏好 / 禁止事项",
+    "3. 已确认事实与已废弃假设",
+    "4. 文件、章节、设定、角色等关键对象",
+    "5. 工具调用和重要结果",
+    "6. 已完成工作",
+    "7. 未完成任务",
+    "8. 当前正在做什么",
+    "9. 下一步",
+  ].join("\n");
+}
+
+function groupMessagesForCompaction(messages: ChatCompletionMessageParam[]): CompactionMessageGroup[] {
+  const groups: CompactionMessageGroup[] = [];
+  let current: ChatCompletionMessageParam[] = [];
+  let currentStart = 0;
+
+  function flush(endIndex: number): void {
+    if (current.length === 0) return;
+    groups.push({
+      messages: current,
+      startIndex: currentStart,
+      endIndex,
+    });
+    current = [];
+  }
+
+  messages.forEach((message, index) => {
+    const startsNewRound = message.role === "user" || message.role === "system";
+    if (startsNewRound && current.length > 0) flush(index - 1);
+    if (current.length === 0) currentStart = index;
+    current.push(message);
+  });
+  flush(messages.length - 1);
+
+  return groups.length > 0
+    ? groups
+    : messages.map((message, index) => ({ messages: [message], startIndex: index, endIndex: index }));
+}
+
+function renderCompactionGroups(
+  groups: CompactionMessageGroup[],
+  droppedMessageGroups: DroppedCompactionMessageGroup[],
+): string {
+  const lines: string[] = [];
+  if (droppedMessageGroups.length > 0) {
+    const droppedMessages = droppedMessageGroups.reduce((sum, group) => sum + group.messageCount, 0);
+    lines.push(
+      "NOTICE: The oldest message groups were dropped because the compaction prompt was too long.",
+      `Dropped message groups: ${droppedMessageGroups.length}; dropped messages: ${droppedMessages}`,
+      "注意：更早的部分消息组因 compact 请求过长已按组丢弃，不能从当前输入恢复原文。",
+      `已丢弃消息组：${droppedMessageGroups.length}；消息数：${droppedMessages}`,
+      "",
+    );
+  }
+  for (const group of groups) {
+    lines.push(
+      `--- message_group start=${group.startIndex} end=${group.endIndex} count=${group.messages.length} ---`,
+      ...group.messages.map(renderMessageForCompaction),
+      `--- /message_group end=${group.endIndex} ---`,
+      "",
+    );
+  }
+  return lines.join("\n");
+}
+
+function toDroppedCompactionMessageGroup(group: CompactionMessageGroup): DroppedCompactionMessageGroup {
+  return {
+    startIndex: group.startIndex,
+    endIndex: group.endIndex,
+    messageCount: group.messages.length,
+    reason: "prompt_too_long",
+    roles: [...new Set(group.messages.map((message) => "role" in message ? String(message.role) : "unknown"))],
+  };
+}
+
+function isPromptTooLongError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  return (
+    message.includes("prompt too long") ||
+    message.includes("context length") ||
+    message.includes("context window") ||
+    message.includes("maximum context") ||
+    message.includes("too many tokens") ||
+    message.includes("token limit") ||
+    message.includes("request too large") ||
+    (message.includes("上下文") && (message.includes("过长") || message.includes("超出"))) ||
+    (message.includes("prompt") && message.includes("long"))
+  );
 }
 
 function renderMessageForCompaction(message: ChatCompletionMessageParam): string {

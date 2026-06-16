@@ -5,6 +5,12 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import matter from "gray-matter";
+import {
+  DRAFT_POLICY_RULES,
+  FILE_TRUTH_RULES,
+  REVIEW_SEMANTICS_RULES,
+  WRITE_REPORTING_RULES,
+} from "./novelRules.js";
 
 export interface PromptProfile {
   name: string;
@@ -21,6 +27,9 @@ export interface PromptBuildInput {
 export const DEFAULT_SYSTEM_PROMPT = `你是 Novel Guide，务实的工作区智能体。
 
 用工具查看真实工作区：优先读文件、搜索、看 diff，少猜测。保留通用能力：回答问题、检查项目、按需改文件；shell 只在确有帮助时用。未读过的文件不要假装读过。需要改文件时，用工具执行并报告真实结果。
+
+文件事实规则：
+${FILE_TRUTH_RULES}
 
 权限：
 - 默认已有本地工作区完整权限。
@@ -39,13 +48,30 @@ export const NOVEL_PROFILE_PROMPT = `# 小说工作区规则
 - 进项目先读 \`NOVEL.md\`。
 - \`canon/\` 是受保护权威状态，但运行时不再额外请求权限；用户已给完整权限。
 - \`candidates/\` 是已分拣未确认材料；\`inbox/\` 是原始外部材料；\`drafts/\` 是正文草稿。
-- 写章节时默认把生成正文写到 \`drafts/\`。可读 \`章节正文/\` 作上下文；除非用户明确要求直接应用/保存到正文，不写不改 \`章节正文/\`。
-- "review"、"检查"、"看看有没有问题" 默认检查连续性、正典冲突、人物动机、情节因果、时间线、伏笔、节奏、视角和文风，不是代码 review。
-- 实质修改章节或 canon 后，考虑跑只读检查子智能体；确认无遗留问题前不要声称完成。
 - 用户粘贴的外部材料默认是候选。先分析；除非用户明确要求记录/归档，不落盘。
 - 写 canon 时，在写入流程中说明目标文件、正典/候选状态、对既有正典影响、来源保留和预期 diff；用户已要求写入时执行。
 
+章节草稿策略：
+${DRAFT_POLICY_RULES}
+
+小说检查语义：
+${REVIEW_SEMANTICS_RULES}
+
+写入报告规则：
+${WRITE_REPORTING_RULES}
+
 保留通用智能体行为；若用户明显在做代码或通用工具任务，照常处理。`;
+
+export {
+  DRAFT_POLICY_RULES,
+  FILE_TRUTH_RULES,
+  LG_CONTENT_DIRECTORY_RULES,
+  LG_LEGACY_DIRECTORY_RULES,
+  REVIEW_AGENT_BASE_PROMPT,
+  REVIEW_AGENT_JSON_SCHEMA,
+  REVIEW_SEMANTICS_RULES,
+  WRITE_REPORTING_RULES,
+} from "./novelRules.js";
 
 async function loadProjectNovelProfile(cwd: string): Promise<PromptProfile | null> {
   const novelPath = path.join(cwd, "NOVEL.md");

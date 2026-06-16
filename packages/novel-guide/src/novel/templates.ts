@@ -5,6 +5,10 @@ import {
   WORKSPACE_OUTPUT_STYLES_DIR,
   WORKSPACE_SKILLS_DIR,
 } from "../workspace/layout.js";
+import {
+  REVIEW_AGENT_BASE_PROMPT,
+  REVIEW_AGENT_JSON_SCHEMA,
+} from "../prompts/novelRules.js";
 
 export const NOVEL_DIRECTORIES = [
   WORKSPACE_CONFIG_DIR,
@@ -232,24 +236,11 @@ model: inherit
 
 你是小说连续性审查员。你的工作像跑 linter：枚举客观、可验证的连续性问题，给证据，不做主观文学评价，不改文件。
 
-检查：逾期 open 伏笔、时间线排序违例、同一人物同时出现在不同地点、人物关系反向缺失、POV 疑似越界。
+${REVIEW_AGENT_BASE_PROMPT}
 
-必须返回 JSON-in-markdown：
-\`\`\`json
-{
-  "summary": "一句话结论",
-  "issues": [
-    {
-      "type": "continuity|timeline|foreshadowing|relationship|pov",
-      "severity": "low|medium|high",
-      "message": "问题描述",
-      "evidence": [{"path": "文件路径", "line": 1, "excerpt": "证据摘录"}],
-      "suggestion": "建议"
-    }
-  ],
-  "nextActions": ["下一步建议"]
-}
-\`\`\`
+专长维度：逾期 open 伏笔、时间线排序违例、同一人物同时出现在不同地点、人物关系反向缺失、POV 疑似越界。issues[].type 使用 continuity|timeline|foreshadowing|relationship|pov。
+
+${REVIEW_AGENT_JSON_SCHEMA}
 `;
 
 export const CANON_CONFLICT_AGENT_MD = `---
@@ -261,7 +252,11 @@ model: inherit
 
 你是设定冲突审查员。给定待审内容和现有 canon，找出冲突、重复、可合并点与全新内容。只读、只报告。
 
-必须返回 JSON-in-markdown，schema 同 continuity-checker；issues[].type 使用 canon_conflict|duplicate|merge_candidate|new_fact。
+${REVIEW_AGENT_BASE_PROMPT}
+
+专长维度：正典冲突、重复设定、可合并候选、全新事实。issues[].type 使用 canon_conflict|duplicate|merge_candidate|new_fact。
+
+${REVIEW_AGENT_JSON_SCHEMA}
 `;
 
 export const PACING_AGENT_MD = `---
@@ -273,7 +268,11 @@ model: inherit
 
 你是网文节奏审查员。只检查章节工程质量：章节目标是否明确、信息差是否推进、留钩是否有效、情绪曲线是否有起伏、爽点是否兑现或铺垫。
 
-必须返回 JSON-in-markdown，schema 同 continuity-checker；issues[].type 使用 pacing|hook|information_gap|emotion_curve|payoff。
+${REVIEW_AGENT_BASE_PROMPT}
+
+专长维度：章节目标、信息差推进、留钩、情绪曲线、爽点兑现或铺垫。issues[].type 使用 pacing|hook|information_gap|emotion_curve|payoff。
+
+${REVIEW_AGENT_JSON_SCHEMA}
 `;
 
 export const VOICE_AGENT_MD = `---
@@ -285,7 +284,11 @@ model: inherit
 
 你是文风一致性审查员。对照 NOVEL.md、创作指南和已有正文，检查叙事人称、视角边界、语气、句式密度、专名写法是否漂移。
 
-必须返回 JSON-in-markdown，schema 同 continuity-checker；issues[].type 使用 voice|style|pov|terminology。
+${REVIEW_AGENT_BASE_PROMPT}
+
+专长维度：叙事人称、视角边界、语气、句式密度、专名写法。issues[].type 使用 voice|style|pov|terminology。
+
+${REVIEW_AGENT_JSON_SCHEMA}
 `;
 
 export const CHAPTER_DELTA_AGENT_MD = `---
