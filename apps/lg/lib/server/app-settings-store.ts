@@ -32,6 +32,7 @@ import {
   type AppSettingsPayload,
   type UpdateAppSettingsInput,
 } from "@/lib/app-settings"
+import type { BillingPricing } from "@/lib/billing"
 import { getDataRoot } from "@/lib/server/paths"
 import { decryptSecret, encryptSecret, maskSecret } from "@/lib/server/secret-crypto"
 import {
@@ -75,6 +76,7 @@ type StoredAppSettings = {
 
 export type EffectiveOpenAICompatibleConfig = OpenAICompatibleConfig & {
   paymentSource: AppPaymentSource
+  pricing?: BillingPricing
 }
 
 function appSettingsPath(): string {
@@ -327,6 +329,7 @@ function getPlatformProviderConfig(): EffectiveOpenAICompatibleConfig | null {
     apiKey: platformConfig.apiKey,
     baseUrl: platformConfig.baseUrl,
     model: platformConfig.model,
+    pricing: platformConfig.pricing,
   }
 }
 

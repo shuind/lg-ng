@@ -91,13 +91,18 @@ function formatActivePlatformSource(
   return "无"
 }
 
-function defaultPlatformDraft() {
+function defaultPlatformDraft(pricing?: BillingPricing) {
   return {
     id: "",
     label: "DeepSeek 官方",
     provider: "deepseek",
     baseUrl: "https://api.deepseek.com",
     modelId: "deepseek-v4-flash",
+    pricing: createBillingPricingDraft(pricing ?? {
+      promptCacheHitPricePerMillionCny: 0,
+      promptCacheMissPricePerMillionCny: 0,
+      outputPricePerMillionCny: 0,
+    }),
     apiKey: "",
     setActive: true,
   }
@@ -110,6 +115,7 @@ function platformDraftFromProvider(provider: BillingPlatformProvider) {
     provider: provider.provider,
     baseUrl: provider.baseUrl,
     modelId: provider.modelId,
+    pricing: createBillingPricingDraft(provider.pricing),
     apiKey: "",
     setActive: true,
   }
@@ -404,6 +410,14 @@ function createBillingPricingDraft(pricing: BillingPricing): BillingPricing {
   }
 }
 
+function formatPricingSummary(pricing: BillingPricing): string {
+  return [
+    `缓存 ${formatMoney(pricing.promptCacheHitPricePerMillionCny)}`,
+    `读入 ${formatMoney(pricing.promptCacheMissPricePerMillionCny)}`,
+    `输出 ${formatMoney(pricing.outputPricePerMillionCny)}`,
+  ].join(" / ")
+}
+
 function getInviteSlotCount(invites: AdminInviteOverview[]): number {
   return invites
     .filter((invite) => invite.configured)
@@ -521,10 +535,11 @@ export function AdminPanel() {
         provider: platformDraft.provider,
         baseUrl: platformDraft.baseUrl,
         modelId: platformDraft.modelId,
+        pricing: platformDraft.pricing,
         apiKey: platformDraft.apiKey || undefined,
         setActive: platformDraft.setActive,
       })
-      setPlatformDraft(defaultPlatformDraft())
+      setPlatformDraft(defaultPlatformDraft(billingPricingDraft ?? undefined))
       setPlatformKeyMessage("平台模型配置已保存。")
       await loadOverview(true)
     } catch (err) {
@@ -563,7 +578,7 @@ export function AdminPanel() {
     setPlatformKeyMessage(null)
     try {
       await clearAdminPlatformKey({ id: providerId })
-      if (platformDraft.id === providerId) setPlatformDraft(defaultPlatformDraft())
+      if (platformDraft.id === providerId) setPlatformDraft(defaultPlatformDraft(billingPricingDraft ?? undefined))
       setPlatformKeyMessage("平台模型配置已删除。")
       await loadOverview(true)
     } catch (err) {
@@ -585,6 +600,7 @@ export function AdminPanel() {
         provider: provider.provider,
         baseUrl: provider.baseUrl,
         modelId: provider.modelId,
+        pricing: provider.pricing,
         setActive: true,
       })
       setPlatformKeyMessage("余额通道已切换。")
@@ -687,6 +703,16 @@ export function AdminPanel() {
     value: ReturnType<typeof defaultPlatformDraft>[K],
   ) {
     setPlatformDraft((current) => ({ ...current, [key]: value }))
+  }
+
+  function updatePlatformDraftPricing<K extends keyof BillingPricing>(
+    key: K,
+    value: BillingPricing[K],
+  ) {
+    setPlatformDraft((current) => ({
+      ...current,
+      pricing: { ...current.pricing, [key]: value },
+    }))
   }
 
   useEffect(() => {
@@ -808,7 +834,7 @@ export function AdminPanel() {
           <div>
             <h2 className="text-sm font-semibold tracking-normal">平台余额</h2>
             <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
-              管理全局余额开关、平台模型配置、单价和用户余额调整。
+              管理余额开关、平台模型配置、配置内单价和用户余额调整；余额扣费按当前启用配置的价格计算。
             </p>
           </div>
           <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">
@@ -844,22 +870,25 @@ export function AdminPanel() {
               />
               启用平台余额调用
             </label>
+            <p className="text-[12px] leading-relaxed text-muted-foreground">
+              下方价格仅作为新建平台配置和旧配置迁移的默认值；每个模型配置可单独设置价格。
+            </p>
 
             <div className="grid gap-3 md:grid-cols-3">
               <MoneyNumberInput
-                label="缓存命中输入单价"
+                label="默认缓存命中单价"
                 value={billingPricingDraft.promptCacheHitPricePerMillionCny}
                 suffix="CNY / 1M"
                 onChange={(value) => updateBillingPricingDraft("promptCacheHitPricePerMillionCny", value)}
               />
               <MoneyNumberInput
-                label="读入输入单价"
+                label="默认读入单价"
                 value={billingPricingDraft.promptCacheMissPricePerMillionCny}
                 suffix="CNY / 1M"
                 onChange={(value) => updateBillingPricingDraft("promptCacheMissPricePerMillionCny", value)}
               />
               <MoneyNumberInput
-                label="输出 token 单价"
+                label="默认输出单价"
                 value={billingPricingDraft.outputPricePerMillionCny}
                 suffix="CNY / 1M"
                 onChange={(value) => updateBillingPricingDraft("outputPricePerMillionCny", value)}
@@ -869,7 +898,7 @@ export function AdminPanel() {
             <div className="flex flex-wrap items-center gap-3">
               <Button type="submit" size="sm" disabled={!billingSettingsCanSave}>
                 <Save className="h-4 w-4" />
-                {billingSettingsSaving ? "保存中..." : "保存余额设置"}
+                {billingSettingsSaving ? "保存中..." : "保存余额开关/默认价格"}
               </Button>
               {billingSettingsMessage ? <span className="text-[12px] text-emerald-700 dark:text-emerald-300">{billingSettingsMessage}</span> : null}
               {billingSettingsError ? <span className="text-[12px] text-destructive">{billingSettingsError}</span> : null}
@@ -880,7 +909,7 @@ export function AdminPanel() {
         <div className="mt-5 space-y-4 border-t border-border/60 pt-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-[13px] font-medium text-foreground">平台模型配置</h3>
-            <Button type="button" size="sm" variant="outline" onClick={() => setPlatformDraft(defaultPlatformDraft())}>
+            <Button type="button" size="sm" variant="outline" onClick={() => setPlatformDraft(defaultPlatformDraft(billingPricingDraft ?? undefined))}>
               <Plus className="h-4 w-4" />
               新增配置
             </Button>
@@ -910,6 +939,9 @@ export function AdminPanel() {
                       {provider.provider} / {provider.modelId}
                     </div>
                     <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{provider.baseUrl}</div>
+                    <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                      价格 CNY / 1M：{formatPricingSummary(provider.pricing)}
+                    </div>
                   </div>
                   <div className="flex flex-wrap gap-2 md:justify-end">
                     <Button
@@ -982,6 +1014,26 @@ export function AdminPanel() {
                 placeholder={platformDraft.id ? "留空则不更新 Key" : "sk-..."}
               />
             </label>
+            <div className="grid gap-2 md:grid-cols-3">
+              <MoneyNumberInput
+                label="缓存命中输入单价"
+                value={platformDraft.pricing.promptCacheHitPricePerMillionCny}
+                suffix="CNY / 1M"
+                onChange={(value) => updatePlatformDraftPricing("promptCacheHitPricePerMillionCny", value)}
+              />
+              <MoneyNumberInput
+                label="读入输入单价"
+                value={platformDraft.pricing.promptCacheMissPricePerMillionCny}
+                suffix="CNY / 1M"
+                onChange={(value) => updatePlatformDraftPricing("promptCacheMissPricePerMillionCny", value)}
+              />
+              <MoneyNumberInput
+                label="输出 token 单价"
+                value={platformDraft.pricing.outputPricePerMillionCny}
+                suffix="CNY / 1M"
+                onChange={(value) => updatePlatformDraftPricing("outputPricePerMillionCny", value)}
+              />
+            </div>
             <label className="flex items-center gap-2 text-[13px]">
               <input
                 type="checkbox"

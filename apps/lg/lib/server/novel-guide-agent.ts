@@ -756,6 +756,7 @@ export async function runNovelGuideAgent(input: {
     usage: result.usage,
     feature: "agent",
     paymentSource: config.paymentSource,
+    pricing: config.pricing,
   })
 
   return {
@@ -876,6 +877,7 @@ export async function* runNovelGuideAgentStream(input: {
       usage: event.result.usage,
       feature: "agent_stream",
       paymentSource: config.paymentSource,
+      pricing: config.pricing,
     })
     yield {
       type: "done",
@@ -1014,6 +1016,7 @@ export async function runNovelGuideReview(input: {
     usage,
     feature: "review",
     paymentSource: config.paymentSource,
+    pricing: config.pricing,
   })
 
   return {

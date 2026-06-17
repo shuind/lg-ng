@@ -48,6 +48,7 @@ export interface BillingPlatformProvider {
   protocol: BillingPlatformProviderProtocol
   baseUrl: string
   modelId: string
+  pricing: BillingPricing
   configured: boolean
   keyPreview: string | null
   keyUpdatedAt: string | null
@@ -68,6 +69,7 @@ export interface BillingPlatformKeyStatus {
 
 export interface BillingUsageDetails {
   paymentSource: PaymentSource
+  pricing?: BillingPricing
   promptTokens: number
   promptCacheHitTokens: number
   promptCacheMissTokens: number

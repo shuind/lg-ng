@@ -53,6 +53,7 @@ export async function callChatCompletion(
     usage: response.usage,
     feature: options?.feature ?? "chat_completion",
     paymentSource: config.paymentSource,
+    pricing: config.pricing,
   })
   await recordApiCallUsage({
     provider: config.provider,

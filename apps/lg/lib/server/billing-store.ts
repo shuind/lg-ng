@@ -76,6 +76,7 @@ type StoredPlatformProvider = {
   protocol: BillingPlatformProviderProtocol
   baseUrl: string
   modelId: string
+  pricing: BillingPricing
   apiKeyEncrypted?: string
   keyPreview?: string
   keyUpdatedAt?: string
@@ -91,6 +92,7 @@ export type EffectivePlatformBillingConfig = {
   apiKey: string
   baseUrl: string
   model: string
+  pricing: BillingPricing
 }
 
 export type PlatformBillingProviderInput = {
@@ -99,6 +101,7 @@ export type PlatformBillingProviderInput = {
   provider?: unknown
   baseUrl?: unknown
   modelId?: unknown
+  pricing?: unknown
   apiKey?: unknown
   setActive?: unknown
 }
@@ -275,6 +278,7 @@ function defaultDeepSeekPlatformProvider(input: {
   keyPreview?: string
   keyUpdatedAt?: string
   sourceUpdatedAt?: string
+  pricing?: BillingPricing
 }): StoredPlatformProvider {
   const updatedAt = input.sourceUpdatedAt ?? input.keyUpdatedAt ?? DEFAULT_UPDATED_AT
   return {
@@ -284,6 +288,7 @@ function defaultDeepSeekPlatformProvider(input: {
     protocol: "openai-compatible",
     baseUrl: defaultPlatformBaseUrl(),
     modelId: defaultPlatformModel(),
+    pricing: normalizePricing(input.pricing),
     apiKeyEncrypted: input.apiKeyEncrypted,
     keyPreview: input.keyPreview,
     keyUpdatedAt: input.keyUpdatedAt,
@@ -292,7 +297,11 @@ function defaultDeepSeekPlatformProvider(input: {
   }
 }
 
-function normalizeStoredPlatformProvider(data: unknown, fallbackUpdatedAt = DEFAULT_UPDATED_AT): StoredPlatformProvider | null {
+function normalizeStoredPlatformProvider(
+  data: unknown,
+  fallbackUpdatedAt = DEFAULT_UPDATED_AT,
+  fallbackPricing = pricingFromLegacyBalance(),
+): StoredPlatformProvider | null {
   if (!data || typeof data !== "object" || Array.isArray(data)) return null
   const raw = data as Partial<StoredPlatformProvider>
   const id = stringOrEmpty(raw.id)
@@ -308,6 +317,7 @@ function normalizeStoredPlatformProvider(data: unknown, fallbackUpdatedAt = DEFA
     protocol: raw.protocol === "openai-compatible" ? "openai-compatible" : "openai-compatible",
     baseUrl,
     modelId,
+    pricing: normalizePricing(raw.pricing, fallbackPricing),
     apiKeyEncrypted: typeof raw.apiKeyEncrypted === "string" && raw.apiKeyEncrypted ? raw.apiKeyEncrypted : undefined,
     keyPreview: typeof raw.keyPreview === "string" && raw.keyPreview ? raw.keyPreview : undefined,
     keyUpdatedAt: typeof raw.keyUpdatedAt === "string" ? raw.keyUpdatedAt : undefined,
@@ -316,11 +326,15 @@ function normalizeStoredPlatformProvider(data: unknown, fallbackUpdatedAt = DEFA
   }
 }
 
-function normalizePlatformProviders(data: unknown, fallbackUpdatedAt = DEFAULT_UPDATED_AT): StoredPlatformProvider[] {
+function normalizePlatformProviders(
+  data: unknown,
+  fallbackUpdatedAt = DEFAULT_UPDATED_AT,
+  fallbackPricing = pricingFromLegacyBalance(),
+): StoredPlatformProvider[] {
   if (!Array.isArray(data)) return []
   const byId = new Map<string, StoredPlatformProvider>()
   for (const item of data) {
-    const provider = normalizeStoredPlatformProvider(item, fallbackUpdatedAt)
+    const provider = normalizeStoredPlatformProvider(item, fallbackUpdatedAt, fallbackPricing)
     if (provider) byId.set(provider.id, provider)
   }
   return [...byId.values()]
@@ -329,7 +343,8 @@ function normalizePlatformProviders(data: unknown, fallbackUpdatedAt = DEFAULT_U
 function normalizePlatformLlmSettings(value: unknown): StoredPlatformLlmSettings {
   const raw = value && typeof value === "object" ? value as Partial<StoredPlatformLlmSettings> : {}
   const updatedAt = typeof raw.updatedAt === "string" ? raw.updatedAt : DEFAULT_UPDATED_AT
-  const providers = normalizePlatformProviders(raw.providers, updatedAt)
+  const fallbackPricing = readBillingSettingsSyncRaw().pricing
+  const providers = normalizePlatformProviders(raw.providers, updatedAt, fallbackPricing)
 
   if (typeof raw.deepSeekApiKeyEncrypted === "string" && raw.deepSeekApiKeyEncrypted) {
     const legacy = defaultDeepSeekPlatformProvider({
@@ -337,6 +352,7 @@ function normalizePlatformLlmSettings(value: unknown): StoredPlatformLlmSettings
       keyPreview: typeof raw.deepSeekKeyPreview === "string" ? raw.deepSeekKeyPreview : undefined,
       keyUpdatedAt: typeof raw.deepSeekKeyUpdatedAt === "string" ? raw.deepSeekKeyUpdatedAt : undefined,
       sourceUpdatedAt: updatedAt,
+      pricing: fallbackPricing,
     })
     if (!providers.some((provider) => provider.id === legacy.id)) providers.unshift(legacy)
   }
@@ -377,6 +393,7 @@ function getEnvironmentPlatformProvider(): EffectivePlatformBillingConfig | null
     apiKey,
     baseUrl: defaultPlatformBaseUrl(),
     model: defaultPlatformModel(),
+    pricing: readBillingSettingsSyncRaw().pricing,
   }
 }
 
@@ -391,6 +408,7 @@ function decryptStoredPlatformProvider(provider: StoredPlatformProvider | undefi
       apiKey: decryptSecret(provider.apiKeyEncrypted),
       baseUrl: provider.baseUrl,
       model: provider.modelId,
+      pricing: provider.pricing,
     }
   } catch (error) {
     console.error("[billing-store] Failed to decrypt platform API key:", error)
@@ -410,6 +428,7 @@ function publicPlatformProvider(provider: StoredPlatformProvider, source: "admin
     protocol: provider.protocol,
     baseUrl: provider.baseUrl,
     modelId: provider.modelId,
+    pricing: provider.pricing,
     configured: Boolean(provider.apiKeyEncrypted),
     keyPreview: provider.keyPreview ?? null,
     keyUpdatedAt: provider.keyUpdatedAt ?? null,
@@ -427,6 +446,7 @@ function environmentPlatformProviderStatus(config: EffectivePlatformBillingConfi
     protocol: config.protocol,
     baseUrl: config.baseUrl,
     modelId: config.model,
+    pricing: config.pricing,
     configured: true,
     keyPreview: null,
     keyUpdatedAt: null,
@@ -642,6 +662,7 @@ function parseBillingEntryLine(line: string): BillingLedgerEntry | null {
       amountCny: normalizeMoney(raw.amountCny, 0),
       balanceAfterCny: typeof raw.balanceAfterCny === "number" ? normalizeMoney(raw.balanceAfterCny, 0) : null,
       paymentSource,
+      pricing: raw.pricing ? normalizePricing(raw.pricing) : undefined,
       provider: typeof raw.provider === "string" ? raw.provider : undefined,
       model: typeof raw.model === "string" ? raw.model : undefined,
       feature: typeof raw.feature === "string" ? raw.feature : undefined,
@@ -757,6 +778,7 @@ export async function savePlatformBillingProvider(input: PlatformBillingProvider
     if (!existing && !apiKey) throw new Error("missing_api_key")
     const now = new Date().toISOString()
     const id = existing?.id ?? (requestedId || createProviderId())
+    const pricing = normalizePricing(input.pricing, existing?.pricing ?? readBillingSettingsSyncRaw().pricing)
     const nextProvider: StoredPlatformProvider = {
       id,
       label,
@@ -764,6 +786,7 @@ export async function savePlatformBillingProvider(input: PlatformBillingProvider
       protocol: "openai-compatible",
       baseUrl,
       modelId,
+      pricing,
       apiKeyEncrypted: apiKey ? encryptSecret(apiKey) : existing?.apiKeyEncrypted,
       keyPreview: apiKey ? maskSecret(apiKey) : existing?.keyPreview,
       keyUpdatedAt: apiKey ? now : existing?.keyUpdatedAt,
@@ -793,6 +816,7 @@ export async function savePlatformBillingApiKey(apiKeyInput: string): Promise<Bi
     provider: "deepseek",
     baseUrl: defaultPlatformBaseUrl(),
     modelId: defaultPlatformModel(),
+    pricing: readBillingSettingsSyncRaw().pricing,
     apiKey: apiKeyInput,
     setActive: true,
   })
@@ -832,13 +856,13 @@ function commissionRateForSettings(settings: BillingSettings): number {
   return 0
 }
 
-export function estimateBillingCostCny(settings: BillingSettings, usage: TokenUsage): number {
+export function estimateBillingCostCny(settings: BillingSettings, usage: TokenUsage, pricingOverride?: BillingPricing): number {
   const promptCacheHitTokens = normalizeTokenCount(usage.promptCacheHitTokens)
   const promptCacheMissTokens = normalizeTokenCount(
     usage.promptCacheMissTokens ?? Math.max(0, normalizeTokenCount(usage.promptTokens) - promptCacheHitTokens),
   )
   const completionTokens = normalizeTokenCount(usage.completionTokens)
-  const pricing = settings.pricing
+  const pricing = pricingOverride ?? settings.pricing
   const cost = (promptCacheHitTokens / 1_000_000) * pricing.promptCacheHitPricePerMillionCny +
     (promptCacheMissTokens / 1_000_000) * pricing.promptCacheMissPricePerMillionCny +
     (completionTokens / 1_000_000) * pricing.outputPricePerMillionCny
@@ -1052,6 +1076,7 @@ function buildUsageDetails(
   usage: TokenUsage,
   paymentSource: PaymentSource,
   balanceAfterCny: number | null,
+  pricingOverride?: BillingPricing,
 ): BillingUsageDetails {
   const promptTokens = normalizeTokenCount(usage.promptTokens)
   const promptCacheHitTokens = normalizeTokenCount(usage.promptCacheHitTokens)
@@ -1060,13 +1085,14 @@ function buildUsageDetails(
   )
   const completionTokens = normalizeTokenCount(usage.completionTokens)
   const totalTokens = normalizeTokenCount(usage.totalTokens || promptTokens + completionTokens)
+  const appliedPricing = pricingOverride ?? settings.pricing
   const estimatedCostCny = estimateBillingCostCny(settings, {
     promptTokens,
     promptCacheHitTokens,
     promptCacheMissTokens,
     completionTokens,
     totalTokens,
-  })
+  }, appliedPricing)
   const commissionAmountCny = paymentSource === "balance"
     ? normalizeNonNegativeMoney(estimatedCostCny * commissionRateForSettings(settings), 0)
     : 0
@@ -1076,6 +1102,7 @@ function buildUsageDetails(
 
   return {
     paymentSource,
+    pricing: appliedPricing,
     promptTokens,
     promptCacheHitTokens,
     promptCacheMissTokens,
@@ -1095,6 +1122,7 @@ export async function recordBillingUsage(input: {
   usage: TokenUsage
   feature: string
   paymentSource: PaymentSource
+  pricing?: BillingPricing
 }): Promise<BillingLedgerEntry | null> {
   const userId = input.userId ?? getCurrentUserId()
   if (!userId) return null
@@ -1102,7 +1130,7 @@ export async function recordBillingUsage(input: {
   return withBillingLock(async () => {
     const settings = readBillingSettingsSyncRaw()
     const current = aggregateUserSummary(userId, readBillingEntriesSync(), settings)
-    const provisional = buildUsageDetails(settings, input.usage, input.paymentSource, null)
+    const provisional = buildUsageDetails(settings, input.usage, input.paymentSource, null, input.pricing)
     const balanceAfterCny = input.paymentSource === "balance"
       ? normalizeMoney(current.balanceCny - provisional.chargedAmountCny, 0)
       : current.balanceCny

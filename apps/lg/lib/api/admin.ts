@@ -1,6 +1,7 @@
 import type {
   BillingAdminSummary,
   BillingPlatformKeyStatus,
+  BillingPricing,
   BillingSettingsUpdateInput,
   BillingUserSummary,
 } from "@/lib/billing"
@@ -124,6 +125,7 @@ export async function saveAdminPlatformKey(input: {
   provider: string
   baseUrl: string
   modelId: string
+  pricing: BillingPricing
   apiKey?: string
   setActive?: boolean
 }): Promise<BillingPlatformKeyStatus> {
