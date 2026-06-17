@@ -52,6 +52,7 @@ export interface EngineConfig {
   maxLoops?: number;
   readonlyOnly?: boolean;
   proposalOnly?: boolean;
+  toolsEnabled?: boolean;
   contextBudgetTokens?: number;
   compactionTriggerRatio?: number;
   recentMessageCount?: number;
@@ -163,7 +164,9 @@ export class AgentEngine {
     this.sessionId = config.sessionId ?? createSessionId();
     this.messages = stripRuntimeContextMessages(config.initialMessages ?? []);
     this.compaction = config.initialCompaction;
-    this.tools = getTools({ readonlyOnly: config.readonlyOnly, proposalOnly: config.proposalOnly });
+    this.tools = config.toolsEnabled === false
+      ? []
+      : getTools({ readonlyOnly: config.readonlyOnly, proposalOnly: config.proposalOnly });
   }
 
   getSessionId(): string {
@@ -219,7 +222,7 @@ export class AgentEngine {
     ]);
     const skillSummary = skills
       .filter((skill) => !skill.disableModelInvocation)
-      .map((skill) => `- ${skill.name}: ${skill.description}${skill.whenToUse ? `；何时用：${skill.whenToUse}` : ""}`)
+      .map((skill) => `- ${skill.name}: ${skill.description}${skill.whenToUse ? ` -> ${skill.whenToUse}` : ""}`)
       .join("\n");
     const agentSummary = agents
       .map((agent) => `- ${agent.name}: ${agent.description}`)
@@ -227,7 +230,7 @@ export class AgentEngine {
     return [
       PROJECT_CONTEXT_PREFIX,
       `工作区：${this.config.cwd}`,
-      "项目事实以文件为准。下方只是导航索引，不是完整真相；涉及具体人物、设定、章节、正文、伏笔或规则时，先用 read_file 读取对应路径再判断或修改。",
+      "下方只是导航索引，不是内容事实；需要项目事实时读取对应文件。",
       memoryCard,
       skillSummary ? `可用技能：\n${skillSummary}` : "可用技能：无",
       agentSummary ? `可用子智能体：\n${agentSummary}` : "可用子智能体：无",
@@ -794,6 +797,22 @@ async function readWorkspaceFile(cwd: string, relativePath: string): Promise<str
   }
 }
 
+function stripPlaceholderLines(content: string): string {
+  return content
+    .split(/\r?\n/)
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return true;
+      if (/TODO/i.test(trimmed)) return false;
+      // 去掉模板占位符：空列表项、空 checkbox、只有 ?? 的行
+      const body = trimmed.replace(/^[-*]\s*/, "").replace(/^\[[ xX]\]\s*/, "").trim();
+      if (body === "" || /^[?？]+$/.test(body)) return false;
+      return true;
+    })
+    .join("\n")
+    .trim();
+}
+
 function extractMarkdownSection(markdown: string, heading: string, maxChars: number): string {
   const lines = markdown.split(/\r?\n/);
   const start = lines.findIndex((line) => line.trim() === `## ${heading}`);
@@ -805,7 +824,7 @@ function extractMarkdownSection(markdown: string, heading: string, maxChars: num
       break;
     }
   }
-  const content = lines.slice(start + 1, end).join("\n").trim();
+  const content = stripPlaceholderLines(lines.slice(start + 1, end).join("\n"));
   if (!content) return "";
   return `## ${heading}\n${content.slice(0, maxChars)}`;
 }
@@ -861,46 +880,15 @@ async function summarizeLegacyLgMaterials(cwd: string): Promise<string> {
   for (const file of files.sort((a, b) => a.localeCompare(b, "zh-CN")).slice(0, 80)) {
     const raw = await readWorkspaceFile(cwd, file);
     if (!raw) continue;
-    const summary = summarizeMaterialFile(file, raw);
-    if (summary) lines.push(`- ${summary} | path=${file}`);
+    const title = extractMaterialTitle(file, raw);
+    lines.push(`- ${title} | path=${file}`);
   }
-  return lines.length ? `LG 旧素材索引：\n${lines.join("\n")}` : "";
+  return lines.length ? `LG 旧素材路径索引：\n${lines.join("\n")}` : "";
 }
 
-function summarizeMaterialFile(file: string, content: string): string {
-  const title = content.match(/^#\s+(.+)$/m)?.[1]?.trim()
+function extractMaterialTitle(file: string, content: string): string {
+  return content.match(/^#\s+(.+)$/m)?.[1]?.trim()
     || file.replace(/^.*[\\/]/, "").replace(/\.[^.]+$/i, "");
-  const excerpt = content
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith("#") && !line.startsWith("---"))
-    .filter((line) => !isPlaceholderLine(line))
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .slice(0, 140);
-  return excerpt ? `${title}: ${excerpt}` : title;
-}
-
-function isPlaceholderLine(line: string): boolean {
-  return (
-    line.includes("TODO") ||
-    line.includes("待补充") ||
-    line.includes("请在此写下") ||
-    line.includes("记录主线剧情") ||
-    line.includes("记录各支线剧情") ||
-    line.includes("记录所有已埋设") ||
-    line.includes("记录推动剧情") ||
-    line.includes("按故事内时间记录") ||
-    line.includes("追踪各角色") ||
-    line.includes("记录当前章节") ||
-    line.includes("记录各章节") ||
-    line.includes("追踪读者与角色") ||
-    line.includes("记录对读者") ||
-    line.includes("记录已承诺") ||
-    line.includes("记录写作中") ||
-    line.includes("记录本作品类型") ||
-    line.includes("记录写作质量")
-  );
 }
 
 function extractAliases(content: string): string[] {

@@ -26,7 +26,7 @@ export const REVIEW_SEMANTICS_RULES = [
 
 export const WRITE_REPORTING_RULES = [
   "写入前明确目标路径和写入意图。",
-  "写入后报告真实变更、失败工具和产物位置；工具失败时不要声称已完成。",
+  "写入后报告真实变更、失败工具和产物位置。",
 ].join("\n");
 
 export const DRAFT_POLICY_TOOL_HINT = "小说工作区生成章节正文默认使用 drafts/；用户明确要求直存正文时才用 章节正文/。";

@@ -6,6 +6,7 @@ import type {
   ChatCompletionMessageToolCall,
   ChatCompletionTool,
 } from "openai/resources/chat/completions";
+import { recordModelApiDebugLog } from "./apiDebugLog.js";
 
 export type ModelMessage = ChatCompletionMessageParam;
 export type ModelTool = ChatCompletionTool;
@@ -149,24 +150,42 @@ export async function createChatCompletion(input: {
   timeoutMs?: number;
   signal?: AbortSignal;
 }): Promise<ModelResponse> {
-  const response = await input.client.chat.completions.create({
-    model: input.model,
-    messages: input.messages,
-    tools: input.tools,
-    tool_choice: input.tools?.length ? "auto" : undefined,
-    temperature: input.temperature ?? 0.2,
-    max_tokens: input.maxTokens ?? 4096,
-    stream: false,
-  }, {
-    ...(input.timeoutMs ? { timeout: input.timeoutMs } : {}),
-    ...(input.signal ? { signal: input.signal } : {}),
-  }) as ChatCompletion;
-  const usage = response.usage;
-  const normalizedUsage = normalizeUsage(usage);
-  return {
-    message: response.choices[0]?.message ?? { role: "assistant", content: "" },
-    usage: normalizedUsage,
-  };
+  const startedAt = Date.now();
+  const request = buildDebugLogRequest(input, false);
+  try {
+    const response = await input.client.chat.completions.create({
+      model: input.model,
+      messages: input.messages,
+      tools: input.tools,
+      tool_choice: input.tools?.length ? "auto" : undefined,
+      temperature: input.temperature ?? 0.2,
+      max_tokens: input.maxTokens ?? 4096,
+      stream: false,
+    }, {
+      ...(input.timeoutMs ? { timeout: input.timeoutMs } : {}),
+      ...(input.signal ? { signal: input.signal } : {}),
+    }) as ChatCompletion;
+    const usage = response.usage;
+    const normalizedUsage = normalizeUsage(usage);
+    const message = response.choices[0]?.message ?? { role: "assistant", content: "" };
+    await recordModelApiDebugLog({
+      request,
+      response: { message },
+      usage: normalizedUsage,
+      durationMs: Date.now() - startedAt,
+    });
+    return {
+      message,
+      usage: normalizedUsage,
+    };
+  } catch (error) {
+    await recordModelApiDebugLog({
+      request,
+      error,
+      durationMs: Date.now() - startedAt,
+    });
+    throw error;
+  }
 }
 
 type StreamToolCallPart = {
@@ -269,57 +288,94 @@ export async function* createChatCompletionStream(input: {
   timeoutMs?: number;
   signal?: AbortSignal;
 }): AsyncGenerator<ModelStreamEvent> {
-  const response = await createStreamingResponse(input);
-
-  if (!isAsyncIterable(response)) {
-    const completion = response as ChatCompletion;
-    const message = completion.choices[0]?.message ?? { role: "assistant", content: "", refusal: null };
-    const usage = normalizeUsage(completion.usage);
-    const content = typeof message.content === "string" ? message.content : "";
-    if (content) yield { type: "assistant_delta", text: content };
-    if (message.tool_calls?.length) yield { type: "tool_calls_final", toolCalls: message.tool_calls };
-    yield { type: "usage", usage };
-    yield { type: "done", message, usage };
-    return;
-  }
-
-  let content = "";
+  const startedAt = Date.now();
+  const request = buildDebugLogRequest(input, true);
   let usage: ModelUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
-  const toolCallParts = new Map<number, StreamToolCallPart>();
+  try {
+    const response = await createStreamingResponse(input);
 
-  for await (const chunk of response) {
-    if (chunk.usage) {
-      usage = normalizeUsage(chunk.usage);
+    if (!isAsyncIterable(response)) {
+      const completion = response as ChatCompletion;
+      const message = completion.choices[0]?.message ?? { role: "assistant", content: "", refusal: null };
+      usage = normalizeUsage(completion.usage);
+      const content = typeof message.content === "string" ? message.content : "";
+      if (content) yield { type: "assistant_delta", text: content };
+      if (message.tool_calls?.length) yield { type: "tool_calls_final", toolCalls: message.tool_calls };
       yield { type: "usage", usage };
+      await recordModelApiDebugLog({
+        request,
+        response: {
+          message,
+          content,
+          toolCalls: message.tool_calls,
+        },
+        usage,
+        durationMs: Date.now() - startedAt,
+      });
+      yield { type: "done", message, usage };
+      return;
     }
 
-    for (const choice of chunk.choices ?? []) {
-      const delta = choice.delta;
-      const text = typeof delta?.content === "string" ? delta.content : "";
-      if (text) {
-        content += text;
-        yield { type: "assistant_delta", text };
+    let content = "";
+    let reasoning = "";
+    const toolCallParts = new Map<number, StreamToolCallPart>();
+
+    for await (const chunk of response) {
+      if (chunk.usage) {
+        usage = normalizeUsage(chunk.usage);
+        yield { type: "usage", usage };
       }
 
-      const reasoning = getReasoningDelta(delta);
-      if (reasoning) yield { type: "reasoning_delta", text: reasoning };
+      for (const choice of chunk.choices ?? []) {
+        const delta = choice.delta;
+        const text = typeof delta?.content === "string" ? delta.content : "";
+        if (text) {
+          content += text;
+          yield { type: "assistant_delta", text };
+        }
 
-      for (const toolCall of delta?.tool_calls ?? []) {
-        if (typeof toolCall.index !== "number") continue;
-        mergeToolCallDelta(toolCallParts, toolCall.index, toolCall as StreamToolCallPart);
+        const reasoningDelta = getReasoningDelta(delta);
+        if (reasoningDelta) {
+          reasoning += reasoningDelta;
+          yield { type: "reasoning_delta", text: reasoningDelta };
+        }
+
+        for (const toolCall of delta?.tool_calls ?? []) {
+          if (typeof toolCall.index !== "number") continue;
+          mergeToolCallDelta(toolCallParts, toolCall.index, toolCall as StreamToolCallPart);
+        }
       }
     }
+
+    const toolCalls = finalizeToolCalls(toolCallParts);
+    if (toolCalls.length > 0) yield { type: "tool_calls_final", toolCalls };
+    const message: ChatCompletion["choices"][number]["message"] = {
+      role: "assistant",
+      content,
+      refusal: null,
+      ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+    };
+    await recordModelApiDebugLog({
+      request,
+      response: {
+        message,
+        content,
+        reasoning,
+        toolCalls,
+      },
+      usage,
+      durationMs: Date.now() - startedAt,
+    });
+    yield { type: "done", message, usage };
+  } catch (error) {
+    await recordModelApiDebugLog({
+      request,
+      error,
+      usage,
+      durationMs: Date.now() - startedAt,
+    });
+    throw error;
   }
-
-  const toolCalls = finalizeToolCalls(toolCallParts);
-  if (toolCalls.length > 0) yield { type: "tool_calls_final", toolCalls };
-  const message: ChatCompletion["choices"][number]["message"] = {
-    role: "assistant",
-    content,
-    refusal: null,
-    ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
-  };
-  yield { type: "done", message, usage };
 }
 
 async function createStreamingResponse(input: {
@@ -357,4 +413,23 @@ async function createStreamingResponse(input: {
     }
     return await input.client.chat.completions.create(base, requestOptions);
   }
+}
+
+function buildDebugLogRequest(input: {
+  model: string;
+  messages: ModelMessage[];
+  tools?: ModelTool[];
+  temperature?: number;
+  maxTokens?: number;
+  timeoutMs?: number;
+}, stream: boolean) {
+  return {
+    model: input.model,
+    messages: input.messages,
+    tools: input.tools,
+    temperature: input.temperature ?? 0.2,
+    maxTokens: input.maxTokens ?? 4096,
+    timeoutMs: input.timeoutMs,
+    stream,
+  };
 }

@@ -273,11 +273,11 @@ describe("AgentEngine project context", () => {
       message.content.startsWith("NG_PROJECT_CONTEXT:")
     )?.content;
     const lastUser = modelMessages.at(-1)?.content;
-    expect(projectContext).toContain("LG 旧素材索引");
+    expect(projectContext).toContain("LG 旧素材路径索引");
     expect(projectContext).toContain("GUIDE.md");
-    expect(projectContext).toContain("hundred year storm");
+    expect(projectContext).not.toContain("hundred year storm");
     expect(projectContext).toContain("skills/style.md");
-    expect(projectContext).toContain("chapter endings");
+    expect(projectContext).not.toContain("chapter endings");
     expect(lastUser).toBe("用户请求：\nwrite chapter one");
   });
 

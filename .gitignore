@@ -13,6 +13,7 @@ coverage/
 
 # Local runtime data
 .dev-logs/
+api-calls/
 .lg-data/
 .novel-guide/*
 !.novel-guide/agents/
