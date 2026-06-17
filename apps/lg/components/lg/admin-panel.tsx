@@ -73,20 +73,28 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error && error.message ? error.message : "管理后台数据加载失败"
 }
 
-function formatPlatformKeySource(
+function formatPlatformProviderSource(source: BillingPlatformProvider["source"]): string {
+  return source === "environment" ? "环境变量" : "后台保存"
+}
+
+function formatActivePlatformProvider(provider: BillingPlatformProvider | null): string {
+  if (!provider) return "未配置"
+  return `${provider.label} · ${provider.provider} / ${provider.modelId}`
+}
+
+function formatActivePlatformSource(
   source: AdminOverviewPayload["billing"]["platformKeySource"],
   preview: string | null,
-  activeProvider: BillingPlatformProvider | null,
 ): string {
-  if (source === "environment") return activeProvider ? `${activeProvider.label} · 环境变量` : "环境变量"
-  if (source === "admin") return `${activeProvider?.label ?? "后台保存"} ${preview ?? ""}`.trim()
-  return "未配置"
+  if (source === "environment") return "环境变量"
+  if (source === "admin") return preview ? `后台保存 ${preview}` : "后台保存"
+  return "无"
 }
 
 function defaultPlatformDraft() {
   return {
     id: "",
-    label: "DeepSeek 默认",
+    label: "DeepSeek 官方",
     provider: "deepseek",
     baseUrl: "https://api.deepseek.com",
     modelId: "deepseek-v4-flash",
@@ -579,7 +587,7 @@ export function AdminPanel() {
         modelId: provider.modelId,
         setActive: true,
       })
-      setPlatformKeyMessage("默认余额模型已更新。")
+      setPlatformKeyMessage("余额通道已切换。")
       await loadOverview(true)
     } catch (err) {
       setPlatformKeyError(getErrorMessage(err))
@@ -750,10 +758,10 @@ export function AdminPanel() {
       billingPricingDraft?.promptCacheMissPricePerMillionCny !== overview.billing.settings.pricing.promptCacheMissPricePerMillionCny ||
       billingPricingDraft?.outputPricePerMillionCny !== overview.billing.settings.pricing.outputPricePerMillionCny
     )
-  const platformKeySourceLabel = formatPlatformKeySource(
+  const activePlatformLabel = formatActivePlatformProvider(overview.billing.activePlatformProvider)
+  const activePlatformSourceLabel = formatActivePlatformSource(
     overview.billing.platformKeySource,
     overview.billing.platformKeyPreview,
-    overview.billing.activePlatformProvider,
   )
   const platformDraftExisting = platformDraft.id
     ? overview.billing.platformProviders.find((provider) => provider.id === platformDraft.id)
@@ -813,7 +821,10 @@ export function AdminPanel() {
             {overview.billing.settings.platformEnabled ? "余额通道已开启" : "余额通道已关闭"}
           </StatusPill>
           <StatusPill tone={overview.billing.platformApiKeyConfigured ? "good" : "warning"}>
-            平台模型：{platformKeySourceLabel}
+            当前启用：{activePlatformLabel}
+          </StatusPill>
+          <StatusPill>
+            来源：{activePlatformSourceLabel}
           </StatusPill>
           <StatusPill>总额 {formatMoney(overview.billing.total.balanceCny)} CNY</StatusPill>
           <StatusPill>已用 {formatMoney(overview.billing.total.usedBalanceCny)} CNY</StatusPill>
@@ -891,9 +902,9 @@ export function AdminPanel() {
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-[13px] font-medium text-foreground">{provider.label}</span>
-                      {active ? <StatusPill tone="good">默认余额</StatusPill> : null}
+                      {active ? <StatusPill tone="good">当前启用</StatusPill> : <StatusPill>备用</StatusPill>}
                       <StatusPill tone={provider.configured ? "good" : "warning"}>{provider.configured ? "Key 已配置" : "缺少 Key"}</StatusPill>
-                      <StatusPill>{provider.source === "environment" ? "环境变量" : "后台保存"}</StatusPill>
+                      <StatusPill>来源：{formatPlatformProviderSource(provider.source)}</StatusPill>
                     </div>
                     <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
                       {provider.provider} / {provider.modelId}
@@ -917,7 +928,7 @@ export function AdminPanel() {
                       onClick={() => void activatePlatformProvider(provider)}
                     >
                       {activating ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
-                      {active ? "已默认" : "设为默认"}
+                      {active ? "已启用" : "启用"}
                     </Button>
                     <Button
                       type="button"
@@ -978,7 +989,7 @@ export function AdminPanel() {
                 onChange={(event) => updatePlatformDraft("setActive", event.target.checked)}
                 className="h-4 w-4"
               />
-              保存后设为余额默认模型
+              保存后立即启用为余额通道
             </label>
             <div className="flex flex-wrap gap-2">
               <Button
