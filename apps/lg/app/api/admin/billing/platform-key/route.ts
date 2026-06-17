@@ -1,24 +1,54 @@
 import { NextResponse } from "next/server"
 import { createChatCompletion, createOpenAICompatibleClient } from "novel-guide"
-import { DEFAULT_APP_MODEL_ID } from "@/lib/app-settings"
 import { withAdminRoute } from "@/lib/server/auth-route"
 import {
-  clearPlatformBillingApiKey,
+  deletePlatformBillingProvider,
   getBillingPlatformKeyStatus,
-  getPlatformBillingApiKey,
-  savePlatformBillingApiKey,
+  getPlatformBillingConfig,
+  getPlatformBillingConfigById,
+  savePlatformBillingProvider,
 } from "@/lib/server/billing-store"
 
-function getPlatformTestModel(): string {
-  return process.env.NG_MODEL ?? process.env.DEEPSEEK_MODEL ?? DEFAULT_APP_MODEL_ID
+function readBodyRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
 }
 
-async function testDeepSeekKey(apiKey: string): Promise<{ ok: true; model: string }> {
-  const model = getPlatformTestModel()
+function stringOrEmpty(value: unknown): string {
+  return typeof value === "string" ? value.trim() : ""
+}
+
+async function testPlatformProvider(input: {
+  id?: unknown
+  label?: unknown
+  provider?: unknown
+  baseUrl?: unknown
+  modelId?: unknown
+  apiKey?: unknown
+}): Promise<{ ok: true; model: string; provider: string }> {
+  const requestedId = stringOrEmpty(input.id)
+  const apiKeyDraft = stringOrEmpty(input.apiKey)
+  const hasDraftConfig = Boolean(
+    stringOrEmpty(input.label) ||
+    stringOrEmpty(input.provider) ||
+    stringOrEmpty(input.baseUrl) ||
+    stringOrEmpty(input.modelId)
+  )
+  if (!requestedId && hasDraftConfig && !apiKeyDraft) throw new Error("missing_platform_config")
+
+  const current = requestedId ? getPlatformBillingConfigById(requestedId) : getPlatformBillingConfig()
+  const provider = stringOrEmpty(input.provider) || current?.provider || "deepseek"
+  const apiKey = apiKeyDraft || current?.apiKey || ""
+  const baseUrl = stringOrEmpty(input.baseUrl) || current?.baseUrl || ""
+  const model = stringOrEmpty(input.modelId) || current?.model || ""
+  if (!apiKey || !baseUrl || !model) throw new Error("missing_platform_config")
+
   await createChatCompletion({
     client: createOpenAICompatibleClient({
+      provider,
       apiKey,
-      baseUrl: process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com",
+      baseUrl,
       model,
     }),
     model,
@@ -29,7 +59,7 @@ async function testDeepSeekKey(apiKey: string): Promise<{ ok: true; model: strin
     maxTokens: 8,
     timeoutMs: 20000,
   })
-  return { ok: true, model }
+  return { ok: true, model, provider }
 }
 
 export const GET = withAdminRoute(async () => {
@@ -38,35 +68,54 @@ export const GET = withAdminRoute(async () => {
 
 export const PUT = withAdminRoute(async (request: Request) => {
   try {
-    const rawBody = await request.json().catch(() => ({}))
-    const body = rawBody && typeof rawBody === "object" ? rawBody as Record<string, unknown> : {}
-    const apiKey = typeof body.apiKey === "string" ? body.apiKey : ""
-    return NextResponse.json(await savePlatformBillingApiKey(apiKey))
+    const body = readBodyRecord(await request.json().catch(() => ({})))
+    return NextResponse.json(await savePlatformBillingProvider({
+      id: body.id,
+      label: body.label,
+      provider: body.provider,
+      baseUrl: body.baseUrl,
+      modelId: body.modelId,
+      apiKey: body.apiKey,
+      setActive: body.setActive,
+    }))
   } catch (error) {
     const message = error instanceof Error && error.message === "missing_api_key"
-      ? "请输入平台 API Key"
-      : "Platform API Key 保存失败"
+      ? "新增平台配置需要 API Key"
+      : error instanceof Error && error.message === "invalid_platform_provider"
+        ? "请填写平台名称、供应商、接口地址和模型 ID"
+        : "平台模型配置保存失败"
     return NextResponse.json({ error: message }, { status: 400 })
   }
 })
 
 export const POST = withAdminRoute(async (request: Request) => {
   try {
-    const rawBody = await request.json().catch(() => ({}))
-    const body = rawBody && typeof rawBody === "object" ? rawBody as Record<string, unknown> : {}
-    const candidateKey = typeof body.apiKey === "string" && body.apiKey.trim()
-      ? body.apiKey.trim()
-      : getPlatformBillingApiKey()
-    if (!candidateKey) {
-      return NextResponse.json({ error: "Platform API Key 未配置" }, { status: 400 })
-    }
-    return NextResponse.json(await testDeepSeekKey(candidateKey))
+    const body = readBodyRecord(await request.json().catch(() => ({})))
+    return NextResponse.json(await testPlatformProvider({
+      id: body.id,
+      label: body.label,
+      provider: body.provider,
+      baseUrl: body.baseUrl,
+      modelId: body.modelId,
+      apiKey: body.apiKey,
+    }))
   } catch (error) {
     console.error("[api/admin/billing/platform-key] test error:", error)
-    return NextResponse.json({ error: "Platform API Key 测试失败" }, { status: 400 })
+    const message = error instanceof Error && error.message === "missing_platform_config"
+      ? "平台模型配置不完整"
+      : "平台模型配置测试失败"
+    return NextResponse.json({ error: message }, { status: 400 })
   }
 })
 
-export const DELETE = withAdminRoute(async () => {
-  return NextResponse.json(await clearPlatformBillingApiKey())
+export const DELETE = withAdminRoute(async (request: Request) => {
+  try {
+    const body = readBodyRecord(await request.json().catch(() => ({})))
+    return NextResponse.json(await deletePlatformBillingProvider(body.id))
+  } catch (error) {
+    const message = error instanceof Error && error.message === "missing_platform_provider_id"
+      ? "缺少平台配置 ID"
+      : "平台模型配置删除失败"
+    return NextResponse.json({ error: message }, { status: 400 })
+  }
 })

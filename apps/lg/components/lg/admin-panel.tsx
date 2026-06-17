@@ -34,7 +34,7 @@ import {
   type AdminOverviewPayload,
   type AdminUserOverview,
 } from "@/lib/api"
-import type { BillingPricing, BillingUserSummary } from "@/lib/billing"
+import type { BillingPlatformProvider, BillingPricing, BillingUserSummary } from "@/lib/billing"
 import { cn } from "@/lib/utils"
 
 const DEFAULT_INVITE_MAX_REDEMPTIONS = 10
@@ -73,10 +73,38 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error && error.message ? error.message : "管理后台数据加载失败"
 }
 
-function formatPlatformKeySource(source: AdminOverviewPayload["billing"]["platformKeySource"], preview: string | null): string {
-  if (source === "environment") return "环境变量"
-  if (source === "admin") return `后台保存 ${preview ?? ""}`.trim()
+function formatPlatformKeySource(
+  source: AdminOverviewPayload["billing"]["platformKeySource"],
+  preview: string | null,
+  activeProvider: BillingPlatformProvider | null,
+): string {
+  if (source === "environment") return activeProvider ? `${activeProvider.label} · 环境变量` : "环境变量"
+  if (source === "admin") return `${activeProvider?.label ?? "后台保存"} ${preview ?? ""}`.trim()
   return "未配置"
+}
+
+function defaultPlatformDraft() {
+  return {
+    id: "",
+    label: "DeepSeek 默认",
+    provider: "deepseek",
+    baseUrl: "https://api.deepseek.com",
+    modelId: "deepseek-v4-flash",
+    apiKey: "",
+    setActive: true,
+  }
+}
+
+function platformDraftFromProvider(provider: BillingPlatformProvider) {
+  return {
+    id: provider.id,
+    label: provider.label,
+    provider: provider.provider,
+    baseUrl: provider.baseUrl,
+    modelId: provider.modelId,
+    apiKey: "",
+    setActive: true,
+  }
 }
 
 function SummaryTile({
@@ -402,10 +430,11 @@ export function AdminPanel() {
   const [billingSettingsSaving, setBillingSettingsSaving] = useState(false)
   const [billingSettingsMessage, setBillingSettingsMessage] = useState<string | null>(null)
   const [billingSettingsError, setBillingSettingsError] = useState<string | null>(null)
-  const [platformKeyDraft, setPlatformKeyDraft] = useState("")
+  const [platformDraft, setPlatformDraft] = useState(defaultPlatformDraft)
   const [platformKeySaving, setPlatformKeySaving] = useState(false)
   const [platformKeyTesting, setPlatformKeyTesting] = useState(false)
-  const [platformKeyClearing, setPlatformKeyClearing] = useState(false)
+  const [platformKeyActivatingId, setPlatformKeyActivatingId] = useState<string | null>(null)
+  const [platformKeyClearingId, setPlatformKeyClearingId] = useState<string | null>(null)
   const [platformKeyMessage, setPlatformKeyMessage] = useState<string | null>(null)
   const [platformKeyError, setPlatformKeyError] = useState<string | null>(null)
   const [billingAdjustmentDrafts, setBillingAdjustmentDrafts] = useState<Record<string, string>>({})
@@ -473,15 +502,22 @@ export function AdminPanel() {
   }
 
   async function savePlatformKey() {
-    const apiKey = platformKeyDraft.trim()
-    if (!apiKey || platformKeySaving) return
+    if (platformKeySaving) return
     setPlatformKeySaving(true)
     setPlatformKeyError(null)
     setPlatformKeyMessage(null)
     try {
-      await saveAdminPlatformKey({ apiKey })
-      setPlatformKeyDraft("")
-      setPlatformKeyMessage("Platform API Key 已保存。")
+      await saveAdminPlatformKey({
+        id: platformDraft.id || undefined,
+        label: platformDraft.label,
+        provider: platformDraft.provider,
+        baseUrl: platformDraft.baseUrl,
+        modelId: platformDraft.modelId,
+        apiKey: platformDraft.apiKey || undefined,
+        setActive: platformDraft.setActive,
+      })
+      setPlatformDraft(defaultPlatformDraft())
+      setPlatformKeyMessage("平台模型配置已保存。")
       await loadOverview(true)
     } catch (err) {
       setPlatformKeyError(getErrorMessage(err))
@@ -496,8 +532,15 @@ export function AdminPanel() {
     setPlatformKeyError(null)
     setPlatformKeyMessage(null)
     try {
-      const result = await testAdminPlatformKey(platformKeyDraft.trim() ? { apiKey: platformKeyDraft.trim() } : {})
-      setPlatformKeyMessage(`Platform API Key 测试通过：${result.model}`)
+      const result = await testAdminPlatformKey({
+        id: platformDraft.id || undefined,
+        label: platformDraft.label,
+        provider: platformDraft.provider,
+        baseUrl: platformDraft.baseUrl,
+        modelId: platformDraft.modelId,
+        apiKey: platformDraft.apiKey || undefined,
+      })
+      setPlatformKeyMessage(`平台模型配置测试通过：${result.provider} / ${result.model}`)
     } catch (err) {
       setPlatformKeyError(getErrorMessage(err))
     } finally {
@@ -505,20 +548,43 @@ export function AdminPanel() {
     }
   }
 
-  async function clearPlatformKey() {
-    if (platformKeyClearing) return
-    setPlatformKeyClearing(true)
+  async function clearPlatformKey(providerId: string) {
+    if (platformKeyClearingId) return
+    setPlatformKeyClearingId(providerId)
     setPlatformKeyError(null)
     setPlatformKeyMessage(null)
     try {
-      await clearAdminPlatformKey()
-      setPlatformKeyDraft("")
-      setPlatformKeyMessage("已清除保存的 Platform API Key。")
+      await clearAdminPlatformKey({ id: providerId })
+      if (platformDraft.id === providerId) setPlatformDraft(defaultPlatformDraft())
+      setPlatformKeyMessage("平台模型配置已删除。")
       await loadOverview(true)
     } catch (err) {
       setPlatformKeyError(getErrorMessage(err))
     } finally {
-      setPlatformKeyClearing(false)
+      setPlatformKeyClearingId(null)
+    }
+  }
+
+  async function activatePlatformProvider(provider: BillingPlatformProvider) {
+    if (platformKeyActivatingId || provider.source === "environment") return
+    setPlatformKeyActivatingId(provider.id)
+    setPlatformKeyError(null)
+    setPlatformKeyMessage(null)
+    try {
+      await saveAdminPlatformKey({
+        id: provider.id,
+        label: provider.label,
+        provider: provider.provider,
+        baseUrl: provider.baseUrl,
+        modelId: provider.modelId,
+        setActive: true,
+      })
+      setPlatformKeyMessage("默认余额模型已更新。")
+      await loadOverview(true)
+    } catch (err) {
+      setPlatformKeyError(getErrorMessage(err))
+    } finally {
+      setPlatformKeyActivatingId(null)
     }
   }
 
@@ -608,6 +674,13 @@ export function AdminPanel() {
     setBillingPricingDraft((current) => current ? { ...current, [key]: value } : current)
   }
 
+  function updatePlatformDraft<K extends keyof ReturnType<typeof defaultPlatformDraft>>(
+    key: K,
+    value: ReturnType<typeof defaultPlatformDraft>[K],
+  ) {
+    setPlatformDraft((current) => ({ ...current, [key]: value }))
+  }
+
   useEffect(() => {
     void loadOverview()
   }, [])
@@ -680,7 +753,12 @@ export function AdminPanel() {
   const platformKeySourceLabel = formatPlatformKeySource(
     overview.billing.platformKeySource,
     overview.billing.platformKeyPreview,
+    overview.billing.activePlatformProvider,
   )
+  const platformDraftExisting = platformDraft.id
+    ? overview.billing.platformProviders.find((provider) => provider.id === platformDraft.id)
+    : null
+  const platformDraftCanTest = Boolean(platformDraft.apiKey.trim() || platformDraftExisting?.configured)
 
   return (
     <div className="space-y-6">
@@ -722,7 +800,7 @@ export function AdminPanel() {
           <div>
             <h2 className="text-sm font-semibold tracking-normal">平台余额</h2>
             <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
-              管理全局余额开关、平台 DeepSeek API Key、单价和用户余额调整。
+              管理全局余额开关、平台模型配置、单价和用户余额调整。
             </p>
           </div>
           <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">
@@ -735,7 +813,7 @@ export function AdminPanel() {
             {overview.billing.settings.platformEnabled ? "余额通道已开启" : "余额通道已关闭"}
           </StatusPill>
           <StatusPill tone={overview.billing.platformApiKeyConfigured ? "good" : "warning"}>
-            Platform Key：{platformKeySourceLabel}
+            平台模型：{platformKeySourceLabel}
           </StatusPill>
           <StatusPill>总额 {formatMoney(overview.billing.total.balanceCny)} CNY</StatusPill>
           <StatusPill>已用 {formatMoney(overview.billing.total.usedBalanceCny)} CNY</StatusPill>
@@ -788,42 +866,141 @@ export function AdminPanel() {
           </form>
         ) : null}
 
-        <div className="mt-5 grid gap-3 border-t border-border/60 pt-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-          <label className="block space-y-1.5">
-            <span className="text-[12px] font-medium text-muted-foreground">平台 DeepSeek API Key</span>
-            <Input
-              type="password"
-              autoComplete="off"
-              value={platformKeyDraft}
-              onChange={(event) => setPlatformKeyDraft(event.target.value)}
-              placeholder="sk-..."
-            />
-          </label>
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" size="sm" disabled={!platformKeyDraft.trim() || platformKeySaving} onClick={() => void savePlatformKey()}>
-              <Save className={cn("h-4 w-4", platformKeySaving && "animate-pulse")} />
-              保存 Key
+        <div className="mt-5 space-y-4 border-t border-border/60 pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-[13px] font-medium text-foreground">平台模型配置</h3>
+            <Button type="button" size="sm" variant="outline" onClick={() => setPlatformDraft(defaultPlatformDraft())}>
+              <Plus className="h-4 w-4" />
+              新增配置
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={platformKeyTesting || (!platformKeyDraft.trim() && !overview.billing.platformApiKeyConfigured)}
-              onClick={() => void testPlatformKey()}
-            >
-              <PlugZap className={cn("h-4 w-4", platformKeyTesting && "animate-pulse")} />
-              测试
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              disabled={platformKeyClearing || overview.billing.platformKeySource !== "admin"}
-              onClick={() => void clearPlatformKey()}
-            >
-              <Trash2 className={cn("h-4 w-4", platformKeyClearing && "animate-pulse")} />
-              清除保存 Key
-            </Button>
+          </div>
+
+          <div className="grid gap-2">
+            {overview.billing.platformProviders.length ? overview.billing.platformProviders.map((provider) => {
+              const active = overview.billing.activePlatformProviderId === provider.id
+              const deleting = platformKeyClearingId === provider.id
+              const activating = platformKeyActivatingId === provider.id
+              return (
+                <div
+                  key={`${provider.source}:${provider.id}`}
+                  className={cn(
+                    "grid gap-3 rounded-lg border p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center",
+                    active ? "border-primary/55 bg-primary/5" : "border-border/70 bg-background",
+                  )}
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[13px] font-medium text-foreground">{provider.label}</span>
+                      {active ? <StatusPill tone="good">默认余额</StatusPill> : null}
+                      <StatusPill tone={provider.configured ? "good" : "warning"}>{provider.configured ? "Key 已配置" : "缺少 Key"}</StatusPill>
+                      <StatusPill>{provider.source === "environment" ? "环境变量" : "后台保存"}</StatusPill>
+                    </div>
+                    <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
+                      {provider.provider} / {provider.modelId}
+                    </div>
+                    <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{provider.baseUrl}</div>
+                  </div>
+                  <div className="flex flex-wrap gap-2 md:justify-end">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={provider.source === "environment"}
+                      onClick={() => setPlatformDraft(platformDraftFromProvider(provider))}
+                    >
+                      编辑
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={provider.source === "environment" || active || Boolean(platformKeyActivatingId)}
+                      onClick={() => void activatePlatformProvider(provider)}
+                    >
+                      {activating ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
+                      {active ? "已默认" : "设为默认"}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      disabled={provider.source === "environment" || deleting}
+                      onClick={() => void clearPlatformKey(provider.id)}
+                    >
+                      {deleting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                      删除
+                    </Button>
+                  </div>
+                </div>
+              )
+            }) : (
+              <div className="rounded-lg border border-dashed border-border/70 px-3 py-5 text-center text-[12px] text-muted-foreground">
+                暂无平台模型配置
+              </div>
+            )}
+          </div>
+
+          <div className="grid gap-3 rounded-lg border border-border/70 bg-background p-3">
+            <div className="text-[12px] font-medium text-muted-foreground">
+              {platformDraft.id ? "编辑平台配置" : "新增平台配置"}
+            </div>
+            <div className="grid gap-2 md:grid-cols-2">
+              <label className="block space-y-1.5">
+                <span className="text-[12px] font-medium text-muted-foreground">名称</span>
+                <Input value={platformDraft.label} onChange={(event) => updatePlatformDraft("label", event.target.value)} />
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-[12px] font-medium text-muted-foreground">供应商标识</span>
+                <Input value={platformDraft.provider} onChange={(event) => updatePlatformDraft("provider", event.target.value)} />
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-[12px] font-medium text-muted-foreground">Base URL</span>
+                <Input type="url" value={platformDraft.baseUrl} onChange={(event) => updatePlatformDraft("baseUrl", event.target.value)} />
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-[12px] font-medium text-muted-foreground">模型 ID</span>
+                <Input value={platformDraft.modelId} onChange={(event) => updatePlatformDraft("modelId", event.target.value)} />
+              </label>
+            </div>
+            <label className="block space-y-1.5">
+              <span className="text-[12px] font-medium text-muted-foreground">API Key</span>
+              <Input
+                type="password"
+                autoComplete="off"
+                value={platformDraft.apiKey}
+                onChange={(event) => updatePlatformDraft("apiKey", event.target.value)}
+                placeholder={platformDraft.id ? "留空则不更新 Key" : "sk-..."}
+              />
+            </label>
+            <label className="flex items-center gap-2 text-[13px]">
+              <input
+                type="checkbox"
+                checked={platformDraft.setActive}
+                onChange={(event) => updatePlatformDraft("setActive", event.target.checked)}
+                className="h-4 w-4"
+              />
+              保存后设为余额默认模型
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                disabled={platformKeySaving || (!platformDraft.id && !platformDraft.apiKey.trim())}
+                onClick={() => void savePlatformKey()}
+              >
+                <Save className={cn("h-4 w-4", platformKeySaving && "animate-pulse")} />
+                保存配置
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={platformKeyTesting || !platformDraftCanTest}
+                onClick={() => void testPlatformKey()}
+              >
+                <PlugZap className={cn("h-4 w-4", platformKeyTesting && "animate-pulse")} />
+                测试
+              </Button>
+            </div>
           </div>
         </div>
         <div className="mt-2 min-h-5 text-[12px] leading-relaxed">

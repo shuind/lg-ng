@@ -7,6 +7,8 @@ import {
   type BillingAdminSummary,
   type BillingLedgerEntry,
   type BillingPlatformKeyStatus,
+  type BillingPlatformProvider,
+  type BillingPlatformProviderProtocol,
   type BillingPricing,
   type BillingSettings,
   type BillingSettingsUpdateInput,
@@ -59,10 +61,46 @@ type LegacyBalanceUsageRecordShape = {
 }
 
 type StoredPlatformLlmSettings = {
+  activeProviderId?: string
+  providers?: StoredPlatformProvider[]
   deepSeekApiKeyEncrypted?: string
   deepSeekKeyPreview?: string
   deepSeekKeyUpdatedAt?: string
   updatedAt: string
+}
+
+type StoredPlatformProvider = {
+  id: string
+  label: string
+  provider: string
+  protocol: BillingPlatformProviderProtocol
+  baseUrl: string
+  modelId: string
+  apiKeyEncrypted?: string
+  keyPreview?: string
+  keyUpdatedAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type EffectivePlatformBillingConfig = {
+  id: string
+  label: string
+  provider: string
+  protocol: BillingPlatformProviderProtocol
+  apiKey: string
+  baseUrl: string
+  model: string
+}
+
+export type PlatformBillingProviderInput = {
+  id?: unknown
+  label?: unknown
+  provider?: unknown
+  baseUrl?: unknown
+  modelId?: unknown
+  apiKey?: unknown
+  setActive?: unknown
 }
 
 let billingLock: Promise<void> = Promise.resolve()
@@ -216,15 +254,107 @@ function normalizeBillingSettings(value: unknown): BillingSettings {
   }
 }
 
+function stringOrEmpty(value: unknown): string {
+  return typeof value === "string" ? value.trim() : ""
+}
+
+function createProviderId(): string {
+  return `platform-${crypto.randomUUID()}`
+}
+
+function defaultPlatformBaseUrl(): string {
+  return process.env.DEEPSEEK_PLATFORM_BASE_URL ?? process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com"
+}
+
+function defaultPlatformModel(): string {
+  return process.env.DEEPSEEK_PLATFORM_MODEL ?? process.env.NG_MODEL ?? process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash"
+}
+
+function defaultDeepSeekPlatformProvider(input: {
+  apiKeyEncrypted?: string
+  keyPreview?: string
+  keyUpdatedAt?: string
+  sourceUpdatedAt?: string
+}): StoredPlatformProvider {
+  const updatedAt = input.sourceUpdatedAt ?? input.keyUpdatedAt ?? DEFAULT_UPDATED_AT
+  return {
+    id: "deepseek-default",
+    label: "DeepSeek 默认",
+    provider: "deepseek",
+    protocol: "openai-compatible",
+    baseUrl: defaultPlatformBaseUrl(),
+    modelId: defaultPlatformModel(),
+    apiKeyEncrypted: input.apiKeyEncrypted,
+    keyPreview: input.keyPreview,
+    keyUpdatedAt: input.keyUpdatedAt,
+    createdAt: updatedAt,
+    updatedAt,
+  }
+}
+
+function normalizeStoredPlatformProvider(data: unknown, fallbackUpdatedAt = DEFAULT_UPDATED_AT): StoredPlatformProvider | null {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null
+  const raw = data as Partial<StoredPlatformProvider>
+  const id = stringOrEmpty(raw.id)
+  const label = stringOrEmpty(raw.label)
+  const provider = stringOrEmpty(raw.provider)
+  const baseUrl = stringOrEmpty(raw.baseUrl)
+  const modelId = stringOrEmpty(raw.modelId)
+  if (!id || !label || !provider || !baseUrl || !modelId) return null
+  return {
+    id,
+    label,
+    provider,
+    protocol: raw.protocol === "openai-compatible" ? "openai-compatible" : "openai-compatible",
+    baseUrl,
+    modelId,
+    apiKeyEncrypted: typeof raw.apiKeyEncrypted === "string" && raw.apiKeyEncrypted ? raw.apiKeyEncrypted : undefined,
+    keyPreview: typeof raw.keyPreview === "string" && raw.keyPreview ? raw.keyPreview : undefined,
+    keyUpdatedAt: typeof raw.keyUpdatedAt === "string" ? raw.keyUpdatedAt : undefined,
+    createdAt: typeof raw.createdAt === "string" ? raw.createdAt : fallbackUpdatedAt,
+    updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : fallbackUpdatedAt,
+  }
+}
+
+function normalizePlatformProviders(data: unknown, fallbackUpdatedAt = DEFAULT_UPDATED_AT): StoredPlatformProvider[] {
+  if (!Array.isArray(data)) return []
+  const byId = new Map<string, StoredPlatformProvider>()
+  for (const item of data) {
+    const provider = normalizeStoredPlatformProvider(item, fallbackUpdatedAt)
+    if (provider) byId.set(provider.id, provider)
+  }
+  return [...byId.values()]
+}
+
 function normalizePlatformLlmSettings(value: unknown): StoredPlatformLlmSettings {
   const raw = value && typeof value === "object" ? value as Partial<StoredPlatformLlmSettings> : {}
+  const updatedAt = typeof raw.updatedAt === "string" ? raw.updatedAt : DEFAULT_UPDATED_AT
+  const providers = normalizePlatformProviders(raw.providers, updatedAt)
+
+  if (typeof raw.deepSeekApiKeyEncrypted === "string" && raw.deepSeekApiKeyEncrypted) {
+    const legacy = defaultDeepSeekPlatformProvider({
+      apiKeyEncrypted: raw.deepSeekApiKeyEncrypted,
+      keyPreview: typeof raw.deepSeekKeyPreview === "string" ? raw.deepSeekKeyPreview : undefined,
+      keyUpdatedAt: typeof raw.deepSeekKeyUpdatedAt === "string" ? raw.deepSeekKeyUpdatedAt : undefined,
+      sourceUpdatedAt: updatedAt,
+    })
+    if (!providers.some((provider) => provider.id === legacy.id)) providers.unshift(legacy)
+  }
+
+  const activeProviderId = typeof raw.activeProviderId === "string" &&
+    providers.some((provider) => provider.id === raw.activeProviderId)
+    ? raw.activeProviderId
+    : providers[0]?.id
+
   return {
+    activeProviderId,
+    providers,
     deepSeekApiKeyEncrypted: typeof raw.deepSeekApiKeyEncrypted === "string"
       ? raw.deepSeekApiKeyEncrypted
       : undefined,
     deepSeekKeyPreview: typeof raw.deepSeekKeyPreview === "string" ? raw.deepSeekKeyPreview : undefined,
     deepSeekKeyUpdatedAt: typeof raw.deepSeekKeyUpdatedAt === "string" ? raw.deepSeekKeyUpdatedAt : undefined,
-    updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : DEFAULT_UPDATED_AT,
+    updatedAt,
   }
 }
 
@@ -236,39 +366,104 @@ function readPlatformLlmSettingsSync(): StoredPlatformLlmSettings {
   }
 }
 
-function getEnvironmentPlatformApiKey(): string | null {
-  return process.env.DEEPSEEK_PLATFORM_API_KEY || process.env.DEEPSEEK_API_KEY || null
+function getEnvironmentPlatformProvider(): EffectivePlatformBillingConfig | null {
+  const apiKey = process.env.DEEPSEEK_PLATFORM_API_KEY || process.env.DEEPSEEK_API_KEY || null
+  if (!apiKey) return null
+  return {
+    id: "deepseek-env",
+    label: "DeepSeek 环境变量",
+    provider: "deepseek",
+    protocol: "openai-compatible",
+    apiKey,
+    baseUrl: defaultPlatformBaseUrl(),
+    model: defaultPlatformModel(),
+  }
 }
 
-function getStoredPlatformApiKey(settings = readPlatformLlmSettingsSync()): string | null {
-  if (!settings.deepSeekApiKeyEncrypted) return null
+function decryptStoredPlatformProvider(provider: StoredPlatformProvider | undefined): EffectivePlatformBillingConfig | null {
+  if (!provider?.apiKeyEncrypted) return null
   try {
-    return decryptSecret(settings.deepSeekApiKeyEncrypted)
+    return {
+      id: provider.id,
+      label: provider.label,
+      provider: provider.provider,
+      protocol: provider.protocol,
+      apiKey: decryptSecret(provider.apiKeyEncrypted),
+      baseUrl: provider.baseUrl,
+      model: provider.modelId,
+    }
   } catch (error) {
     console.error("[billing-store] Failed to decrypt platform API key:", error)
     return null
   }
 }
 
+function getActiveStoredPlatformProvider(settings = readPlatformLlmSettingsSync()): StoredPlatformProvider | undefined {
+  return settings.providers?.find((provider) => provider.id === settings.activeProviderId) ?? settings.providers?.[0]
+}
+
+function publicPlatformProvider(provider: StoredPlatformProvider, source: "admin" | "environment"): BillingPlatformProvider {
+  return {
+    id: provider.id,
+    label: provider.label,
+    provider: provider.provider,
+    protocol: provider.protocol,
+    baseUrl: provider.baseUrl,
+    modelId: provider.modelId,
+    configured: Boolean(provider.apiKeyEncrypted),
+    keyPreview: provider.keyPreview ?? null,
+    keyUpdatedAt: provider.keyUpdatedAt ?? null,
+    source,
+    createdAt: provider.createdAt,
+    updatedAt: provider.updatedAt,
+  }
+}
+
+function environmentPlatformProviderStatus(config: EffectivePlatformBillingConfig): BillingPlatformProvider {
+  return {
+    id: config.id,
+    label: config.label,
+    provider: config.provider,
+    protocol: config.protocol,
+    baseUrl: config.baseUrl,
+    modelId: config.model,
+    configured: true,
+    keyPreview: null,
+    keyUpdatedAt: null,
+    source: "environment",
+    createdAt: DEFAULT_UPDATED_AT,
+    updatedAt: DEFAULT_UPDATED_AT,
+  }
+}
+
 function getPlatformKeyStatus(): BillingPlatformKeyStatus {
   const settings = readPlatformLlmSettingsSync()
-  const storedKey = getStoredPlatformApiKey(settings)
-  if (storedKey) {
-    return {
-      platformApiKeyConfigured: true,
-      platformKeySource: "admin",
-      platformKeyPreview: settings.deepSeekKeyPreview ?? maskSecret(storedKey),
-      platformKeyUpdatedAt: settings.deepSeekKeyUpdatedAt ?? settings.updatedAt,
-    }
-  }
+  const storedProviders = settings.providers ?? []
+  const activeStoredProvider = getActiveStoredPlatformProvider(settings)
+  const activeStoredConfig = decryptStoredPlatformProvider(activeStoredProvider)
+  const environmentConfig = getEnvironmentPlatformProvider()
+  const activeConfig = activeStoredConfig ?? environmentConfig
+  const activePublicProvider = activeStoredConfig && activeStoredProvider
+    ? publicPlatformProvider(activeStoredProvider, "admin")
+    : environmentConfig
+      ? environmentPlatformProviderStatus(environmentConfig)
+      : null
+  const providers = [
+    ...storedProviders.map((provider) => publicPlatformProvider(provider, "admin")),
+    ...(environmentConfig && !storedProviders.some((provider) => provider.id === environmentConfig.id)
+      ? [environmentPlatformProviderStatus(environmentConfig)]
+      : []),
+  ]
 
-  const environmentKey = getEnvironmentPlatformApiKey()
-  if (environmentKey) {
+  if (activeConfig && activePublicProvider) {
     return {
       platformApiKeyConfigured: true,
-      platformKeySource: "environment",
-      platformKeyPreview: null,
-      platformKeyUpdatedAt: null,
+      platformKeySource: activePublicProvider.source,
+      platformKeyPreview: activePublicProvider.keyPreview,
+      platformKeyUpdatedAt: activePublicProvider.keyUpdatedAt,
+      activePlatformProviderId: activePublicProvider.id,
+      activePlatformProvider: activePublicProvider,
+      platformProviders: providers,
     }
   }
 
@@ -277,6 +472,9 @@ function getPlatformKeyStatus(): BillingPlatformKeyStatus {
     platformKeySource: "none",
     platformKeyPreview: null,
     platformKeyUpdatedAt: null,
+    activePlatformProviderId: null,
+    activePlatformProvider: null,
+    platformProviders: providers,
   }
 }
 
@@ -491,8 +689,24 @@ async function appendBillingEntry(entry: BillingLedgerEntry): Promise<void> {
   await fsp.appendFile(billingLedgerPath(), `${JSON.stringify(entry)}\n`, "utf8")
 }
 
-export function getPlatformBillingApiKey(): string | null {
-  return getStoredPlatformApiKey() || getEnvironmentPlatformApiKey()
+export function getPlatformBillingConfig(): EffectivePlatformBillingConfig | null {
+  const settings = readPlatformLlmSettingsSync()
+  return decryptStoredPlatformProvider(getActiveStoredPlatformProvider(settings)) ?? getEnvironmentPlatformProvider()
+}
+
+export function getPlatformBillingConfigById(providerIdInput: unknown): EffectivePlatformBillingConfig | null {
+  const providerId = stringOrEmpty(providerIdInput)
+  if (!providerId) return null
+  const settings = readPlatformLlmSettingsSync()
+  const storedProvider = settings.providers?.find((provider) => provider.id === providerId)
+  const storedConfig = decryptStoredPlatformProvider(storedProvider)
+  if (storedConfig) return storedConfig
+  const environmentConfig = getEnvironmentPlatformProvider()
+  return environmentConfig?.id === providerId ? environmentConfig : null
+}
+
+export function getPlatformBillingApiKey(): EffectivePlatformBillingConfig | null {
+  return getPlatformBillingConfig()
 }
 
 export function getBillingPlatformKeyStatus(): BillingPlatformKeyStatus {
@@ -526,16 +740,44 @@ export async function updateBillingSettings(input: BillingSettingsUpdateInput): 
   })
 }
 
-export async function savePlatformBillingApiKey(apiKeyInput: string): Promise<BillingPlatformKeyStatus> {
-  const apiKey = apiKeyInput.trim()
-  if (!apiKey) throw new Error("missing_api_key")
+export async function savePlatformBillingProvider(input: PlatformBillingProviderInput): Promise<BillingPlatformKeyStatus> {
+  const label = stringOrEmpty(input.label)
+  const provider = stringOrEmpty(input.provider)
+  const baseUrl = stringOrEmpty(input.baseUrl)
+  const modelId = stringOrEmpty(input.modelId)
+  const apiKey = stringOrEmpty(input.apiKey)
+  const requestedId = stringOrEmpty(input.id)
+  if (!label || !provider || !baseUrl || !modelId) throw new Error("invalid_platform_provider")
 
   return withBillingLock(async () => {
+    const existingSettings = readPlatformLlmSettingsSync()
+    const existing = requestedId
+      ? existingSettings.providers?.find((item) => item.id === requestedId)
+      : undefined
+    if (!existing && !apiKey) throw new Error("missing_api_key")
     const now = new Date().toISOString()
+    const id = existing?.id ?? (requestedId || createProviderId())
+    const nextProvider: StoredPlatformProvider = {
+      id,
+      label,
+      provider,
+      protocol: "openai-compatible",
+      baseUrl,
+      modelId,
+      apiKeyEncrypted: apiKey ? encryptSecret(apiKey) : existing?.apiKeyEncrypted,
+      keyPreview: apiKey ? maskSecret(apiKey) : existing?.keyPreview,
+      keyUpdatedAt: apiKey ? now : existing?.keyUpdatedAt,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    }
+    const providers = [
+      ...(existingSettings.providers ?? []).filter((item) => item.id !== id),
+      nextProvider,
+    ]
+    const shouldSetActive = input.setActive !== false
     const settings: StoredPlatformLlmSettings = {
-      deepSeekApiKeyEncrypted: encryptSecret(apiKey),
-      deepSeekKeyPreview: maskSecret(apiKey),
-      deepSeekKeyUpdatedAt: now,
+      activeProviderId: shouldSetActive ? id : existingSettings.activeProviderId ?? providers[0]?.id,
+      providers,
       updatedAt: now,
     }
     await fsp.mkdir(adminDir(), { recursive: true })
@@ -544,15 +786,45 @@ export async function savePlatformBillingApiKey(apiKeyInput: string): Promise<Bi
   })
 }
 
-export async function clearPlatformBillingApiKey(): Promise<BillingPlatformKeyStatus> {
+export async function savePlatformBillingApiKey(apiKeyInput: string): Promise<BillingPlatformKeyStatus> {
+  return savePlatformBillingProvider({
+    id: "deepseek-default",
+    label: "DeepSeek 默认",
+    provider: "deepseek",
+    baseUrl: defaultPlatformBaseUrl(),
+    modelId: defaultPlatformModel(),
+    apiKey: apiKeyInput,
+    setActive: true,
+  })
+}
+
+export async function deletePlatformBillingProvider(providerIdInput: unknown): Promise<BillingPlatformKeyStatus> {
+  const providerId = stringOrEmpty(providerIdInput)
+  if (!providerId) throw new Error("missing_platform_provider_id")
+
   return withBillingLock(async () => {
+    const existing = readPlatformLlmSettingsSync()
+    const providers = (existing.providers ?? []).filter((provider) => provider.id !== providerId)
+    const activeProviderId = existing.activeProviderId === providerId
+      ? providers[0]?.id
+      : existing.activeProviderId && providers.some((provider) => provider.id === existing.activeProviderId)
+        ? existing.activeProviderId
+        : providers[0]?.id
     const settings: StoredPlatformLlmSettings = {
+      activeProviderId,
+      providers,
       updatedAt: new Date().toISOString(),
     }
     await fsp.mkdir(adminDir(), { recursive: true })
     await fsp.writeFile(platformLlmSettingsPath(), `${JSON.stringify(settings, null, 2)}\n`, "utf8")
     return getPlatformKeyStatus()
   })
+}
+
+export async function clearPlatformBillingApiKey(): Promise<BillingPlatformKeyStatus> {
+  const activeId = readPlatformLlmSettingsSync().activeProviderId
+  if (!activeId) return getPlatformKeyStatus()
+  return deletePlatformBillingProvider(activeId)
 }
 
 function commissionRateForSettings(settings: BillingSettings): number {
@@ -662,6 +934,9 @@ export function getBillingAdminSummarySync(userIds: string[] = []): BillingAdmin
     platformKeySource: platformKeyStatus.platformKeySource,
     platformKeyPreview: platformKeyStatus.platformKeyPreview,
     platformKeyUpdatedAt: platformKeyStatus.platformKeyUpdatedAt,
+    activePlatformProviderId: platformKeyStatus.activePlatformProviderId,
+    activePlatformProvider: platformKeyStatus.activePlatformProvider,
+    platformProviders: platformKeyStatus.platformProviders,
     total: createTotalSummary(byUser),
     byUser,
   }

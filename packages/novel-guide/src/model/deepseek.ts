@@ -17,7 +17,7 @@ export interface DeepSeekConfig {
 }
 
 export interface OpenAICompatibleConfig extends DeepSeekConfig {
-  provider: "deepseek" | "mimo" | "claude-relay";
+  provider: string;
 }
 
 export interface ModelUsage {
@@ -62,6 +62,19 @@ export function getDeepSeekConfig(): DeepSeekConfig | null {
   };
 }
 
+function getGenericOpenAICompatibleConfig(): OpenAICompatibleConfig | null {
+  const apiKey = process.env.NG_API_KEY;
+  const baseUrl = process.env.NG_BASE_URL;
+  const model = process.env.NG_MODEL;
+  if (!apiKey || !baseUrl || !model) return null;
+  return {
+    provider: (process.env.NG_PROVIDER ?? process.env.LLM_PROVIDER ?? "custom").toLowerCase(),
+    apiKey,
+    baseUrl,
+    model,
+  };
+}
+
 function getMimoConfig(): OpenAICompatibleConfig | null {
   const apiKey = process.env.MIMO_API_KEY;
   if (!apiKey) return null;
@@ -73,16 +86,43 @@ function getMimoConfig(): OpenAICompatibleConfig | null {
   };
 }
 
+function getClaudeRelayConfig(): OpenAICompatibleConfig | null {
+  const apiKey = process.env.CLAUDE_RELAY_API_KEY ?? process.env.CLAUDE_API_KEY;
+  const baseUrl = process.env.CLAUDE_RELAY_BASE_URL ?? process.env.CLAUDE_BASE_URL;
+  if (!apiKey || !baseUrl) return null;
+  return {
+    provider: "claude-relay",
+    apiKey,
+    baseUrl,
+    model: process.env.NG_MODEL ?? process.env.CLAUDE_RELAY_MODEL ?? process.env.CLAUDE_MODEL ?? "claude-sonnet-4-6",
+  };
+}
+
 export function getOpenAICompatibleConfig(): OpenAICompatibleConfig | null {
   const provider = (process.env.NG_PROVIDER ?? process.env.LLM_PROVIDER)?.toLowerCase();
+
+  const generic = getGenericOpenAICompatibleConfig();
+  if (generic) return generic;
 
   if (provider === "mimo") {
     return getMimoConfig();
   }
 
+  if (provider === "claude-relay" || provider === "claude") {
+    return getClaudeRelayConfig();
+  }
+
   const deepseek = getDeepSeekConfig();
-  if (provider || deepseek) {
+  if (provider === "deepseek") {
     return deepseek ? { provider: "deepseek", ...deepseek } : null;
+  }
+
+  if (provider) {
+    return null;
+  }
+
+  if (deepseek) {
+    return { provider: "deepseek", ...deepseek };
   }
 
   return getMimoConfig();
@@ -95,7 +135,7 @@ export function createDeepSeekClient(config: DeepSeekConfig): OpenAI {
   });
 }
 
-export function createOpenAICompatibleClient(config: DeepSeekConfig): OpenAI {
+export function createOpenAICompatibleClient(config: OpenAICompatibleConfig): OpenAI {
   return createDeepSeekClient(config);
 }
 

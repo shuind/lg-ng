@@ -119,30 +119,45 @@ export async function updateAdminBillingSettings(input: BillingSettingsUpdateInp
 }
 
 export async function saveAdminPlatformKey(input: {
-  apiKey: string
+  id?: string
+  label: string
+  provider: string
+  baseUrl: string
+  modelId: string
+  apiKey?: string
+  setActive?: boolean
 }): Promise<BillingPlatformKeyStatus> {
   const res = await fetch("/api/admin/billing/platform-key", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   })
-  return readAdminResponse<BillingPlatformKeyStatus>(res, "Platform API Key 保存失败")
+  return readAdminResponse<BillingPlatformKeyStatus>(res, "平台模型配置保存失败")
 }
 
 export async function testAdminPlatformKey(input: {
+  id?: string
+  label?: string
+  provider?: string
+  baseUrl?: string
+  modelId?: string
   apiKey?: string
-} = {}): Promise<{ ok: true; model: string }> {
+} = {}): Promise<{ ok: true; model: string; provider: string }> {
   const res = await fetch("/api/admin/billing/platform-key", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   })
-  return readAdminResponse<{ ok: true; model: string }>(res, "Platform API Key 测试失败")
+  return readAdminResponse<{ ok: true; model: string; provider: string }>(res, "平台模型配置测试失败")
 }
 
-export async function clearAdminPlatformKey(): Promise<BillingPlatformKeyStatus> {
-  const res = await fetch("/api/admin/billing/platform-key", { method: "DELETE" })
-  return readAdminResponse<BillingPlatformKeyStatus>(res, "Platform API Key 清除失败")
+export async function clearAdminPlatformKey(input: { id: string }): Promise<BillingPlatformKeyStatus> {
+  const res = await fetch("/api/admin/billing/platform-key", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  })
+  return readAdminResponse<BillingPlatformKeyStatus>(res, "平台模型配置删除失败")
 }
 
 export async function createAdminInvite(input: {

@@ -15,6 +15,12 @@ export async function updateAppSettings(input: {
   clearProviderApiKey?: boolean
   deepSeekApiKey?: string
   clearDeepSeekApiKey?: boolean
+  customProviderId?: string
+  customProviderLabel?: string
+  customProviderBaseUrl?: string
+  customProviderModelId?: string
+  customProviderApiKey?: string
+  deleteCustomProviderId?: string
 }): Promise<AppSettingsPayload> {
   const res = await fetch("/api/app-settings", {
     method: "PATCH",

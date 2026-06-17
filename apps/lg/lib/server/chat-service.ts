@@ -598,7 +598,7 @@ function userFacingErrorMessage(errorMessage: string): string {
     lower.includes("401") ||
     lower.includes("deepseek")
   ) {
-    return "模型配置不可用。请到设置页保存当前账号的 DeepSeek API Key，然后重试。"
+    return "模型配置不可用。请在设置页选择可用余额，或保存当前账号的模型 API Key 后重试。"
   }
   if (lower.includes("timeout") || lower.includes("timed out") || lower.includes("超时")) {
     return "请求超时。可以直接重试；如果连续发生，请缩小本轮范围或检查网络连接。"

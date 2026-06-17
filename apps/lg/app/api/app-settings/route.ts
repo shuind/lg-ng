@@ -23,11 +23,20 @@ async function PATCHHandler(request: Request) {
       clearProviderApiKey: body.clearProviderApiKey,
       deepSeekApiKey: body.deepSeekApiKey,
       clearDeepSeekApiKey: body.clearDeepSeekApiKey,
+      customProviderId: body.customProviderId,
+      customProviderLabel: body.customProviderLabel,
+      customProviderBaseUrl: body.customProviderBaseUrl,
+      customProviderModelId: body.customProviderModelId,
+      customProviderApiKey: body.customProviderApiKey,
+      deleteCustomProviderId: body.deleteCustomProviderId,
     }))
   } catch (err) {
     console.error("[api/app-settings] PATCH error:", err)
     const badRequest = err instanceof Error &&
-      (err.message === "unsupported provider" || err.message === "unsupported model" || err.message === "unsupported payment source")
+      (err.message === "unsupported provider" ||
+        err.message === "unsupported model" ||
+        err.message === "unsupported payment source" ||
+        err.message === "invalid custom provider")
     const message = badRequest ? "保存的设置无效" : "保存设置失败"
     const status = badRequest ? 400 : 500
     return NextResponse.json({ error: message }, { status })

@@ -4,7 +4,7 @@ import { stdin as input, stdout as output } from "node:process";
 import path from "node:path";
 import { Command } from "commander";
 import { confirm } from "@inquirer/prompts";
-import { createDeepSeekClient, getDeepSeekConfig } from "./model/deepseek.js";
+import { createOpenAICompatibleClient, getOpenAICompatibleConfig } from "./model/deepseek.js";
 import { AgentEngine } from "./agent/engine.js";
 import { initNovelWorkspace } from "./novel/init.js";
 import { getCommands } from "./commands/loader.js";
@@ -19,9 +19,9 @@ async function askConfirmation(question: string): Promise<boolean> {
 }
 
 function requireConfig() {
-  const config = getDeepSeekConfig();
+  const config = getOpenAICompatibleConfig();
   if (!config) {
-    throw new Error("DEEPSEEK_API_KEY is not set. Set it before running agent tasks.");
+    throw new Error("OpenAI-compatible provider is not configured. Set NG_API_KEY, NG_BASE_URL, and NG_MODEL before running agent tasks.");
   }
   return config;
 }
@@ -30,7 +30,7 @@ async function createEngine(cwd: string, options: CliOptions = {}): Promise<Agen
   const config = requireConfig();
   return new AgentEngine({
     cwd,
-    client: createDeepSeekClient(config),
+    client: createOpenAICompatibleClient(config),
     model: config.model,
     permissionMode: options.confirmPermissions ? "confirm" : "bypass",
     askConfirmation,
@@ -105,16 +105,16 @@ async function runRepl(cwd: string, options: CliOptions): Promise<void> {
 }
 
 async function doctor(): Promise<void> {
-  const config = getDeepSeekConfig();
+  const config = getOpenAICompatibleConfig();
   console.log("Novel Guide doctor");
   console.log(`Node: ${process.version}`);
   console.log(`CWD: ${process.cwd()}`);
   if (!config) {
-    console.log("DeepSeek: missing DEEPSEEK_API_KEY");
+    console.log("OpenAI-compatible provider: missing configuration");
     return;
   }
-  console.log(`DeepSeek: configured (${config.baseUrl}, model ${config.model})`);
-  const client = createDeepSeekClient(config);
+  console.log(`OpenAI-compatible provider: ${config.provider} (${config.baseUrl}, model ${config.model})`);
+  const client = createOpenAICompatibleClient(config);
   const engine = new AgentEngine({
     cwd: process.cwd(),
     client,

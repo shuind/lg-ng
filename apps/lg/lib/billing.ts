@@ -38,12 +38,32 @@ export interface BillingSettingsUpdateInput {
 }
 
 export type BillingPlatformKeySource = "environment" | "admin" | "none"
+export type BillingPlatformProviderProtocol = "openai-compatible"
+export type BillingPlatformProviderSource = "environment" | "admin"
+
+export interface BillingPlatformProvider {
+  id: string
+  label: string
+  provider: string
+  protocol: BillingPlatformProviderProtocol
+  baseUrl: string
+  modelId: string
+  configured: boolean
+  keyPreview: string | null
+  keyUpdatedAt: string | null
+  source: BillingPlatformProviderSource
+  createdAt: string
+  updatedAt: string
+}
 
 export interface BillingPlatformKeyStatus {
   platformApiKeyConfigured: boolean
   platformKeySource: BillingPlatformKeySource
   platformKeyPreview: string | null
   platformKeyUpdatedAt: string | null
+  activePlatformProviderId: string | null
+  activePlatformProvider: BillingPlatformProvider | null
+  platformProviders: BillingPlatformProvider[]
 }
 
 export interface BillingUsageDetails {
@@ -116,6 +136,9 @@ export interface BillingAdminSummary {
   platformKeySource: BillingPlatformKeySource
   platformKeyPreview: string | null
   platformKeyUpdatedAt: string | null
+  activePlatformProviderId: string | null
+  activePlatformProvider: BillingPlatformProvider | null
+  platformProviders: BillingPlatformProvider[]
   total: Omit<BillingUserSummary, "userId" | "recentEntries" | "canUseBalance" | "platformApiKeyConfigured" | "platformEnabled">
   byUser: BillingUserSummary[]
 }

@@ -677,7 +677,7 @@ export async function runNovelGuideAgent(input: {
   const config = getEffectiveOpenAICompatibleConfig()
   if (!config) {
     return {
-      reply: "当前模型不可用。请在设置页选择余额并确保有可用余额，或切换到自己的 API 并保存 DeepSeek API Key。",
+      reply: "当前模型不可用。请在设置页选择余额并确保有可用余额，或切换到自己的 API 并保存模型 API Key。",
       sessionId: input.threadId,
       toolTrace: [],
       failedTools: ["model_config: missing API key"],
@@ -792,7 +792,7 @@ export async function* runNovelGuideAgentStream(input: {
     yield {
       type: "done",
       result: {
-        reply: "当前模型不可用。请在设置页选择余额并确保有可用余额，或切换到自己的 API 并保存 DeepSeek API Key。",
+        reply: "当前模型不可用。请在设置页选择余额并确保有可用余额，或切换到自己的 API 并保存模型 API Key。",
         sessionId: input.threadId,
         toolTrace: [],
         failedTools: ["model_config: missing API key"],
@@ -904,7 +904,7 @@ export async function runNovelGuideReview(input: {
   const config = getEffectiveOpenAICompatibleConfig()
   if (!config) {
     return {
-      reply: "当前模型不可用。请在设置页选择余额并确保有可用余额，或切换到自己的 API 并保存 DeepSeek API Key。",
+      reply: "当前模型不可用。请在设置页选择余额并确保有可用余额，或切换到自己的 API 并保存模型 API Key。",
       sessionId: input.threadId,
       toolTrace: [],
       failedTools: ["model_config: missing API key"],
