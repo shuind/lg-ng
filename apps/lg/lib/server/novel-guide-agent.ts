@@ -3,6 +3,7 @@ import {
   createOpenAICompatibleClient,
   DRAFT_POLICY_RULES,
   type EngineContextWindowState,
+  type EngineModelUsageEvent,
   type EngineStreamEvent,
   type FileChange,
   type FileProposal,
@@ -16,6 +17,7 @@ import {
 } from "novel-guide"
 import { getBook } from "@/lib/server/book-store"
 import { getEffectiveOpenAICompatibleConfig } from "@/lib/server/app-settings-store"
+import { recordApiCallUsage } from "@/lib/server/api-call-ledger"
 import { listIndexedFiles, listIndexedSettingCards, type IndexedBookFile } from "@/lib/server/book-index"
 import { getBookDir } from "@/lib/server/paths"
 import { recordBillingUsage } from "@/lib/server/billing-store"
@@ -68,6 +70,34 @@ function emptyContextWindow(): EngineContextWindowState {
       expectedOutputReserve: reserveTokens,
       total: reserveTokens,
     },
+  }
+}
+
+function createApiUsageRecorder(input: {
+  provider: string
+  model: string
+  paymentSource: "balance" | "api"
+  feature: string
+  bookId: string
+  threadId: string
+  agentSessionId?: string
+}) {
+  return async (event: EngineModelUsageEvent) => {
+    await recordApiCallUsage({
+      provider: input.provider,
+      model: input.model,
+      paymentSource: input.paymentSource,
+      feature: input.feature,
+      bookId: input.bookId,
+      threadId: input.threadId,
+      agentSessionId: input.agentSessionId,
+      operation: event.operation,
+      stream: event.stream,
+      durationMs: event.durationMs,
+      loop: event.loop,
+      usage: event.usage,
+      totalUsage: event.totalUsage,
+    })
   }
 }
 
@@ -695,6 +725,15 @@ export async function runNovelGuideAgent(input: {
     permissionMode: "bypass",
     readonlyOnly: input.readonlyOnly,
     proposalOnly,
+    onModelUsage: createApiUsageRecorder({
+      provider: config.provider,
+      model: config.model,
+      paymentSource: config.paymentSource,
+      feature: "agent",
+      bookId: input.bookId,
+      threadId: input.threadId,
+      agentSessionId,
+    }),
   })
 
   const result = await engine.submitMessage(buildPrompt({
@@ -803,6 +842,15 @@ export async function* runNovelGuideAgentStream(input: {
     permissionMode: "bypass",
     readonlyOnly: input.readonlyOnly,
     proposalOnly,
+    onModelUsage: createApiUsageRecorder({
+      provider: config.provider,
+      model: config.model,
+      paymentSource: config.paymentSource,
+      feature: "agent_stream",
+      bookId: input.bookId,
+      threadId: input.threadId,
+      agentSessionId,
+    }),
   })
 
   for await (const event of engine.submitMessageEvents(buildPrompt({
@@ -881,6 +929,15 @@ export async function runNovelGuideReview(input: {
     projectContext,
     permissionMode: "bypass",
     maxLoops: 32,
+    onModelUsage: createApiUsageRecorder({
+      provider: config.provider,
+      model: config.model,
+      paymentSource: config.paymentSource,
+      feature: "review",
+      bookId: input.bookId,
+      threadId: input.threadId,
+      agentSessionId: input.threadId,
+    }),
   })
 
   const scope = input.scope?.trim() || "全书当前项目"
@@ -915,7 +972,13 @@ export async function runNovelGuideReview(input: {
           toolTrace: [],
           failedTools: [`${checker.agent}: ${error instanceof Error ? error.message : "failed"}`],
           fileChanges: [],
-          usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+          usage: {
+            promptTokens: 0,
+            promptCacheHitTokens: 0,
+            promptCacheMissTokens: 0,
+            completionTokens: 0,
+            totalTokens: 0,
+          },
         },
       }
     }
@@ -932,11 +995,19 @@ export async function runNovelGuideReview(input: {
       failedTools: result.failedTools,
     })),
   })
-  const usage = results.reduce((sum, { result }) => ({
+  const usage = results.reduce<ModelUsage>((sum, { result }) => ({
     promptTokens: sum.promptTokens + result.usage.promptTokens,
+    promptCacheHitTokens: (sum.promptCacheHitTokens ?? 0) + (result.usage.promptCacheHitTokens ?? 0),
+    promptCacheMissTokens: (sum.promptCacheMissTokens ?? 0) + (result.usage.promptCacheMissTokens ?? 0),
     completionTokens: sum.completionTokens + result.usage.completionTokens,
     totalTokens: sum.totalTokens + result.usage.totalTokens,
-  }), { promptTokens: 0, completionTokens: 0, totalTokens: 0 })
+  }), {
+    promptTokens: 0,
+    promptCacheHitTokens: 0,
+    promptCacheMissTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+  })
   const billing = await recordBillingUsage({
     provider: config.provider,
     model: config.model,

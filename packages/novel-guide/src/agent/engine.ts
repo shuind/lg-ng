@@ -56,6 +56,16 @@ export interface EngineConfig {
   compactionTriggerRatio?: number;
   recentMessageCount?: number;
   expectedOutputReserveTokens?: number;
+  onModelUsage?: (event: EngineModelUsageEvent) => void | Promise<void>;
+}
+
+export interface EngineModelUsageEvent {
+  operation: "query" | "handoff_polish" | "compaction";
+  loop?: number;
+  usage: ModelUsage;
+  totalUsage?: ModelUsage;
+  stream: boolean;
+  durationMs: number;
 }
 
 export type EngineContextWindowLevel =
@@ -253,6 +263,7 @@ export class AgentEngine {
       appendSystemPrompt: `你正在作为子智能体 ${agent.name} 运行。默认拥有完整工具权限；如果任务要求只读，不要改文件。`,
       projectContext: this.config.projectContext,
       userMemoryContext: this.config.userMemoryContext,
+      onModelUsage: this.config.onModelUsage,
     });
     return await subEngine.submitMessage(`${agent.prompt}\n\n# 任务\n${input.prompt}`, {
       save: false,
@@ -270,6 +281,7 @@ export class AgentEngine {
   }
 
   async polishHandoffDraft(draft: string, options: PolishHandoffOptions): Promise<string> {
+    const startedAt = Date.now();
     const response = await createChatCompletion({
       client: this.config.client,
       model: this.config.model,
@@ -298,6 +310,12 @@ export class AgentEngine {
       temperature: 0.1,
       maxTokens: 2200,
       timeoutMs: 60000,
+    });
+    await this.reportModelUsage({
+      operation: "handoff_polish",
+      usage: response.usage,
+      stream: false,
+      durationMs: Date.now() - startedAt,
     });
     return stringifyMessageContent(response.message.content) || draft;
   }
@@ -373,8 +391,21 @@ export class AgentEngine {
       maxLoops: this.config.maxLoops ?? DEFAULT_MAX_LOOPS,
       signal: options.signal,
     })) {
-      if (event.type === "done") result = event.result;
-      else yield { type: "query_event", event };
+      if (event.type === "done") {
+        result = event.result;
+      } else {
+        if (event.type === "usage_update") {
+          await this.reportModelUsage({
+            operation: "query",
+            loop: event.loop,
+            usage: event.usage,
+            totalUsage: event.totalUsage,
+            stream: true,
+            durationMs: event.durationMs,
+          });
+        }
+        yield { type: "query_event", event };
+      }
     }
 
     if (!result) {
@@ -557,6 +588,7 @@ export class AgentEngine {
     while (groups.length > 0) {
       const rendered = renderCompactionGroups(groups, droppedMessageGroups);
       try {
+        const startedAt = Date.now();
         const response = await createChatCompletion({
           client: this.config.client,
           model: this.config.model,
@@ -571,6 +603,12 @@ export class AgentEngine {
           maxTokens: 3200,
           timeoutMs: 60000,
           signal,
+        });
+        await this.reportModelUsage({
+          operation: "compaction",
+          usage: response.usage,
+          stream: false,
+          durationMs: Date.now() - startedAt,
         });
         return {
           summary: stringifyMessageContent(response.message.content) || "未生成历史上下文摘要。",
@@ -597,6 +635,15 @@ export class AgentEngine {
       droppedMessageGroups,
       summarizedMessageCount: 0,
     };
+  }
+
+  private async reportModelUsage(event: EngineModelUsageEvent): Promise<void> {
+    if (!this.config.onModelUsage) return;
+    try {
+      await this.config.onModelUsage(event);
+    } catch (error) {
+      console.warn("[AgentEngine] onModelUsage failed:", error);
+    }
   }
 
   private trySimpleLocalReply(prompt: string): string | null {

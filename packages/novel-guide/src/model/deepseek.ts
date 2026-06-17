@@ -26,6 +26,18 @@ export interface ModelUsage {
   totalTokens: number;
   promptCacheHitTokens?: number;
   promptCacheMissTokens?: number;
+  rawUsage?: ModelRawUsage;
+}
+
+export interface ModelRawUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  prompt_cache_hit_tokens?: number;
+  prompt_cache_miss_tokens?: number;
+  completion_tokens_details?: {
+    reasoning_tokens?: number;
+  };
 }
 
 export interface ModelResponse {
@@ -126,10 +138,17 @@ type StreamToolCallPart = {
   };
 };
 
+function numberOrUndefined(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
 function normalizeUsage(usage: ChatCompletion["usage"] | ChatCompletionChunk["usage"] | null | undefined): ModelUsage {
   const raw = usage as ({
     prompt_cache_hit_tokens?: number;
     prompt_cache_miss_tokens?: number;
+    completion_tokens_details?: {
+      reasoning_tokens?: number;
+    };
   } | null | undefined);
   return {
     promptTokens: usage?.prompt_tokens ?? 0,
@@ -137,6 +156,20 @@ function normalizeUsage(usage: ChatCompletion["usage"] | ChatCompletionChunk["us
     totalTokens: usage?.total_tokens ?? 0,
     promptCacheHitTokens: raw?.prompt_cache_hit_tokens ?? 0,
     promptCacheMissTokens: raw?.prompt_cache_miss_tokens ?? usage?.prompt_tokens ?? 0,
+    rawUsage: usage
+      ? {
+          prompt_tokens: numberOrUndefined(usage.prompt_tokens),
+          completion_tokens: numberOrUndefined(usage.completion_tokens),
+          total_tokens: numberOrUndefined(usage.total_tokens),
+          prompt_cache_hit_tokens: numberOrUndefined(raw?.prompt_cache_hit_tokens),
+          prompt_cache_miss_tokens: numberOrUndefined(raw?.prompt_cache_miss_tokens),
+          completion_tokens_details: raw?.completion_tokens_details
+            ? {
+                reasoning_tokens: numberOrUndefined(raw.completion_tokens_details.reasoning_tokens),
+              }
+            : undefined,
+        }
+      : undefined,
   };
 }
 

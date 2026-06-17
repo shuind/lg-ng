@@ -2,6 +2,7 @@ export {
   AgentEngine,
   type EngineContextWindowComponents,
   type EngineContextWindowLevel,
+  type EngineModelUsageEvent,
   type EngineContextWindowState,
   type EngineStreamEvent,
 } from "./agent/engine.js";
@@ -45,6 +46,7 @@ export {
   getOpenAICompatibleConfig,
   type DeepSeekConfig,
   type ModelMessage,
+  type ModelRawUsage,
   type ModelResponse,
   type ModelStreamEvent,
   type ModelTool,

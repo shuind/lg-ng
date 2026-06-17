@@ -4,7 +4,7 @@
 
 import type OpenAI from "openai";
 import type { ChatCompletion, ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import { createChatCompletionStream, type ModelTool, type ModelUsage } from "../model/deepseek.js";
+import { createChatCompletionStream, type ModelRawUsage, type ModelTool, type ModelUsage } from "../model/deepseek.js";
 import { findTool, runTool, toModelTool, type FileChange, type FileProposal, type ToolContext, type Tools } from "../tools/tool.js";
 import { safeJsonParse } from "../utils/json.js";
 
@@ -33,7 +33,7 @@ export type QueryEvent =
   | { type: "assistant_delta"; loop: number; text: string; accumulatedText: string }
   | { type: "reasoning_delta"; loop: number; text: string }
   | { type: "assistant_message"; loop: number; text: string }
-  | { type: "usage_update"; loop: number; usage: ModelUsage; totalUsage: ModelUsage }
+  | { type: "usage_update"; loop: number; usage: ModelUsage; totalUsage: ModelUsage; durationMs: number }
   | { type: "tool_call"; loop: number; name: string; argsPreview: string }
   | { type: "tool_result"; loop: number; name: string; ok: boolean; content: string; resultPreview: string; durationMs: number }
   | { type: "subagent_event"; loop: number; subagent: string; event: QueryEvent }
@@ -43,8 +43,32 @@ export type QueryEvent =
 function addUsage(a: ModelUsage, b: ModelUsage): ModelUsage {
   return {
     promptTokens: a.promptTokens + b.promptTokens,
+    promptCacheHitTokens: (a.promptCacheHitTokens ?? 0) + (b.promptCacheHitTokens ?? 0),
+    promptCacheMissTokens: (a.promptCacheMissTokens ?? 0) + (b.promptCacheMissTokens ?? 0),
     completionTokens: a.completionTokens + b.completionTokens,
     totalTokens: a.totalTokens + b.totalTokens,
+    rawUsage: addRawUsage(a.rawUsage, b.rawUsage),
+  };
+}
+
+function addOptionalNumber(left: number | undefined, right: number | undefined): number | undefined {
+  if (left === undefined && right === undefined) return undefined;
+  return (left ?? 0) + (right ?? 0);
+}
+
+function addRawUsage(a: ModelRawUsage | undefined, b: ModelRawUsage | undefined): ModelRawUsage | undefined {
+  if (!a && !b) return undefined;
+  const reasoningTokens = addOptionalNumber(
+    a?.completion_tokens_details?.reasoning_tokens,
+    b?.completion_tokens_details?.reasoning_tokens,
+  );
+  return {
+    prompt_tokens: addOptionalNumber(a?.prompt_tokens, b?.prompt_tokens),
+    completion_tokens: addOptionalNumber(a?.completion_tokens, b?.completion_tokens),
+    total_tokens: addOptionalNumber(a?.total_tokens, b?.total_tokens),
+    prompt_cache_hit_tokens: addOptionalNumber(a?.prompt_cache_hit_tokens, b?.prompt_cache_hit_tokens),
+    prompt_cache_miss_tokens: addOptionalNumber(a?.prompt_cache_miss_tokens, b?.prompt_cache_miss_tokens),
+    completion_tokens_details: reasoningTokens === undefined ? undefined : { reasoning_tokens: reasoningTokens },
   };
 }
 
@@ -118,6 +142,7 @@ export async function* queryEvents(input: QueryInput): AsyncGenerator<QueryEvent
     let assistantMessage: ChatCompletion["choices"][number]["message"] | null = null;
     let loopUsage: ModelUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
     let loopText = "";
+    const loopStartedAt = Date.now();
 
     const stream = collectStreamedCompletion({
       client: input.client,
@@ -135,7 +160,13 @@ export async function* queryEvents(input: QueryInput): AsyncGenerator<QueryEvent
         yield { type: "reasoning_delta", loop, text: event.text };
       } else if (event.type === "usage") {
         loopUsage = event.usage;
-        yield { type: "usage_update", loop, usage: event.usage, totalUsage: addUsage(usage, event.usage) };
+        yield {
+          type: "usage_update",
+          loop,
+          usage: event.usage,
+          totalUsage: addUsage(usage, event.usage),
+          durationMs: Date.now() - loopStartedAt,
+        };
       } else if (event.type === "done") {
         assistantMessage = event.message;
         loopUsage = event.usage;

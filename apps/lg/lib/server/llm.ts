@@ -7,6 +7,7 @@ import {
   getEffectiveOpenAICompatibleConfig,
   type EffectiveOpenAICompatibleConfig,
 } from "@/lib/server/app-settings-store"
+import { recordApiCallUsage } from "@/lib/server/api-call-ledger"
 import { recordBillingUsage } from "@/lib/server/billing-store"
 
 type LlmConfig = EffectiveOpenAICompatibleConfig
@@ -37,6 +38,7 @@ export async function callChatCompletion(
   messages: ChatMessage[],
   options?: { temperature?: number; maxTokens?: number; feature?: string },
 ): Promise<ChatResponse> {
+  const startedAt = Date.now()
   const response = await createChatCompletion({
     client: createOpenAICompatibleClient(config),
     model: config.model,
@@ -45,12 +47,25 @@ export async function callChatCompletion(
     maxTokens: options?.maxTokens ?? 2000,
     timeoutMs: 60000,
   })
-  await recordBillingUsage({
+  const billing = await recordBillingUsage({
     provider: config.provider,
     model: config.model,
     usage: response.usage,
     feature: options?.feature ?? "chat_completion",
     paymentSource: config.paymentSource,
+  })
+  await recordApiCallUsage({
+    provider: config.provider,
+    model: config.model,
+    feature: options?.feature ?? "chat_completion",
+    operation: "chat_completion",
+    paymentSource: config.paymentSource,
+    stream: false,
+    durationMs: Date.now() - startedAt,
+    usage: response.usage,
+    billingEntryId: billing?.id,
+  }).catch((error) => {
+    console.error("[api-call-ledger] Failed to record chat completion:", error)
   })
 
   return { content: stringifyContent(response.message.content) }

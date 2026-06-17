@@ -376,7 +376,7 @@ async function streamThreadMessageUnlocked(
         const event = createAgentEvent(turn.id, {
           type: "observe",
           text: `token 用量：${engineEvent.totalUsage.totalTokens}`,
-          usage: engineEvent.totalUsage,
+          usage: toAgentUsage(engineEvent.totalUsage),
         })
         events.push(event)
         emitSse(controller, "agent_event", event)
@@ -572,6 +572,16 @@ function createUsageEvent(
       balanceAfterCny: billing?.balanceAfterCny,
     },
   })
+}
+
+function toAgentUsage(usage: ModelUsage): NonNullable<Message["events"]>[number]["usage"] {
+  return {
+    promptTokens: usage.promptTokens,
+    promptCacheHitTokens: usage.promptCacheHitTokens,
+    promptCacheMissTokens: usage.promptCacheMissTokens,
+    completionTokens: usage.completionTokens,
+    totalTokens: usage.totalTokens,
+  }
 }
 
 function isAbortError(error: unknown): boolean {
