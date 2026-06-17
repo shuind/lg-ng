@@ -238,7 +238,9 @@ model: inherit
 
 ${REVIEW_AGENT_BASE_PROMPT}
 
-专长维度：逾期 open 伏笔、时间线排序违例、同一人物同时出现在不同地点、人物关系反向缺失、POV 疑似越界。issues[].type 使用 continuity|timeline|foreshadowing|relationship|pov。
+检查维度与 issue type：continuity（前后事实不一致）、timeline（时间线排序/间隔违例）、foreshadowing（伏笔逾期或兑现冲突）、relationship（关系反向缺失或称呼错位）、pov（视角边界越界）。
+
+连续性 severity 锚点：high = 直接破坏读者理解、正典一致性、章节因果或主线承诺；medium = 会造成明显疑惑但可通过补一句解释修复；low = 局部命名、顺序或表述瑕疵。
 
 ${REVIEW_AGENT_JSON_SCHEMA}
 `;
@@ -254,7 +256,9 @@ model: inherit
 
 ${REVIEW_AGENT_BASE_PROMPT}
 
-专长维度：正典冲突、重复设定、可合并候选、全新事实。issues[].type 使用 canon_conflict|duplicate|merge_candidate|new_fact。
+检查维度与 issue type：canon_conflict（与既有正典冲突）、duplicate（重复设定）、merge_candidate（可合并候选）、new_fact（新增但未入典事实）。
+
+设定冲突 severity 锚点：high = 会改写核心规则、人物身份、能力边界或已确认历史；medium = 影响局部章节解释或后续归档决策；low = 命名、别名、来源或落盘位置需要整理。
 
 ${REVIEW_AGENT_JSON_SCHEMA}
 `;
@@ -270,7 +274,11 @@ model: inherit
 
 ${REVIEW_AGENT_BASE_PROMPT}
 
-专长维度：章节目标、信息差推进、留钩、情绪曲线、爽点兑现或铺垫。issues[].type 使用 pacing|hook|information_gap|emotion_curve|payoff。
+检查维度与 issue type：pacing（章节/场景推进效率）、hook（章末钩子）、information_gap（信息差推进）、emotion_curve（情绪转折）、payoff（爽点铺垫或兑现）。
+
+客观代理指标：每个主要场景是否有目标、阻碍和结果；是否产生新信息、情绪转折或关系变化；章末是否停在悬念、选择、代价或反转点；爽点是否有铺垫、行动、反馈和余波。
+
+节奏 severity 锚点：high = 追读动机明显断裂、关键承诺落空或章末失去推进力；medium = 场景有内容但信息增量/情绪转折不足；low = 局部冗余、钩子位置或反馈强度可优化。
 
 ${REVIEW_AGENT_JSON_SCHEMA}
 `;
@@ -286,7 +294,9 @@ model: inherit
 
 ${REVIEW_AGENT_BASE_PROMPT}
 
-专长维度：叙事人称、视角边界、语气、句式密度、专名写法。issues[].type 使用 voice|style|pov|terminology。
+检查维度与 issue type：voice（角色/叙述声音漂移）、style（句式密度与文风）、pov（视角边界）、terminology（专名写法）。
+
+文风 severity 锚点：high = 破坏沉浸、角色辨识度或既定 POV，让读者误判叙述主体；medium = 明显偏离既有语气或句式密度但不改写事实；low = 局部措辞、专名统一或节奏微调。
 
 ${REVIEW_AGENT_JSON_SCHEMA}
 `;

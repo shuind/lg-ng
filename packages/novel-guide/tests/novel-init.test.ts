@@ -1,8 +1,9 @@
-import { mkdtemp, readFile, stat } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { initNovelWorkspace } from "../src/novel/init.js";
+import { templateFiles } from "../src/novel/templates.js";
 
 async function tempDir(): Promise<string> {
   return await mkdtemp(path.join(os.tmpdir(), "novel-guide-"));
@@ -35,5 +36,32 @@ describe("novel init", () => {
     const novel = await readFile(path.join(cwd, "NOVEL.md"), "utf8");
     expect(novel).toContain("project: 第一次");
     expect(novel).not.toContain("project: 第二次");
+  });
+
+  it("keeps checked-in root agent copies aligned with the authoritative templates", async () => {
+    const repoRoot = path.resolve(process.cwd(), "..", "..");
+    const rootAgentsDir = path.join(repoRoot, ".novel-guide", "agents");
+    try {
+      await stat(rootAgentsDir);
+    } catch {
+      return;
+    }
+
+    const generatedAgents = Object.entries(templateFiles("测试小说"))
+      .filter(([file]) => file.startsWith(".novel-guide/agents/") && file.endsWith(".md"))
+      .map(([file, content]) => ({
+        name: path.basename(file),
+        content,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const checkedInAgents = (await readdir(rootAgentsDir))
+      .filter((file) => file.endsWith(".md"))
+      .sort((a, b) => a.localeCompare(b));
+
+    expect(checkedInAgents).toEqual(generatedAgents.map((agent) => agent.name));
+    for (const agent of generatedAgents) {
+      const checkedIn = await readFile(path.join(rootAgentsDir, agent.name), "utf8");
+      expect(checkedIn).toBe(agent.content);
+    }
   });
 });

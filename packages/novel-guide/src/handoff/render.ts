@@ -24,7 +24,17 @@ export interface EjectHandoffInput {
 
 export interface EjectHandoffResult {
   relativePath: string;
+  packageRelativeDir: string;
+  promptRelativePath: string;
+  readmeRelativePath: string;
+  manifestRelativePath: string;
+  missingRelativePath: string;
+  filesRelativeDir: string;
+  bundleRelativeDir: string;
+  zipRelativePath?: string;
   content: string;
+  readmeContent: string;
+  manifestContent: string;
   messageCount: number;
   estimatedTokens: number;
   mode: HandoffMode;
@@ -32,6 +42,12 @@ export interface EjectHandoffResult {
   chapter: string;
   target: string;
   copy: boolean;
+  bundle: boolean;
+  zip: boolean;
+  inline: boolean;
+  referencedFiles: string[];
+  filesToBundle: string[];
+  referencedParentDirs: string[];
 }
 
 export interface ParsedEjectArgs {
@@ -40,11 +56,15 @@ export interface ParsedEjectArgs {
   profile: HandoffTargetProfile;
   mode: HandoffMode;
   copy: boolean;
+  bundle: boolean;
+  zip: boolean;
+  inline: boolean;
 }
 
 const MAX_MESSAGE_CHARS = 900;
 const MAX_RECENT_MESSAGES = 18;
 const MAX_SECTION_CHARS = 12000;
+const CORE_PACKAGE_FILES = ["NOVEL.md", "GUIDE.md"];
 
 const FILE_PATH_PATTERN = /(?:^|[\s`"'（(])((?:NOVEL|GUIDE)\.md|(?:canon|candidates|drafts|handoff|archive|inbox)\/[\w\-.\/一-鿿]+\.[\w]+|\.novel-guide\/[\w\-.\/]+)(?=$|[\s`"'，。；;：:）)])/g;
 const PROFILE_ALIASES: Record<string, HandoffTargetProfile> = {
@@ -73,6 +93,9 @@ export function parseEjectArgs(args: string): ParsedEjectArgs {
   let profile: HandoffTargetProfile = "session";
   let mode: HandoffMode = "extract";
   let copy = false;
+  let bundle = true;
+  let zip = true;
+  let inline = false;
 
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index];
@@ -94,6 +117,30 @@ export function parseEjectArgs(args: string): ParsedEjectArgs {
     }
     if (token === "--copy") {
       copy = true;
+      continue;
+    }
+    if (token === "--bundle" || token === "--copy-files") {
+      bundle = true;
+      inline = false;
+      continue;
+    }
+    if (token === "--no-bundle") {
+      bundle = false;
+      zip = false;
+      continue;
+    }
+    if (token === "--zip") {
+      zip = true;
+      continue;
+    }
+    if (token === "--no-zip") {
+      zip = false;
+      continue;
+    }
+    if (token === "--inline") {
+      inline = true;
+      bundle = false;
+      zip = false;
       continue;
     }
     if (token === "--no-copy") {
@@ -128,16 +175,28 @@ export function parseEjectArgs(args: string): ParsedEjectArgs {
     }
   }
 
-  return { chapter, target, profile, mode, copy };
+  if (!bundle) zip = false;
+  return { chapter, target, profile, mode, copy, bundle, zip, inline };
 }
 
 export function renderEjectHandoff(input: EjectHandoffInput): EjectHandoffResult {
   const parsed = parseEjectArgs(input.args);
-  const relativePath = path.posix.join("handoff", `${parsed.chapter}-${parsed.target}.md`);
+  const baseName = `${parsed.chapter}-${parsed.target}`;
+  const packageRelativeDir = path.posix.join("handoff", baseName);
+  const filesRelativeDir = path.posix.join(packageRelativeDir, "files");
+  const promptRelativePath = parsed.bundle
+    ? path.posix.join(packageRelativeDir, "prompt.md")
+    : path.posix.join("handoff", `${baseName}.md`);
+  const readmeRelativePath = path.posix.join(packageRelativeDir, "README.md");
+  const manifestRelativePath = path.posix.join(packageRelativeDir, "manifest.json");
+  const missingRelativePath = `${manifestRelativePath}.missing`;
+  const zipRelativePath = parsed.bundle && parsed.zip ? path.posix.join("handoff", `${baseName}.zip`) : undefined;
   const recentMessages = input.messages.slice(-MAX_RECENT_MESSAGES);
   const userMessages = recentMessages.filter((message) => message.role === "user");
   const assistantMessages = recentMessages.filter((message) => message.role === "assistant");
-  const fileRefs = extractFileRefs(recentMessages);
+  const referencedFiles = extractFileRefs(recentMessages);
+  const filesToBundle = collectFilesToBundle(referencedFiles);
+  const referencedParentDirs = collectParentDirs(filesToBundle);
   const nowIso = input.nowIso ?? new Date().toISOString();
 
   const recentUserIntent = truncateSection(userMessages
@@ -148,15 +207,24 @@ export function renderEjectHandoff(input: EjectHandoffInput): EjectHandoffResult
     .map((message) => `- ${truncateInline(stringifyMessageContent(message.content), MAX_MESSAGE_CHARS)}`)
     .join("\n") || "- （当前会话里没有可导出的助手结论。）");
 
-  const referencedFiles = fileRefs.length
-    ? fileRefs.map((file) => `- ${file}`).join("\n")
-    : "- （未从最近会话中识别到明确文件路径；下一步先读 NOVEL.md 和 GUIDE.md。）";
+  const referencedFilesMarkdown = referencedFiles.length
+    ? referencedFiles.map((file) => `- ${file}`).join("\n")
+    : "- （未从最近会话中识别到明确文件路径。）";
+  const filesToBundleMarkdown = filesToBundle.map((file) => `- ${file}`).join("\n");
+  const parentDirsMarkdown = referencedParentDirs.length
+    ? referencedParentDirs.map((dir) => `- ${dir}/`).join("\n")
+    : "- （无额外父级目录提示。）";
 
-  const basePrompt = buildNextPrompt(parsed, fileRefs);
-  const profileSections = buildProfileSections(parsed, basePrompt, referencedFiles);
+  const basePrompt = buildNextPrompt(parsed, filesToBundle);
+  const profileSections = buildProfileSections(parsed, basePrompt, filesToBundleMarkdown);
   const modeLine = parsed.mode === "polish"
     ? "deterministic extract plus explicit light polish; polish must not add facts."
     : "active REPL session snapshot, deterministic extract; no model call during /eject.";
+  const packageLine = parsed.bundle
+    ? `upload package directory: ${packageRelativeDir}`
+    : parsed.inline
+      ? "inline markdown export; no copied file package"
+      : "single handoff markdown; no copied file package";
 
   const content = [
     `# Handoff: ${parsed.chapter} ${parsed.target}`,
@@ -166,6 +234,10 @@ export function renderEjectHandoff(input: EjectHandoffInput): EjectHandoffResult
     `- Workspace: ${input.cwd}`,
     `- Profile: ${parsed.profile}`,
     `- Mode: ${parsed.mode}`,
+    `- Export: ${packageLine}`,
+    `- Prompt file: ${promptRelativePath}`,
+    `- File bundle: ${parsed.bundle ? filesRelativeDir : "disabled"}`,
+    `- Zip: ${zipRelativePath ?? "disabled"}`,
     `- Source: ${modeLine}`,
     "",
     "## Current user intent from recent turns",
@@ -176,9 +248,17 @@ export function renderEjectHandoff(input: EjectHandoffInput): EjectHandoffResult
     "",
     assistantNotes,
     "",
+    "## Files included in the upload package",
+    "",
+    filesToBundleMarkdown,
+    "",
     "## Files referenced in recent turns",
     "",
-    referencedFiles,
+    referencedFilesMarkdown,
+    "",
+    "## Parent directory hints",
+    "",
+    parentDirsMarkdown,
     "",
     ...profileSections,
     "",
@@ -191,15 +271,48 @@ export function renderEjectHandoff(input: EjectHandoffInput): EjectHandoffResult
     "## Notes",
     "",
     "- This handoff is extracted from the active session. Workspace files remain authoritative.",
+    parsed.bundle
+      ? `- Upload ${zipRelativePath ?? packageRelativeDir}; if zip upload is unavailable, upload ${packageRelativeDir}/.`
+      : "- This inline export does not copy files. Use /handoff for a cold, file-grounded 6-card prompt or run /eject without --inline for an upload package.",
     "- Do not treat this file as canon; use it as a bridge into the next session or external model.",
     "- If any section looks incomplete, ask the author for the smallest missing fact instead of inventing plot.",
-    "- Avoid adding new facts, plot, setting, or chapter prose unless the author explicitly asks.",
+    "- After saving a new chapter locally, run /chapter-delta <draft-path> to extract state changes for author review.",
     "",
   ].join("\n");
 
+  const readmeContent = buildReadmeContent({
+    baseName,
+    promptRelativePath,
+    zipRelativePath,
+    filesToBundle,
+    filesRelativeDir,
+    profile: parsed.profile,
+  });
+  const manifestContent = buildManifestContent({
+    nowIso,
+    sessionId: input.sessionId,
+    workspace: input.cwd,
+    parsed,
+    promptRelativePath,
+    filesRelativeDir,
+    filesToBundle,
+    referencedFiles,
+    referencedParentDirs,
+  });
+
   return {
-    relativePath,
+    relativePath: promptRelativePath,
+    packageRelativeDir,
+    promptRelativePath,
+    readmeRelativePath,
+    manifestRelativePath,
+    missingRelativePath,
+    filesRelativeDir,
+    bundleRelativeDir: filesRelativeDir,
+    zipRelativePath,
     content,
+    readmeContent,
+    manifestContent,
     messageCount: input.messages.length,
     estimatedTokens: estimateTextTokens(content),
     mode: parsed.mode,
@@ -207,13 +320,19 @@ export function renderEjectHandoff(input: EjectHandoffInput): EjectHandoffResult
     chapter: parsed.chapter,
     target: parsed.target,
     copy: parsed.copy,
+    bundle: parsed.bundle,
+    zip: parsed.zip,
+    inline: parsed.inline,
+    referencedFiles,
+    filesToBundle,
+    referencedParentDirs,
   };
 }
 
-function buildNextPrompt(parsed: ParsedEjectArgs, fileRefs: string[]): string {
-  const fileHint = fileRefs.length
-    ? `优先读取这些相关文件：${fileRefs.join("、")}。`
-    : "先读取 NOVEL.md 和 GUIDE.md，再按需检索 canon/、candidates/、drafts/、handoff/。";
+function buildNextPrompt(parsed: ParsedEjectArgs, filesToBundle: string[]): string {
+  const fileHint = filesToBundle.length
+    ? `上传包内包含这些工作区文件：${filesToBundle.map((file) => `files/${file}`).join("、")}。请先读取 prompt.md，再按需读取这些文件。`
+    : "先读取 prompt.md；若信息不足，向作者索要 NOVEL.md、GUIDE.md 或相关 canon/drafts 文件。";
   return [
     "你正在接手一个 Novel Guide 小说工作区。",
     fileHint,
@@ -222,7 +341,7 @@ function buildNextPrompt(parsed: ParsedEjectArgs, fileRefs: string[]): string {
   ].join("\n");
 }
 
-function buildProfileSections(parsed: ParsedEjectArgs, nextPrompt: string, referencedFiles: string): string[] {
+function buildProfileSections(parsed: ParsedEjectArgs, nextPrompt: string, uploadFiles: string): string[] {
   switch (parsed.profile) {
     case "long-context":
       return [
@@ -230,9 +349,9 @@ function buildProfileSections(parsed: ParsedEjectArgs, nextPrompt: string, refer
         "",
         "<handoff>",
         `  <target>${parsed.chapter} / ${parsed.target}</target>`,
-        "  <rules>Read workspace files first. Keep canon authoritative. Ask minimal questions when facts are missing.</rules>",
+        "  <rules>Read prompt.md first, then read uploaded workspace files. Keep canon authoritative. Ask minimal questions when facts are missing.</rules>",
         "  <files>",
-        indent(referencedFiles, "    "),
+        indent(uploadFiles, "    "),
         "  </files>",
         "</handoff>",
       ];
@@ -241,10 +360,10 @@ function buildProfileSections(parsed: ParsedEjectArgs, nextPrompt: string, refer
         "## ChatGPT setup",
         "",
         "### System instructions",
-        "你是小说项目接力助手。必须以工作区文件为准，不编造正典，不代写未请求的正文。",
+        "你是小说项目接力助手。必须以上传的工作区文件为准，不编造正典，不代写未请求的正文。",
         "",
         "### Knowledge files to upload/read",
-        referencedFiles,
+        uploadFiles,
         "",
         "### Starter prompt",
         nextPrompt,
@@ -254,7 +373,7 @@ function buildProfileSections(parsed: ParsedEjectArgs, nextPrompt: string, refer
       return [
         "## Grounded long-context workflow",
         "",
-        "1. 上传或读取 NOVEL.md、GUIDE.md 和相关 canon 包。",
+        "1. 上传 zip；若不支持 zip，就上传 package 目录中的 prompt.md 和 files/。",
         "2. 先做来源化摘要，列出每条判断来自哪个文件。",
         "3. 再处理本次章节目标；信息不足时只提最小问题。",
       ];
@@ -266,7 +385,7 @@ function buildProfileSections(parsed: ParsedEjectArgs, nextPrompt: string, refer
         "## 中文网页模型任务卡",
         "",
         `- 目标：围绕 ${parsed.chapter} / ${parsed.target} 接力推进。`,
-        "- 写法：中文网文语感，节奏直接；但所有设定必须以文件为准。",
+        "- 写法：中文网文语感，节奏直接；但所有设定必须以上传文件为准。",
         "- 禁止：补不存在的设定、提前揭示伏笔、把交接内容当正典。",
       ];
     case "session":
@@ -278,6 +397,105 @@ function buildProfileSections(parsed: ParsedEjectArgs, nextPrompt: string, refer
         "- 进入新会话后仍以工作区文件为准。",
       ];
   }
+}
+
+function buildReadmeContent(input: {
+  baseName: string;
+  promptRelativePath: string;
+  zipRelativePath?: string;
+  filesToBundle: string[];
+  filesRelativeDir: string;
+  profile: HandoffTargetProfile;
+}): string {
+  const localPromptPath = input.promptRelativePath.split("/").slice(-1)[0] ?? "prompt.md";
+  const localFilesDir = input.filesRelativeDir.split("/").slice(-1)[0] ?? "files";
+  return [
+    `# ${input.baseName} upload package`,
+    "",
+    "## How to use",
+    "",
+    input.zipRelativePath
+      ? `1. 首选上传 \`${input.zipRelativePath}\` 给外部模型。`
+      : "1. 上传本目录中的文件给外部模型。",
+    `2. 如果模型不支持 zip，就上传本目录里的 \`${localPromptPath}\`、\`manifest.json\` 和 \`${localFilesDir}/\`。`,
+    `3. 让模型先读取 \`${localPromptPath}\`，再按需读取 \`${localFilesDir}/\` 内文件。`,
+    "4. 保存新章到本地后，运行 `/chapter-delta <draft-path>` 抽取状态变化；作者确认后再写 canon。",
+    "",
+    "## Included workspace files",
+    "",
+    input.filesToBundle.map((file) => `- ${localFilesDir}/${file}`).join("\n"),
+    "",
+    "## Notes",
+    "",
+    `- Target profile: ${input.profile}`,
+    "- `manifest.json.missing` 出现时，表示有文件未复制成功；不要让外部模型凭空补这些内容。",
+    "- `/eject` 是热会话接力包；如果需要纯粘贴、内联 6 张卡的写作提示词，请用 `/handoff`。",
+    "",
+  ].join("\n");
+}
+
+function buildManifestContent(input: {
+  nowIso: string;
+  sessionId: string;
+  workspace: string;
+  parsed: ParsedEjectArgs;
+  promptRelativePath: string;
+  filesRelativeDir: string;
+  filesToBundle: string[];
+  referencedFiles: string[];
+  referencedParentDirs: string[];
+}): string {
+  const filesDirName = input.filesRelativeDir.split("/").slice(-1)[0] ?? "files";
+  return `${JSON.stringify({
+    schema: "novel-guide.eject-package.v1",
+    generated: input.nowIso,
+    sessionId: input.sessionId,
+    workspace: input.workspace,
+    chapter: input.parsed.chapter,
+    target: input.parsed.target,
+    profile: input.parsed.profile,
+    mode: input.parsed.mode,
+    prompt: input.promptRelativePath,
+    filesDir: input.filesRelativeDir,
+    expectedFiles: input.filesToBundle.map((file) => ({
+      source: file,
+      bundledPath: `${filesDirName}/${file}`,
+    })),
+    referencedFiles: input.referencedFiles,
+    referencedParentDirs: input.referencedParentDirs,
+    notes: [
+      "Read prompt.md first.",
+      "Workspace files remain authoritative.",
+      "Missing files, if any, are listed in manifest.json.missing.",
+    ],
+  }, null, 2)}\n`;
+}
+
+function collectFilesToBundle(referencedFiles: string[]): string[] {
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const file of [...CORE_PACKAGE_FILES, ...referencedFiles]) {
+    const normalized = normalizeWorkspaceRef(file);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    ordered.push(normalized);
+  }
+  return ordered;
+}
+
+function collectParentDirs(files: string[]): string[] {
+  const dirs = new Set<string>();
+  for (const file of files) {
+    const dir = path.posix.dirname(file);
+    if (dir && dir !== ".") dirs.add(dir);
+  }
+  return [...dirs].sort((a, b) => a.localeCompare(b, "zh-CN"));
+}
+
+function normalizeWorkspaceRef(value: string): string | null {
+  const normalized = value.trim().replace(/\\/g, "/").replace(/^\.\/+/, "").replace(/^\/+/, "");
+  if (!normalized || normalized.includes("..") || /^[a-zA-Z]:/.test(normalized)) return null;
+  return normalized;
 }
 
 function normalizeChapter(value: string): string {
@@ -308,8 +526,8 @@ function extractFileRefs(messages: ChatCompletionMessageParam[]): string[] {
   for (const message of messages) {
     const text = stringifyMessageContent(message.content);
     for (const match of text.matchAll(FILE_PATH_PATTERN)) {
-      const ref = match[1].replace(/\\/g, "/").replace(/^\/+/, "");
-      if (ref.includes("..")) continue;
+      const ref = normalizeWorkspaceRef(match[1]);
+      if (!ref) continue;
       seen.add(ref);
     }
   }

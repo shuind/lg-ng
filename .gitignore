@@ -14,7 +14,9 @@ coverage/
 # Local runtime data
 .dev-logs/
 .lg-data/
-.novel-guide/
+.novel-guide/*
+!.novel-guide/agents/
+!.novel-guide/agents/*.md
 .playwright-mcp/
 data/
 plan/
