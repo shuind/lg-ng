@@ -142,21 +142,46 @@ function MoneyNumberInput({
   onChange: (value: number) => void
   suffix: string
 }) {
+  const [draft, setDraft] = useState(formatNumberDraft(value))
+
+  useEffect(() => {
+    setDraft(formatNumberDraft(value))
+  }, [value])
+
+  function updateDraft(nextDraft: string) {
+    setDraft(nextDraft)
+    const trimmed = nextDraft.trim()
+    if (!trimmed) return
+    const numberValue = Number(trimmed)
+    if (Number.isFinite(numberValue) && numberValue >= 0) {
+      onChange(numberValue)
+    }
+  }
+
+  function normalizeDraft() {
+    const numberValue = Number(draft.trim())
+    setDraft(formatNumberDraft(Number.isFinite(numberValue) && numberValue >= 0 ? numberValue : value))
+  }
+
   return (
     <label className="block space-y-1.5">
       <span className="text-[12px] font-medium text-muted-foreground">{label}</span>
       <div className="flex items-center gap-2">
         <Input
-          type="number"
-          min="0"
-          step="0.000001"
-          value={Number.isFinite(value) ? String(value) : "0"}
-          onChange={(event) => onChange(Number(event.target.value))}
+          type="text"
+          inputMode="decimal"
+          value={draft}
+          onBlur={normalizeDraft}
+          onChange={(event) => updateDraft(event.target.value)}
         />
         <span className="w-24 shrink-0 text-[12px] text-muted-foreground">{suffix}</span>
       </div>
     </label>
   )
+}
+
+function formatNumberDraft(value: number): string {
+  return Number.isFinite(value) ? String(value) : "0"
 }
 
 function UserRow({
