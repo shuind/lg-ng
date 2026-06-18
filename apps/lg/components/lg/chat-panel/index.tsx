@@ -15,14 +15,16 @@ function estimateThreadContextWindow(messages: Message[]): MessageContextWindow 
   const expectedOutputReserve = 4096
   const estimatedTokens = sessionMessages + expectedOutputReserve
   const budgetTokens = 128000
-  const triggerRatio = 0.75
+  const triggerTokens = 96000
+  const triggerRatio = triggerTokens / budgetTokens
   const ratio = estimatedTokens / budgetTokens
   return {
     estimatedTokens,
     budgetTokens,
     ratio,
     triggerRatio,
-    level: contextLevelFromRatio(ratio, triggerRatio),
+    triggerTokens,
+    level: contextLevelFromTokens(estimatedTokens, budgetTokens, triggerTokens),
     reserveTokens: expectedOutputReserve,
     components: {
       sessionMessages,
@@ -34,9 +36,10 @@ function estimateThreadContextWindow(messages: Message[]): MessageContextWindow 
   }
 }
 
-function contextLevelFromRatio(ratio: number, triggerRatio: number): MessageContextWindow["level"] {
+function contextLevelFromTokens(estimatedTokens: number, budgetTokens: number, triggerTokens: number): MessageContextWindow["level"] {
+  const ratio = budgetTokens > 0 ? estimatedTokens / budgetTokens : 0
   if (ratio >= 1) return "blocking"
-  if (ratio >= triggerRatio) return "auto_compact"
+  if (estimatedTokens >= triggerTokens) return "auto_compact"
   if (ratio >= 0.65) return "should_compact"
   if (ratio >= 0.5) return "warning"
   return "normal"

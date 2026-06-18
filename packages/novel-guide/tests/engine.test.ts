@@ -514,6 +514,7 @@ describe("AgentEngine compaction", () => {
       sessionId: "compact-session",
       initialMessages,
       contextBudgetTokens: 120,
+      compactionTriggerTokens: 80,
       recentMessageCount: 2,
     });
 
@@ -589,6 +590,7 @@ describe("AgentEngine compaction", () => {
       sessionId: "compact-retry-session",
       initialMessages,
       contextBudgetTokens: 160,
+      compactionTriggerTokens: 80,
       recentMessageCount: 2,
     });
 

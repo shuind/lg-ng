@@ -25,22 +25,42 @@ async function main() {
     updatedAt: now,
   }, null, 2) + "\n")
 
-  // 创作指南.md
-  await write(path.join(bookDir, "创作指南.md"), `# 创作指南
+  // 剧情设计指南.md
+  await write(path.join(bookDir, "剧情设计指南.md"), `# 剧情设计指南
 
-## 语感
+## 一句话故事
 
-保持冷峻、克制、近物质的语感。少用感叹号,多用短句。
+这是一个关于游历武者林晓的人,为了查清师门旧案,最终揭开归墟之外真相的故事。
 
-## 人物塑造
+## 主人公起点
 
-林晓：寡言,行动多于言语。内心独白用环境描写暗示。
+林晓是前禁军斥候,寡言、谨慎,背负旧案与身份阴影。她的起点不是平静生活,而是已经被卷入追查和逃避之间。
 
-## 禁忌
+## 任务与动机
 
-- 不用"突然"开头
-- 不用过多形容词堆砌
-- 不写说教式旁白
+任务：查清师门旧案与归墟异动之间的关系。
+
+动机：旧案影响她的身份、师承和未来选择,如果不查清,她无法摆脱被利用或被清算的命运。
+
+## 阻力
+
+- 陈磊代表的敌对势力；
+- 秦老掌握但不完全说出的旧情报；
+- 归墟相关的未知风险；
+- 林晓自身不轻信他人的性格缺陷。
+
+## 关卡
+
+1. 取得秦老信任,但不能暴露全部目的；
+2. 接近陈磊,同时避免被他反向试探；
+3. 找到归墟线索,却发现线索会牵连旧友；
+4. 在真相和自保之间做选择。
+
+## 悬念
+
+- 归墟之外到底是什么？
+- 秦老隐瞒了什么？
+- 陈磊是真的敌人,还是另一条线索？
 `)
 
   // 关系图谱.json
@@ -234,14 +254,6 @@ async function main() {
 她没有问见谁。有些答案,不能问得太急。
 `)
 
-  // skills
-  await write(path.join(bookDir, "skills", "style_guide_summary.md"), `# 创作指南摘要
-
-- 语感：冷峻克制,近物质,短句为主
-- 人物：林晓寡言,行动驱动,内心用环境暗示
-- 禁忌：不用"突然"开头,不用堆砌形容词,不说教
-`)
-
   // ledger.jsonl
   await write(path.join(bookDir, "ledger.jsonl"), [
     JSON.stringify({ id: "l1", ts: "2026-05-24T11:03:00Z", actor: "user", action: "update", targetPath: "人物设定/林晓.md", summary: "将林晓性别从男改为女" }),
@@ -272,7 +284,7 @@ async function main() {
   console.log("")
   console.log("Files created:")
   console.log("  book.json")
-  console.log("  创作指南.md")
+  console.log("  剧情设计指南.md（剧情设计指南）")
   console.log("  关系图谱.json")
   console.log("  人物设定/林晓.md")
   console.log("  人物设定/陈磊.md")
@@ -283,7 +295,6 @@ async function main() {
   console.log("  章节大纲/第二章.md")
   console.log("  章节正文/第一章 · 归墟初见.md")
   console.log("  章节正文/第二章 · 旧账新算.md")
-  console.log("  skills/style_guide_summary.md")
   console.log("  ledger.jsonl")
   console.log("  messages.jsonl")
 }

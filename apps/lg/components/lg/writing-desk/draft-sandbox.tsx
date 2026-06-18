@@ -46,7 +46,7 @@ export function DraftSandbox({
         <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
           <Sparkles className="h-3.5 w-3.5 text-accent" />
           试写沙盒
-          <span className="text-[10px] opacity-60">临时区域,不写入设定</span>
+          <span className="text-[10px] opacity-60">临时区域，按意图启用可插拔 Skill</span>
         </div>
         <div className="flex items-center gap-1">
           <button

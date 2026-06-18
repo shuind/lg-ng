@@ -15,14 +15,15 @@ import type {
 } from "../types"
 import { delay } from "./common"
 
-function fallbackStyleGuideSkill(bookId: string): Skill {
+function fallbackPlotDesignSkill(bookId: string): Skill {
   return {
-    id: `skill-style-${bookId}`,
-    type: "style_guide",
+    id: `skill-plot-design-${bookId}`,
+    type: "plot_design",
+    name: "剧情设计指南",
+    description: "剧情主线、关卡、冲突、悬念和切入点的压缩层",
     scope: "book",
     bookId,
-    sourceFile: "创作指南.md",
-    summaryFile: "skills/style_guide_summary.md",
+    sourceFile: "剧情设计指南.md",
     summaryTokenCount: 0,
     lastSourceModified: "",
     lastSummaryGenerated: "",
@@ -39,7 +40,7 @@ export async function listSkills(bookId: string): Promise<Skill[]> {
     return data
   } catch {
     await delay()
-    return [fallbackStyleGuideSkill(bookId)]
+    return [fallbackPlotDesignSkill(bookId)]
   }
 }
 
@@ -267,33 +268,3 @@ export async function deleteSkill(bookId: string, skillName: string): Promise<vo
   }
 }
 
-export async function getStyleGuideSkill(bookId: string): Promise<{ skill: Skill; summary: string }> {
-  try {
-    const res = await fetch(`/api/books/${bookId}/skills/style-guide`, { cache: "no-store" })
-    if (!res.ok) throw new Error("接口请求失败")
-    return await res.json()
-  } catch {
-    await delay()
-    return {
-      skill: fallbackStyleGuideSkill(bookId),
-      summary: "",
-    }
-  }
-}
-
-export async function refreshStyleGuideSummary(bookId: string): Promise<{ skill: Skill; summary: string }> {
-  try {
-    const res = await fetch(`/api/books/${bookId}/skills/style-guide/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-    })
-    if (!res.ok) throw new Error("接口请求失败")
-    return await res.json()
-  } catch {
-    await delay()
-    return {
-      skill: fallbackStyleGuideSkill(bookId),
-      summary: "",
-    }
-  }
-}

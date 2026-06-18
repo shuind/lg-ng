@@ -121,7 +121,7 @@ export async function createBook(title: string): Promise<Book> {
     updatedAt: now,
   }
   await fs.writeFile(path.join(bookDir, "book.json"), JSON.stringify(bookMeta, null, 2), "utf-8")
-  await fs.writeFile(path.join(bookDir, "创作指南.md"), `# 创作指南\n\n（请在此写下你的写作偏好与风格要求）\n`, "utf-8")
+  await fs.writeFile(path.join(bookDir, "剧情设计指南.md"), `# 剧情设计指南\n\n（请在此整理本书的剧情设计方法：一句话故事、主角任务、动机、阻力、关卡、悬念和切入点。）\n`, "utf-8")
   await fs.writeFile(path.join(bookDir, "关系图谱.json"), "{}\n", "utf-8")
   await fs.writeFile(path.join(bookDir, "ledger.jsonl"), "", "utf-8")
   await fs.writeFile(path.join(bookDir, "messages.jsonl"), "", "utf-8")

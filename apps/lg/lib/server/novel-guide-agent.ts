@@ -52,11 +52,14 @@ export type NovelGuideAgentStreamEvent =
 
 function emptyContextWindow(): EngineContextWindowState {
   const reserveTokens = 4096
+  const budgetTokens = 128000
+  const triggerTokens = 96000
   return {
     estimatedTokens: reserveTokens,
-    budgetTokens: 128000,
-    ratio: reserveTokens / 128000,
-    triggerRatio: 0.75,
+    budgetTokens,
+    ratio: reserveTokens / budgetTokens,
+    triggerRatio: triggerTokens / budgetTokens,
+    triggerTokens,
     level: "normal",
     reserveTokens,
     components: {

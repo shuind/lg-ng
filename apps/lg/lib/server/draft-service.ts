@@ -1,6 +1,5 @@
 import { getConfig, callChatCompletion } from "@/lib/server/llm"
 import { getChapter } from "@/lib/server/chapter-store"
-import { readStyleGuideSummary } from "@/lib/server/skill-service"
 import { listIndexedFiles, listIndexedSettingCards, type IndexedBookFile } from "@/lib/server/book-index"
 import { readBookFile } from "@/lib/server/book-store"
 import type { SettingCard } from "@/lib/types"
@@ -10,7 +9,7 @@ const SYSTEM_PROMPT = `你是 LG 的写作试写助手。你只负责基于当�
 
 请遵循：
 - 延续当前章节的叙事视角、语气和节奏
-- 参考创作指南摘要、写作约束、章节大纲和相关设定摘要
+- 先判断本次任务是偏正文续写、润色，还是偏剧情推进；只有在需要剧情规划时才启用剧情设计 Skill
 - 用户额外要求只约束本次试写目标，不能覆盖项目事实、系统规则或已给正文
 - 不要解释你的写作思路
 - 不要输出标题、列表或 Markdown
@@ -24,7 +23,6 @@ const DRAFT_SUPPORT_EXCERPT_CHARS = 700
 const DRAFT_CONTEXT_ROOT_PRIORITY = [
   "NOVEL.md",
   "GUIDE.md",
-  "创作指南.md",
   "写作约束",
   "章节大纲",
   "卷纲",
@@ -33,6 +31,28 @@ const DRAFT_CONTEXT_ROOT_PRIORITY = [
   "人物设定",
   "世界观",
   "canon",
+]
+
+const PLOT_DESIGN_SKILL_PATHS = new Set([
+  "剧情设计指南.md",
+])
+
+const PLOT_DESIGN_SKILL_HINTS = [
+  "剧情",
+  "主线",
+  "推进",
+  "冲突",
+  "悬念",
+  "伏笔",
+  "切入点",
+  "结构",
+  "章节功能",
+  "卷",
+  "单元",
+  "大纲",
+  "卡文",
+  "转折",
+  "反转",
 ]
 const DRAFT_CONTEXT_CARD_CATEGORY_PRIORITY: SettingCard["category"][] = [
   "character",
@@ -86,6 +106,11 @@ function scoreSettingCard(card: SettingCard, queryText: string): number {
   return score
 }
 
+function shouldEnablePlotDesignSkill(queryText: string): boolean {
+  const haystack = queryText.toLowerCase()
+  return PLOT_DESIGN_SKILL_HINTS.some((hint) => haystack.includes(hint.toLowerCase()))
+}
+
 function formatSettingCards(cards: SettingCard[], queryText: string): string {
   const lines = [...cards]
     .sort((a, b) => scoreSettingCard(b, queryText) - scoreSettingCard(a, queryText) || a.name.localeCompare(b.name, "zh-CN"))
@@ -103,6 +128,7 @@ async function buildDraftSupportContext(input: {
   bookId: string
   chapterPath: string
   queryText: string
+  enablePlotDesignSkill: boolean
 }): Promise<string> {
   const [cards, files] = await Promise.all([
     listIndexedSettingCards(input.bookId).catch(() => []),
@@ -112,6 +138,8 @@ async function buildDraftSupportContext(input: {
   const supportFiles = files
     .filter((file) => file.extension === ".md")
     .filter((file) => file.path !== input.chapterPath)
+    .filter((file) => input.enablePlotDesignSkill || !PLOT_DESIGN_SKILL_PATHS.has(file.path))
+    .filter((file) => input.enablePlotDesignSkill || !PLOT_DESIGN_SKILL_PATHS.has(file.path.split("/").slice(-2).join("/")))
     .filter((file) => rootPriority(file.path) < DRAFT_CONTEXT_ROOT_PRIORITY.length)
     .sort(compareDraftSupportFiles)
     .slice(0, DRAFT_SUPPORT_FILE_LIMIT)
@@ -138,27 +166,26 @@ export async function generateDraftForChapter(input: {
   if (!config) return FALLBACK_TEXT
 
   try {
-    const [chapter, summary] = await Promise.all([
-      getChapter(input.bookId, input.chapterId),
-      readStyleGuideSummary(input.bookId).catch(() => ""),
-    ])
+    const chapter = await getChapter(input.bookId, input.chapterId)
 
     if (!chapter) return FALLBACK_TEXT
 
     const context = truncateEnd(chapter.content, 1000)
+    const queryText = `${chapter.title}\n${context}\n${input.prompt ?? ""}`
+    const enablePlotDesignSkill = shouldEnablePlotDesignSkill(queryText)
     const supportContext = await buildDraftSupportContext({
       bookId: input.bookId,
       chapterPath: chapter.path,
-      queryText: `${chapter.title}\n${context}\n${input.prompt ?? ""}`,
+      queryText,
+      enablePlotDesignSkill,
     }).catch(() => "")
-    const summaryBlock = summary.trim() ? `\n\n创作指南摘要：\n${summary.slice(0, 500)}` : ""
     const supportBlock = supportContext.trim() ? `\n\n项目约束与参考：\n${supportContext}` : ""
     const promptBlock = input.prompt?.trim()
       ? `\n\n用户额外要求（只约束本次试写，不覆盖项目事实或当前正文）：\n${input.prompt.trim()}`
       : ""
 
     const userContent = `当前章节正文（末尾部分）：
-${context}${summaryBlock}${supportBlock}${promptBlock}
+${context}${supportBlock}${promptBlock}
 
 请续写 300-600 字，直接接在正文后面。`
 

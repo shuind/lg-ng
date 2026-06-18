@@ -162,7 +162,7 @@ export const SearchCanonTool: Tool = {
     const scope = str(input.scope);
     const patterns = scope ? [scope] : [
       "NOVEL.md",
-      "创作指南.md",
+      "剧情设计指南.md",
       ...WORKSPACE_GUIDE_FILES,
       "canon/**/*.md",
       "drafts/**/*.md",

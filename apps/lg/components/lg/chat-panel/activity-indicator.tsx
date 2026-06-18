@@ -72,6 +72,7 @@ function deriveActivityState(events: AgentEvent[], streaming: boolean): {
 
   const latest = [...visibleEvents].reverse().find((event) =>
     event.type === "tool_call" ||
+    event.type === "compaction" ||
     event.type === "observe" ||
     event.type === "reasoning" ||
     event.type === "retrieve" ||

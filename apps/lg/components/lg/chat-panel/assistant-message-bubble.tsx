@@ -50,6 +50,9 @@ export function AssistantMessageBubble({
   // arrives. Treat reasoning as live until the answer body starts.
   const reasoningStreaming = streaming && message.content.trim().length === 0
   const contentStreaming = streaming && message.content.trim().length > 0
+  const activeCompactionEvent = streaming && isAssistant
+    ? [...(message.events ?? [])].reverse().find((event) => event.type === "compaction")
+    : undefined
   const askUserQuestions = isAssistant
     ? extractAskUserQuestions(message.events ?? [], message.content)
     : []
@@ -106,6 +109,7 @@ export function AssistantMessageBubble({
           </span>
         </div>
       )}
+      {activeCompactionEvent && <CompactionStatus event={activeCompactionEvent} />}
       {streaming && (message.events ?? []).length > 0 && (
         <ActivityIndicator events={message.events ?? []} streaming={streaming} />
       )}
@@ -231,6 +235,15 @@ export function AssistantMessageBubble({
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+function CompactionStatus({ event }: { event: AgentEvent }) {
+  return (
+    <div className="flex w-fit items-center gap-2 rounded-full border border-amber-500/20 bg-amber-500/8 px-2.5 py-1 text-[11px] text-amber-700 dark:text-amber-300">
+      <Sparkles className="h-3 w-3 animate-pulse" />
+      <span>{event.text ?? "正在压缩上下文"}</span>
     </div>
   )
 }

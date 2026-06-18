@@ -1,6 +1,6 @@
 "use client"
 
-import { ArrowUp, AtSign, MessageCircle, Plus, SearchCheck, Square } from "lucide-react"
+import { ArrowUp, AtSign, ListChecks, Plus, Square } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { MessageContextWindow, WorkflowAction } from "@/lib/types"
 import { ContextWindowIndicator } from "./context-window-indicator"
@@ -12,15 +12,12 @@ export function ComposerFooter({
   sending,
   sendBlocked,
   contextWindow,
-  readonlyOnly,
   workflowAction,
   constraintPickerOpen,
   referencePickerOpen,
   onSend,
   onCancel,
-  onToggleReadonly,
   onSelectWorkflowAction,
-  onInsertSkillEvidencePrompt,
   onToggleConstraintPicker,
   onToggleReferencePicker,
 }: {
@@ -28,15 +25,12 @@ export function ComposerFooter({
   sending: boolean
   sendBlocked: boolean
   contextWindow?: MessageContextWindow
-  readonlyOnly: boolean
   workflowAction?: WorkflowAction
   constraintPickerOpen: boolean
   referencePickerOpen: boolean
   onSend: () => void
   onCancel: () => void
-  onToggleReadonly: () => void
   onSelectWorkflowAction: (action: WorkflowAction) => void
-  onInsertSkillEvidencePrompt: () => void
   onToggleConstraintPicker: () => void
   onToggleReferencePicker: () => void
 }) {
@@ -45,28 +39,25 @@ export function ComposerFooter({
       <div className="flex min-w-0 items-center gap-1" data-chat-popover-keepopen="true">
         <ToolBtn
           icon={<Plus className="h-3.5 w-3.5" />}
-          label="约束 / Skill"
+          label="Skill"
           active={constraintPickerOpen}
+          showLabel
           onClick={onToggleConstraintPicker}
         />
         <ToolBtn
           icon={<AtSign className="h-3.5 w-3.5" />}
-          label="引用设定"
+          label="引用"
           active={referencePickerOpen}
+          showLabel
           onClick={onToggleReferencePicker}
         />
         <ToolBtn
-          icon={<SearchCheck className="h-3.5 w-3.5" />}
-          label="在稿里找写法证据"
+          icon={<ListChecks className="h-3.5 w-3.5" />}
+          label="Plan"
+          active={workflowAction === "plan"}
           disabled={sending}
-          onClick={onInsertSkillEvidencePrompt}
-        />
-        <ToolBtn
-          icon={<MessageCircle className="h-3.5 w-3.5" />}
-          label="讨论模式"
-          active={readonlyOnly}
-          disabled={sending}
-          onClick={onToggleReadonly}
+          showLabel
+          onClick={() => onSelectWorkflowAction("plan")}
         />
         <WorkflowActionMenu
           workflowAction={workflowAction}

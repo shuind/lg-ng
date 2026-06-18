@@ -17,7 +17,7 @@ import type {
 import { readBookFile, getBookFileMtime } from "@/lib/server/book-store"
 import { listLedgerEntries } from "@/lib/server/ledger"
 import { getBookDir } from "@/lib/server/paths"
-import { rebuildBookIndexes, updateIndexedFile } from "@/lib/server/book-index"
+import { rebuildBookIndexes } from "@/lib/server/book-index"
 import {
   LEGACY_WORKSPACE_SKILLS_DIR,
   WORKSPACE_SKILLS_DIR,
@@ -43,15 +43,11 @@ export {
   validateSkillDraft,
 } from "@/lib/server/skill-validation"
 
-const SOURCE_FILE = "创作指南.md"
-const SUMMARY_FILE = "skills/style_guide_summary.md"
-const META_FILE = "skills/style_guide.skill.json"
+const SOURCE_FILE = "剧情设计指南.md"
+const META_FILE = "skills/plot_design.skill.json"
 const SKILL_LAB_FILE = "skill-lab.json"
 
-const SUMMARY_MAX_CHARS = 500
 const USAGE_LEDGER_SCAN_LIMIT = 1000
-
-const KEYWORD_LINES = ["文风", "语感", "禁忌", "人物", "结构", "节奏", "偏好", "塑造", "风格", "写法"]
 
 // ─── Paths ────────────────────────────────────────────────────
 
@@ -553,18 +549,17 @@ export async function deleteWorkspaceSkill(bookId: string, rawName: string): Pro
   await rebuildBookIndexes(bookId).catch(() => {})
 }
 
-function normalizeStyleGuideSkill(bookId: string, skill: Skill, dirty: boolean): Skill {
+function normalizePlotDesignSkill(bookId: string, skill: Skill, dirty: boolean): Skill {
   return {
     ...skill,
-    id: skill.id || `skill-style-${bookId}`,
-    type: "style_guide",
-    name: skill.name || "创作指南",
-    description: skill.description || "文风、语感、禁忌和偏好的压缩层",
+    id: `skill-plot-design-${bookId}`,
+    type: "plot_design",
+    name: skill.name || "剧情设计指南",
+    description: skill.description || "剧情主线、关卡、冲突、悬念和切入点的压缩层",
     scope: "book",
     bookId,
     sourceFile: SOURCE_FILE,
-    summaryFile: SUMMARY_FILE,
-    source: "style_guide",
+    source: "plot_design",
     dirty,
   }
 }
@@ -651,65 +646,9 @@ export async function collectSkillUsageStats(bookId: string): Promise<Map<string
   return stats
 }
 
-// ─── Summary Generation (rule-based, no LLM) ─────────────────
-
-function generateSummary(content: string): string {
-  if (!content.trim()) {
-    return "# 创作指南摘要\n\n（创作指南为空,请在工作台编辑创作指南.md）\n"
-  }
-
-  const lines = content.split("\n")
-  const picked: string[] = []
-  let inKeywordSection = false
-
-  for (const line of lines) {
-    const trimmed = line.trim()
-    if (!trimmed) {
-      if (inKeywordSection && picked.length > 0 && picked[picked.length - 1] !== "") {
-        picked.push("")
-      }
-      continue
-    }
-
-    // headings: always include h1/h2, skip h3+
-    if (/^#{1,2}\s/.test(trimmed)) {
-      picked.push(trimmed)
-      inKeywordSection = KEYWORD_LINES.some((kw) => trimmed.includes(kw))
-      continue
-    }
-
-    // lines in keyword-matching sections
-    if (inKeywordSection) {
-      picked.push(trimmed)
-      continue
-    }
-
-    // lines containing keywords anywhere
-    if (KEYWORD_LINES.some((kw) => trimmed.includes(kw))) {
-      picked.push(trimmed)
-    }
-  }
-
-  // if nothing picked, take first few non-empty lines
-  if (picked.filter((l) => l.trim()).length === 0) {
-    const fallback = lines.filter((l) => l.trim()).slice(0, 8)
-    picked.push(...fallback)
-  }
-
-  // build output, truncate to SUMMARY_MAX_CHARS
-  let output = "# 创作指南摘要\n\n"
-  for (const line of picked) {
-    const next = line === "" ? "\n" : line + "\n"
-    if (output.length + next.length > SUMMARY_MAX_CHARS) break
-    output += next
-  }
-
-  return output.trimEnd() + "\n"
-}
-
 // ─── Public API ───────────────────────────────────────────────
 
-export async function getStyleGuideSkill(bookId: string): Promise<{ skill: Skill; summary: string }> {
+export async function getPlotDesignSkill(bookId: string): Promise<Skill> {
   let skill = await readMeta(bookId)
 
   // check if source file is newer
@@ -718,26 +657,24 @@ export async function getStyleGuideSkill(bookId: string): Promise<{ skill: Skill
 
   if (!skill) {
     skill = {
-      id: `skill-style-${bookId}`,
-      type: "style_guide",
-      name: "创作指南",
-      description: "文风、语感、禁忌和偏好的压缩层",
+      id: `skill-plot-design-${bookId}`,
+      type: "plot_design",
+      name: "剧情设计指南",
+      description: "剧情主线、关卡、冲突、悬念和切入点的压缩层",
       scope: "book",
       bookId,
       sourceFile: SOURCE_FILE,
-      summaryFile: SUMMARY_FILE,
       summaryTokenCount: 0,
       lastSourceModified: sourceMtime,
       lastSummaryGenerated: "",
       dirty,
-      source: "style_guide",
+      source: "plot_design",
     }
   } else {
-    skill = normalizeStyleGuideSkill(bookId, skill, dirty)
+    skill = normalizePlotDesignSkill(bookId, skill, dirty)
   }
 
-  const summary = await readStyleGuideSummary(bookId)
-  return { skill, summary }
+  return skill
 }
 
 async function listWorkspaceSkills(bookId: string): Promise<Skill[]> {
@@ -791,11 +728,11 @@ async function listWorkspaceSkills(bookId: string): Promise<Skill[]> {
 }
 
 function skillDisplaySortKey(skill: Skill): string {
-  return `${skill.source === "style_guide" ? "0" : "1"}:${skill.name ?? skill.id}`
+  return skill.name ?? skill.id
 }
 
 export async function listSkills(bookId: string): Promise<Skill[]> {
-  const { skill } = await getStyleGuideSkill(bookId)
+  const skill = await getPlotDesignSkill(bookId)
   const workspaceSkills = await listWorkspaceSkills(bookId)
   return [skill, ...workspaceSkills]
 }
@@ -828,69 +765,14 @@ export async function resolveSkillSummaries(bookId: string, skillIds: string[]):
   for (const skill of skills) {
     if (!wantedIds.has(skill.id)) continue
 
-    let summary = ""
-    if (skill.type === "style_guide") {
-      summary = await readStyleGuideSummary(bookId)
-    } else if (isWorkspaceSkillSource(skill.source)) {
-      summary = await readBookFile(bookId, skill.sourceFile) ?? ""
-    }
+    const summary = await readBookFile(bookId, skill.sourceFile) ?? ""
 
     summaries.push({
       skill,
       summary,
-      refreshable: skill.type === "style_guide",
+      refreshable: false,
     })
   }
 
   return summaries
-}
-
-export async function readStyleGuideSummary(bookId: string): Promise<string> {
-  const content = await readBookFile(bookId, SUMMARY_FILE)
-  return content ?? ""
-}
-
-export async function refreshStyleGuideSummary(bookId: string): Promise<{ skill: Skill; summary: string }> {
-  const sourceContent = await readBookFile(bookId, SOURCE_FILE)
-  const sourceMtime = await getBookFileMtime(bookId, SOURCE_FILE)
-
-  const summary = generateSummary(sourceContent ?? "")
-
-  // write summary file (goes through normal file write, not writeBookFile, to avoid ledger noise)
-  const summaryAbs = path.join(getBookDir(bookId), SUMMARY_FILE)
-  await fs.mkdir(path.dirname(summaryAbs), { recursive: true })
-  await fs.writeFile(summaryAbs, summary, "utf-8")
-  await updateIndexedFile(bookId, SUMMARY_FILE, summary).catch(() => {})
-
-  // estimate token count (rough: 1 token ≈ 1.5 Chinese chars)
-  const charCount = summary.length
-  const tokenCount = Math.ceil(charCount / 1.5)
-
-  let skill = await readMeta(bookId)
-  if (!skill) {
-    skill = {
-      id: `skill-style-${bookId}`,
-      type: "style_guide",
-      name: "创作指南",
-      description: "文风、语感、禁忌和偏好的压缩层",
-      scope: "book",
-      bookId,
-      sourceFile: SOURCE_FILE,
-      summaryFile: SUMMARY_FILE,
-      summaryTokenCount: tokenCount,
-      lastSourceModified: sourceMtime,
-      lastSummaryGenerated: new Date().toISOString(),
-      dirty: false,
-      source: "style_guide",
-    }
-  } else {
-    skill = normalizeStyleGuideSkill(bookId, skill, false)
-    skill.summaryTokenCount = tokenCount
-    skill.lastSourceModified = sourceMtime
-    skill.lastSummaryGenerated = new Date().toISOString()
-    skill.dirty = false
-  }
-
-  await writeMeta(skill)
-  return { skill, summary }
 }

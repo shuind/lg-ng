@@ -7,12 +7,14 @@ export function ToolBtn({
   label,
   active,
   disabled,
+  showLabel,
   onClick,
 }: {
   icon: React.ReactNode
   label: string
   active?: boolean
   disabled?: boolean
+  showLabel?: boolean
   onClick?: () => void
 }) {
   return (
@@ -23,11 +25,13 @@ export function ToolBtn({
         disabled && "pointer-events-none opacity-45",
       )}
       title={label}
+      aria-label={label}
       type="button"
       disabled={disabled}
       onClick={onClick}
     >
       {icon}
+      {showLabel && <span>{label}</span>}
     </button>
   )
 }

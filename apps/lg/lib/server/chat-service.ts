@@ -51,6 +51,11 @@ const INTERNAL_CHANGE_FILES = new Set([
 
 const INTERNAL_CHANGE_DIRS = new Set([".novel-guide", ".next", ".turbo", "node_modules"])
 
+function formatTokenCount(tokens: number): string {
+  if (tokens >= 1000) return `${Math.round(tokens / 1000)}k`
+  return String(Math.max(0, Math.round(tokens)))
+}
+
 export async function getDefaultThreadMessages(bookId: string) {
   const thread = await ensureDefaultThread(bookId)
   return listThreadMessages(bookId, thread.id)
@@ -352,59 +357,81 @@ async function streamThreadMessageUnlocked(
         finalResult = streamEvent.result
         continue
       }
-
-      if (streamEvent.event.type !== "query_event") continue
-      const engineEvent = streamEvent.event.event
-      if (engineEvent.type === "model_start") {
-        const event = createAgentEvent(turn.id, { type: "observe", text: `模型轮次 ${engineEvent.loop + 1}/${engineEvent.maxLoops}。` })
+      if (streamEvent.type !== "engine_event") continue
+      const engineEvent = streamEvent.event
+      if (engineEvent.type === "compaction_start") {
+        const event = createAgentEvent(turn.id, {
+          type: "compaction",
+          text: `正在压缩上下文：${formatTokenCount(engineEvent.estimatedTokens)} → 目标阈值 ${formatTokenCount(engineEvent.triggerTokens)}`,
+        })
         events.push(event)
         emitSse(controller, "agent_event", event)
         await persistProgressMessage(true)
-      } else if (engineEvent.type === "assistant_delta") {
-        assistantContent = engineEvent.accumulatedText
-        emitSse(controller, "assistant_delta", { text: engineEvent.accumulatedText, delta: engineEvent.text })
-        await persistProgressMessage()
-      } else if (engineEvent.type === "reasoning_delta") {
-        const event = createAgentEvent(turn.id, {
-          type: "reasoning",
-          text: engineEvent.text,
-        })
-        events.push(event)
-        emitSse(controller, "reasoning_delta", { text: engineEvent.text, loop: engineEvent.loop })
-        await persistProgressMessage()
-      } else if (engineEvent.type === "usage_update") {
+        continue
+      }
+      if (engineEvent.type === "compaction_done") {
         const event = createAgentEvent(turn.id, {
           type: "observe",
-          text: `token 用量：${engineEvent.totalUsage.totalTokens}`,
-          usage: toAgentUsage(engineEvent.totalUsage),
+          text: `上下文压缩完成：${formatTokenCount(engineEvent.tokenBefore)} → ${formatTokenCount(engineEvent.tokenAfter)}`,
         })
         events.push(event)
         emitSse(controller, "agent_event", event)
         await persistProgressMessage(true)
-      } else if (engineEvent.type === "tool_call") {
+        continue
+      }
+
+      if (engineEvent.type !== "query_event") continue
+      const queryEvent = engineEvent.event
+      if (queryEvent.type === "model_start") {
+        const event = createAgentEvent(turn.id, { type: "observe", text: `模型轮次 ${queryEvent.loop + 1}/${queryEvent.maxLoops}。` })
+        events.push(event)
+        emitSse(controller, "agent_event", event)
+        await persistProgressMessage(true)
+      } else if (queryEvent.type === "assistant_delta") {
+        assistantContent = queryEvent.accumulatedText
+        emitSse(controller, "assistant_delta", { text: queryEvent.accumulatedText, delta: queryEvent.text })
+        await persistProgressMessage()
+      } else if (queryEvent.type === "reasoning_delta") {
+        const event = createAgentEvent(turn.id, {
+          type: "reasoning",
+          text: queryEvent.text,
+        })
+        events.push(event)
+        emitSse(controller, "reasoning_delta", { text: queryEvent.text, loop: queryEvent.loop })
+        await persistProgressMessage()
+      } else if (queryEvent.type === "usage_update") {
+        const event = createAgentEvent(turn.id, {
+          type: "observe",
+          text: `token 用量：${queryEvent.totalUsage.totalTokens}`,
+          usage: toAgentUsage(queryEvent.totalUsage),
+        })
+        events.push(event)
+        emitSse(controller, "agent_event", event)
+        await persistProgressMessage(true)
+      } else if (queryEvent.type === "tool_call") {
         const event = createAgentEvent(turn.id, {
           type: "tool_call",
-          name: engineEvent.name,
-          argsPreview: engineEvent.argsPreview,
-          text: engineEvent.name,
+          name: queryEvent.name,
+          argsPreview: queryEvent.argsPreview,
+          text: queryEvent.name,
         })
         events.push(event)
         emitSse(controller, "agent_event", event)
         await persistProgressMessage(true)
-      } else if (engineEvent.type === "tool_result") {
+      } else if (queryEvent.type === "tool_result") {
         const event = createAgentEvent(turn.id, {
-          type: engineEvent.ok ? "observe" : "error",
-          name: engineEvent.name,
-          text: engineEvent.ok ? `${engineEvent.name} 完成` : undefined,
-          message: engineEvent.ok ? undefined : `${engineEvent.name}: ${engineEvent.content}`,
-          resultPreview: engineEvent.resultPreview,
-          durationMs: engineEvent.durationMs,
+          type: queryEvent.ok ? "observe" : "error",
+          name: queryEvent.name,
+          text: queryEvent.ok ? `${queryEvent.name} 完成` : undefined,
+          message: queryEvent.ok ? undefined : `${queryEvent.name}: ${queryEvent.content}`,
+          resultPreview: queryEvent.resultPreview,
+          durationMs: queryEvent.durationMs,
         })
         events.push(event)
         emitSse(controller, "agent_event", event)
         await persistProgressMessage(true)
-      } else if (engineEvent.type === "error") {
-        const event = createAgentEvent(turn.id, { type: "error", message: engineEvent.message })
+      } else if (queryEvent.type === "error") {
+        const event = createAgentEvent(turn.id, { type: "error", message: queryEvent.message })
         events.push(event)
         emitSse(controller, "agent_event", event)
         await persistProgressMessage(true)

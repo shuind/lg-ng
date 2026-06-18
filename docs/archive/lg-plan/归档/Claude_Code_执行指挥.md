@@ -34,7 +34,7 @@
 5. 做 Ledger 操作日志
 6. 做 ActionPlan 展示与确认执行闭环
 7. 做 dirty 标记与时间戳/关键词召回
-8. 做创作指南摘要 Skill 管道
+8. 做剧情设计 Skill Skill 管道
 9. 最后再接真正的 LLM、向量库和图谱能力
 
 不要跳步。每一步都要能运行、能验证、能回退。
@@ -71,11 +71,11 @@ data/
 │       ├── 人物设定/
 │       ├── 世界观/
 │       ├── 章节大纲/
-│       ├── 创作指南.md
+│       ├── 剧情设计指南.md
 │       ├── 关系图谱.json
 │       ├── ledger.jsonl
 │       └── skills/
-│           └── style_guide_summary.md
+│           └── 剧情设计指南.md
 └── index/
     └── dirty-files.json
 ```
@@ -202,11 +202,11 @@ body: { path: string, content: string }
 ├── 人物设定/
 ├── 世界观/
 ├── 章节大纲/
-├── 创作指南.md
+├── 剧情设计指南.md
 ├── 关系图谱.json
 ├── ledger.jsonl
 └── skills/
-    └── style_guide_summary.md
+    └── 剧情设计指南.md
 ```
 
 ### 6.3 验收标准
@@ -324,17 +324,17 @@ export interface ActionPlan {
 
 ---
 
-## 10. 第七阶段：Skill 创作指南摘要
+## 10. 第七阶段：Skill 剧情设计 Skill
 
 ### 10.1 目标
 
-实现创作指南摘要缓存管道。
+实现剧情设计 Skill缓存管道。
 
 ### 10.2 第一版
 
-- 检测 `创作指南.md` 修改时间。
+- 检测 `剧情设计指南.md` 修改时间。
 - 修改后设置 `Skill.dirty = true`。
-- 提供“刷新摘要”按钮。
+- 提供“更新 Skill”按钮。
 - 暂时可用规则摘要或占位摘要。
 - 后续再接 LLM 生成 500 token 内摘要。
 
@@ -343,10 +343,10 @@ export interface ActionPlan {
 对话上下文只读：
 
 ```text
-skills/style_guide_summary.md
+剧情设计指南.md
 ```
 
-不把完整 `创作指南.md` 塞进对话上下文。
+不把完整 `剧情设计指南.md` 塞进对话上下文。
 
 ---
 

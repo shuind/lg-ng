@@ -13,12 +13,14 @@ export function ContextWindowIndicator({ contextWindow }: { contextWindow?: Mess
   const ratio = Math.max(0, Math.min(1, contextWindow.ratio))
   const percent = Math.round(ratio * 100)
   const triggerPercent = Math.round(contextWindow.triggerRatio * 100)
-  const level = contextWindow.level ?? levelFromRatio(contextWindow.ratio, contextWindow.triggerRatio)
+  const triggerTokens = contextWindow.triggerTokens ?? Math.round(contextWindow.budgetTokens * contextWindow.triggerRatio)
+  const triggerLabel = `${formatTokenCount(triggerTokens)} (${triggerPercent}%)`
+  const level = contextWindow.level ?? levelFromTokens(contextWindow.estimatedTokens, contextWindow.budgetTokens, triggerTokens)
   const levelLabel = levelLabels[level]
   const components = contextWindow.components
   const title = [
     `${levelLabel} · 上下文 ${percent}% · 约 ${formatTokenCount(contextWindow.estimatedTokens)} / ${formatTokenCount(contextWindow.budgetTokens)}`,
-    `压缩阈值 ${triggerPercent}%`,
+    `压缩阈值 ${triggerLabel}`,
     contextWindow.reserveTokens ? `输出预留 ${formatTokenCount(contextWindow.reserveTokens)}` : "",
     components ? `session ${formatTokenCount(components.sessionMessages)} · project/memory ${formatTokenCount(components.projectContext)} · prompt ${formatTokenCount(components.currentPrompt)} · reserve ${formatTokenCount(components.expectedOutputReserve)}` : "",
     contextWindow.lastCompactedAt ? `最近压缩 ${formatCompactedAt(contextWindow.lastCompactedAt)}` : "尚未压缩",
@@ -52,7 +54,7 @@ export function ContextWindowIndicator({ contextWindow }: { contextWindow?: Mess
       <div className="pointer-events-none absolute bottom-9 right-0 z-40 hidden w-max max-w-72 rounded-md border border-border/70 bg-popover px-2.5 py-2 text-[11px] leading-relaxed text-popover-foreground shadow-md group-hover:block">
         <div className={levelTextClass[level]}>{levelLabel} · 上下文 {percent}%</div>
         <div>约 {formatTokenCount(contextWindow.estimatedTokens)} / {formatTokenCount(contextWindow.budgetTokens)}</div>
-        <div className="text-muted-foreground">压缩阈值 {triggerPercent}%</div>
+        <div className="text-muted-foreground">压缩阈值 {triggerLabel}</div>
         {components ? (
           <div className="mt-1 grid grid-cols-[auto_auto] gap-x-3 text-muted-foreground">
             <span>session</span><span>{formatTokenCount(components.sessionMessages)}</span>
@@ -93,9 +95,10 @@ const levelTextClass: NonNullable<Record<NonNullable<MessageContextWindow["level
   blocking: "text-red-700",
 }
 
-function levelFromRatio(ratio: number, triggerRatio: number): NonNullable<MessageContextWindow["level"]> {
+function levelFromTokens(estimatedTokens: number, budgetTokens: number, triggerTokens: number): NonNullable<MessageContextWindow["level"]> {
+  const ratio = budgetTokens > 0 ? estimatedTokens / budgetTokens : 0
   if (ratio >= 1) return "blocking"
-  if (ratio >= triggerRatio) return "auto_compact"
+  if (estimatedTokens >= triggerTokens) return "auto_compact"
   if (ratio >= 0.65) return "should_compact"
   if (ratio >= 0.5) return "warning"
   return "normal"

@@ -27,7 +27,7 @@ const USER_MEMORY_PREFIX = "NG_USER_MEMORY:";
 const CHANGE_MEMO_PREFIX = "NG_CHANGE_MEMO:";
 const MICROCOMPACTION_PREFIX = "NG_MICROCOMPACTED_TOOL_RESULT:";
 const DEFAULT_CONTEXT_BUDGET_TOKENS = 128000;
-const DEFAULT_COMPACTION_TRIGGER_RATIO = 0.75;
+const DEFAULT_COMPACTION_TRIGGER_TOKENS = 96000;
 const DEFAULT_MICROCOMPACTION_TRIGGER_RATIO = 0.65;
 const DEFAULT_EXPECTED_OUTPUT_RESERVE_TOKENS = 4096;
 const DEFAULT_RECENT_MESSAGE_COUNT = 5;
@@ -54,7 +54,7 @@ export interface EngineConfig {
   proposalOnly?: boolean;
   toolsEnabled?: boolean;
   contextBudgetTokens?: number;
-  compactionTriggerRatio?: number;
+  compactionTriggerTokens?: number;
   recentMessageCount?: number;
   expectedOutputReserveTokens?: number;
   onModelUsage?: (event: EngineModelUsageEvent) => void | Promise<void>;
@@ -89,6 +89,7 @@ export interface EngineContextWindowState {
   budgetTokens: number;
   ratio: number;
   triggerRatio: number;
+  triggerTokens: number;
   level: EngineContextWindowLevel;
   reserveTokens: number;
   components: EngineContextWindowComponents;
@@ -104,6 +105,11 @@ interface ContextWindowEstimateOptions {
 interface MicrocompactResult {
   changedMessageCount: number;
   messageIndexes: number[];
+}
+
+interface FullCompactionResult {
+  tokenBefore: number;
+  tokenAfter: number;
 }
 
 interface CompactionMessageGroup {
@@ -152,6 +158,8 @@ export interface EngineSubmitOptions {
 
 export type EngineStreamEvent =
   | { type: "query_event"; event: QueryEvent }
+  | { type: "compaction_start"; estimatedTokens: number; triggerTokens: number }
+  | { type: "compaction_done"; tokenBefore: number; tokenAfter: number }
   | { type: "done"; result: EngineTurnResult };
 
 export class AgentEngine {
@@ -182,7 +190,8 @@ export class AgentEngine {
     options: ContextWindowEstimateOptions = {},
   ): EngineContextWindowState {
     const budgetTokens = this.config.contextBudgetTokens ?? contextBudgetForModel(this.config.model);
-    const triggerRatio = this.config.compactionTriggerRatio ?? DEFAULT_COMPACTION_TRIGGER_RATIO;
+    const triggerTokens = this.config.compactionTriggerTokens ?? DEFAULT_COMPACTION_TRIGGER_TOKENS;
+    const triggerRatio = budgetTokens > 0 ? triggerTokens / budgetTokens : 0;
     const reserveTokens = options.expectedOutputReserveTokens
       ?? this.config.expectedOutputReserveTokens
       ?? DEFAULT_EXPECTED_OUTPUT_RESERVE_TOKENS;
@@ -207,7 +216,8 @@ export class AgentEngine {
       budgetTokens,
       ratio,
       triggerRatio,
-      level: contextWindowLevel(ratio, triggerRatio),
+      triggerTokens,
+      level: contextWindowLevel(estimatedTokens, budgetTokens, triggerTokens),
       reserveTokens,
       components,
       lastCompactedAt: this.compaction?.lastCompactedAt,
@@ -367,7 +377,12 @@ export class AgentEngine {
     }
 
     await this.ensureSystemPrompt();
-    await this.compactMessagesIfNeeded(options.signal);
+    const compactionEvents: EngineStreamEvent[] = [];
+    const compactionResult = await this.compactMessagesIfNeeded(options.signal, (estimatedTokens, triggerTokens) => {
+      compactionEvents.push({ type: "compaction_start", estimatedTokens, triggerTokens });
+    });
+    if (compactionResult) compactionEvents.push({ type: "compaction_done", ...compactionResult });
+    for (const event of compactionEvents) yield event;
 
     const projectContext = await this.buildProjectContext();
     const userMemoryContext = this.config.userMemoryContext?.trim() || "";
@@ -460,11 +475,14 @@ export class AgentEngine {
     this.messages.unshift({ role: "system", content: systemPrompt });
   }
 
-  private async compactMessagesIfNeeded(signal?: AbortSignal): Promise<void> {
-    if (this.messages.length <= 1) return;
+  private async compactMessagesIfNeeded(
+    signal?: AbortSignal,
+    onFullCompactionStart?: (estimatedTokens: number, triggerTokens: number) => void,
+  ): Promise<FullCompactionResult | null> {
+    if (this.messages.length <= 1) return null;
 
     const budget = this.config.contextBudgetTokens ?? contextBudgetForModel(this.config.model);
-    const triggerRatio = this.config.compactionTriggerRatio ?? DEFAULT_COMPACTION_TRIGGER_RATIO;
+    const triggerTokens = this.config.compactionTriggerTokens ?? DEFAULT_COMPACTION_TRIGGER_TOKENS;
     const recentCount = this.config.recentMessageCount ?? DEFAULT_RECENT_MESSAGE_COUNT;
     const tokenBeforeMicrocompact = estimateMessagesTokens(this.messages);
     if (tokenBeforeMicrocompact > budget * DEFAULT_MICROCOMPACTION_TRIGGER_RATIO) {
@@ -488,9 +506,10 @@ export class AgentEngine {
       }
     }
 
-    if (estimateMessagesTokens(this.messages) <= budget * triggerRatio) return;
-
     const tokenBeforeFullCompaction = estimateMessagesTokens(this.messages);
+    if (tokenBeforeFullCompaction <= triggerTokens) return null;
+    onFullCompactionStart?.(tokenBeforeFullCompaction, triggerTokens);
+
     const systemMessage = this.messages[0];
     const rest = this.messages.slice(1);
     const rawMessages = rest.filter((message) => !isCompactionMemo(message) && !isChangeMemo(message));
@@ -498,7 +517,7 @@ export class AgentEngine {
     const recentStart = findSafeRecentStart(rawMessages, targetRecentStart);
     const compactedRaw = rawMessages.slice(0, recentStart);
     const recent = rawMessages.slice(recentStart);
-    if (compactedRaw.length < 4 || recent.length === 0) return;
+    if (compactedRaw.length < 4 || recent.length === 0) return null;
 
     const compactedRawSet = new Set<ChatCompletionMessageParam>(compactedRaw);
     const compactableForSummary = rest.filter((message) =>
@@ -518,12 +537,13 @@ export class AgentEngine {
       ].join("\n"),
     };
     this.messages = [systemMessage, memo, ...recent];
+    const tokenAfterFullCompaction = estimateMessagesTokens(this.messages);
     this.recordCompactionBoundary({
       id: createCompactionBoundaryId("boundary"),
       createdAt,
       trigger: "auto",
       tokenBefore: tokenBeforeFullCompaction,
-      tokenAfter: estimateMessagesTokens(this.messages),
+      tokenAfter: tokenAfterFullCompaction,
       originalMessageCount: rest.length + 1,
       compactedMessageCount: this.messages.length,
       compactedTurnIds: [],
@@ -539,6 +559,7 @@ export class AgentEngine {
         ? summary.droppedMessageGroups
         : undefined,
     });
+    return { tokenBefore: tokenBeforeFullCompaction, tokenAfter: tokenAfterFullCompaction };
   }
 
   private microcompactOldToolMessages(recentCount: number): MicrocompactResult {
@@ -665,9 +686,10 @@ function contextBudgetForModel(model: string): number {
   return DEFAULT_CONTEXT_BUDGET_TOKENS;
 }
 
-function contextWindowLevel(ratio: number, triggerRatio: number): EngineContextWindowLevel {
+function contextWindowLevel(estimatedTokens: number, budgetTokens: number, triggerTokens: number): EngineContextWindowLevel {
+  const ratio = budgetTokens > 0 ? estimatedTokens / budgetTokens : 0;
   if (ratio >= 1) return "blocking";
-  if (ratio >= triggerRatio) return "auto_compact";
+  if (estimatedTokens >= triggerTokens) return "auto_compact";
   if (ratio >= DEFAULT_MICROCOMPACTION_TRIGGER_RATIO) return "should_compact";
   if (ratio >= 0.5) return "warning";
   return "normal";
@@ -850,7 +872,7 @@ async function summarizeCanonFacts(cwd: string): Promise<string> {
 }
 
 const LEGACY_LG_MATERIAL_PATTERNS = [
-  "创作指南.md",
+  "剧情设计指南.md",
   ...WORKSPACE_GUIDE_FILES,
   "人物设定/**/*.md",
   "世界观/**/*.md",

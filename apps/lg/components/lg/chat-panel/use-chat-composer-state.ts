@@ -107,22 +107,6 @@ export function useChatComposerState({
     requestAnimationFrame(() => inputRef.current?.focus())
   }, [])
 
-  const handleInsertSkillEvidencePrompt = useCallback(() => {
-    setInput((current) => {
-      if (current.trim()) return current
-      return [
-        "在我的稿子和最近 ledger 里，帮我找这个写法是否真实存在：",
-        "",
-        "【假设】",
-        "（在这里写你想验证的写法、节奏、人物处理或表达偏好）",
-        "",
-        "请给一个证据简报：支持的原文位置、反例、是否值得孵化成实验 Skill。如果成立，请给建议的 skill 短名和 3 条具体规则；本轮只读分析，不要写文件。",
-      ].join("\n")
-    })
-    setReadonlyOnly(true)
-    requestAnimationFrame(() => inputRef.current?.focus())
-  }, [])
-
   const startSend = useCallback(async (payload: PendingSend) => {
     const controller = new AbortController()
     abortControllerRef.current = controller
@@ -249,6 +233,5 @@ export function useChatComposerState({
     handleRemoveSkill,
     handleToggleConstraintPicker,
     handleToggleReferencePicker,
-    handleInsertSkillEvidencePrompt,
   }
 }

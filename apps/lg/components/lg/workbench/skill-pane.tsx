@@ -12,7 +12,7 @@ import { useSkillDialogState } from "./use-skill-dialog-state"
 import { skillDirectoryName, skillDisplayName } from "./skill-pane-utils"
 
 export function SkillPane({ bookId, onOpenFile }: { bookId: string; onOpenFile: (path: string) => void }) {
-  const { skills, summary, loading, refreshing, styleSkill, loadSkillData, refreshStyleGuide } = useSkillData(bookId)
+  const { skills, loading, loadSkillData } = useSkillData(bookId)
   const dialog = useSkillDialogState({ bookId, onReloadSkills: loadSkillData, onOpenFile })
   const [deletingSkillId, setDeletingSkillId] = useState<string | null>(null)
   const [skillError, setSkillError] = useState("")
@@ -47,14 +47,10 @@ export function SkillPane({ bookId, onOpenFile }: { bookId: string; onOpenFile: 
 
         <SkillList
           skills={skills}
-          styleSkill={styleSkill}
-          summary={summary}
-          refreshing={refreshing}
           deletingSkillId={deletingSkillId}
           error={skillError}
           onEdit={dialog.openEditSkillDialog}
           onDelete={handleDeleteSkill}
-          onRefresh={refreshStyleGuide}
           onOpenFile={onOpenFile}
         />
 

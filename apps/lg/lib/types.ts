@@ -133,7 +133,7 @@ export interface Skill {
   lastSourceModified: string
   lastSummaryGenerated: string
   dirty: boolean
-  source?: "style_guide" | "workspace_skill" | "manual"
+  source?: "plot_design" | "workspace_skill" | "manual"
   stage?: SkillLabStage
   originObservationId?: string
   originExperimentId?: string
@@ -412,7 +412,7 @@ export interface MessageProposalSet {
   proposals: ProposalSummary[]
 }
 
-export type AgentEventType = "observe" | "retrieve" | "plan" | "reasoning" | "tool_call" | "done" | "error"
+export type AgentEventType = "observe" | "retrieve" | "plan" | "reasoning" | "compaction" | "tool_call" | "done" | "error"
 
 export interface AgentEvent {
   id: string
@@ -492,6 +492,7 @@ export interface MessageContextWindow {
   budgetTokens: number
   ratio: number
   triggerRatio: number
+  triggerTokens?: number
   level?: ContextWindowLevel
   reserveTokens?: number
   components?: MessageContextWindowComponents

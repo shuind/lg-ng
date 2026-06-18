@@ -108,7 +108,7 @@ const hiddenWorkbenchExtensions = new Set([
 const systemWorkbenchFileNames = new Set([
   "guide.md",
   "novel.md",
-  "创作指南.md",
+  "剧情设计指南.md",
   "关系图谱.json",
 ])
 

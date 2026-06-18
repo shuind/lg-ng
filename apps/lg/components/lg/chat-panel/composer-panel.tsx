@@ -20,7 +20,6 @@ export function ChatComposerPanel({
   activeResponseConstraints,
   temporaryConstraints,
   selectedSkills,
-  readonlyOnly,
   workflowAction,
   citations,
   constraintPickerOpen,
@@ -50,9 +49,7 @@ export function ChatComposerPanel({
   onDeleteResponseConstraint,
   onAddTemporaryConstraint,
   onToggleSkill,
-  onToggleReadonly,
   onSelectWorkflowAction,
-  onInsertSkillEvidencePrompt,
   onAddCitation,
   onToggleConstraintPicker,
   onToggleReferencePicker,
@@ -65,7 +62,6 @@ export function ChatComposerPanel({
   activeResponseConstraints: ResponseConstraint[]
   temporaryConstraints: string[]
   selectedSkills: Skill[]
-  readonlyOnly: boolean
   workflowAction?: WorkflowAction
   citations: ChatCitation[]
   constraintPickerOpen: boolean
@@ -95,9 +91,7 @@ export function ChatComposerPanel({
   onDeleteResponseConstraint: (constraintId: string) => Promise<void>
   onAddTemporaryConstraint: (instruction: string) => void
   onToggleSkill: (skillId: string) => void
-  onToggleReadonly: () => void
   onSelectWorkflowAction: (action: WorkflowAction) => void
-  onInsertSkillEvidencePrompt: () => void
   onAddCitation: (reference: ChatReference) => void
   onToggleConstraintPicker: () => void
   onToggleReferencePicker: () => void
@@ -239,15 +233,12 @@ export function ChatComposerPanel({
             sending={sending}
             sendBlocked={sendBlocked}
             contextWindow={contextWindow}
-            readonlyOnly={readonlyOnly}
             workflowAction={workflowAction}
             constraintPickerOpen={constraintPickerOpen}
             referencePickerOpen={referencePickerOpen}
             onSend={onSend}
             onCancel={onCancelSend}
-            onToggleReadonly={onToggleReadonly}
             onSelectWorkflowAction={onSelectWorkflowAction}
-            onInsertSkillEvidencePrompt={onInsertSkillEvidencePrompt}
             onToggleConstraintPicker={onToggleConstraintPicker}
             onToggleReferencePicker={onToggleReferencePicker}
           />

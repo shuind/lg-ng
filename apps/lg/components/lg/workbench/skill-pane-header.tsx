@@ -13,8 +13,8 @@ export function SkillPaneHeader({
     <div className="mb-5 flex items-start justify-between gap-3">
       <div>
         <div className="font-serif text-[16px] text-foreground">Skill</div>
-        <div className="mt-1 text-[12px] text-muted-foreground">
-          可复用写作能力与上下文压缩层 · {skillCount} 个可用
+        <div className="mt-1 max-w-xl text-[12px] leading-relaxed text-muted-foreground">
+          可复用写作能力包。每个 Skill 都是同等地位的可插拔任务流程，试写会按意图动态启用合适的书籍 Skill · {skillCount} 个可用
         </div>
       </div>
       <button

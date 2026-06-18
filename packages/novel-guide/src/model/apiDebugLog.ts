@@ -40,6 +40,8 @@ interface ModelDebugLogInput {
 
 function isDebugLogEnabled(): boolean {
   if (process.env.NODE_ENV === "production") return false;
+  if (process.env.NG_API_DEBUG_LOG === "true") return true;
+  if (process.env.NODE_ENV === "test") return false;
   return process.env.NG_API_DEBUG_LOG !== "false";
 }
 

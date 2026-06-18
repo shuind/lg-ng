@@ -2,11 +2,11 @@ import type { Skill } from "@/lib/types"
 import { LEGACY_WORKSPACE_SKILLS_DIR, WORKSPACE_SKILLS_DIR } from "@/lib/workspace-layout"
 
 export function skillDisplayName(skill: Skill): string {
-  return skill.name || (skill.type === "style_guide" ? "创作指南" : skill.id)
+  return skill.name || (skill.type === "plot_design" ? "剧情设计指南" : skill.id)
 }
 
 export function skillKindLabel(skill: Skill): string {
-  if (skill.source === "style_guide" || skill.type === "style_guide") return "创作指南"
+  if (skill.source === "plot_design" || skill.type === "plot_design") return "剧情设计指南"
   if (skill.source === "workspace_skill") return "本地 Skill"
   return skill.type
 }

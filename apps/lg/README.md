@@ -9,7 +9,7 @@
 - **设定卡片**：自动从 `人物设定/*.md` 和 `世界观/*.md` 生成设定卡片,支持按名称筛选。
 - **章节系统**：章节以 `章节正文/*.md` 文件存储,支持创建、编辑、自动保存。
 - **写作台**：独立写作界面,带工具栏、字数统计、2 秒自动保存。底部有试写沙盒。
-- **AI 试写**：基于当前章节上下文和创作指南,调用 LLM 生成 300-600 字续写文本。试写不写入正文,确认后才保留。
+- **AI 试写**：基于当前章节上下文和剧情设计指南,调用 LLM 生成 300-600 字续写文本。试写不写入正文,确认后才保留。
 - **工作台**：以树状结构浏览书籍目录下所有文件,支持查看和编辑。
 - **变更记录**：所有文件修改自动记录到 `ledger.jsonl`。
 - **脏文件追踪**：修改过的文件会被标记,用于后续 AI 检索上下文。
@@ -64,7 +64,7 @@ DEEPSEEK_PLATFORM_API_KEY=
 ```
 .lg-data/users/<userId>/books/demo-guixu/
   book.json                 # 书籍元数据
-  创作指南.md               # 写作风格要求
+  剧情设计指南.md               # 剧情设计指南
   关系图谱.json             # 人物关系
   人物设定/
     林晓.md                 # 角色设定
@@ -79,8 +79,7 @@ DEEPSEEK_PLATFORM_API_KEY=
   章节正文/
     第一章 · 归墟初见.md    # 正文内容
     第二章 · 旧账新算.md
-  skills/
-    style_guide_summary.md  # 创作指南摘要(自动生成)
+  skills/                   # 书籍 Skill 元数据
   ledger.jsonl              # 变更记录
   messages.jsonl            # 对话历史
 ```
@@ -101,7 +100,7 @@ pnpm --filter lg migrate:global-user -- --email you@example.com
 - `章节正文/*.md` — 每个文件是一章正文
 - `messages.jsonl` — 对话历史,每行一条 JSON
 - `ledger.jsonl` — 变更记录,每行一条 JSON
-- `skills/` — 自动生成的技能摘要
+- `skills/` — 书籍 Skill 元数据
 
 ## 主要 API
 
@@ -121,8 +120,6 @@ pnpm --filter lg migrate:global-user -- --email you@example.com
 | PUT | `/api/books/[id]/file` | 写入文件 |
 | GET | `/api/books/[id]/ledger` | 获取变更记录 |
 | POST | `/api/books/[id]/retrieve` | 检索相关上下文 |
-| GET | `/api/books/[id]/skills/style-guide` | 获取创作指南摘要 |
-| POST | `/api/books/[id]/skills/style-guide/refresh` | 刷新摘要 |
 
 ## 当前限制
 

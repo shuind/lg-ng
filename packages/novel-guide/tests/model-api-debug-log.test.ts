@@ -1,7 +1,6 @@
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import type OpenAI from "openai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createChatCompletion, createChatCompletionStream } from "../src/model/deepseek.js";
@@ -10,7 +9,6 @@ const ENV_KEYS = ["NODE_ENV", "NG_API_DEBUG_LOG", "NG_API_DEBUG_LOG_DIR"] as con
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 
 let tempDir = "";
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
 function restoreEnv(): void {
   for (const key of ENV_KEYS) {
@@ -200,7 +198,7 @@ describe("model API debug log", () => {
     });
   });
 
-  it("does not write logs in production or when disabled", async () => {
+  it("does not write logs in production, test defaults, or when disabled", async () => {
     const client = {
       chat: {
         completions: {
@@ -213,6 +211,7 @@ describe("model API debug log", () => {
     } as unknown as OpenAI;
 
     process.env.NODE_ENV = "production";
+    process.env.NG_API_DEBUG_LOG = "";
     await createChatCompletion({
       client,
       model: "mock",
@@ -220,6 +219,13 @@ describe("model API debug log", () => {
     });
 
     process.env.NODE_ENV = "test";
+    delete process.env.NG_API_DEBUG_LOG;
+    await createChatCompletion({
+      client,
+      model: "mock",
+      messages: [{ role: "user", content: "test default" }],
+    });
+
     process.env.NG_API_DEBUG_LOG = "false";
     await createChatCompletion({
       client,
@@ -233,9 +239,11 @@ describe("model API debug log", () => {
   it("defaults to the workspace api-calls directory from nested app cwd", async () => {
     delete process.env.NG_API_DEBUG_LOG_DIR;
     const originalCwd = process.cwd();
-    const nestedCwd = path.join(repoRoot, "apps", "lg");
-    const logPath = path.join(repoRoot, "api-calls", "model-api-calls.jsonl");
-    const before = await fsp.readFile(logPath, "utf8").catch(() => "");
+    const workspaceRoot = await fsp.mkdtemp(path.join(os.tmpdir(), "ng-api-debug-workspace-"));
+    const nestedCwd = path.join(workspaceRoot, "apps", "lg");
+    const logPath = path.join(workspaceRoot, "api-calls", "model-api-calls.jsonl");
+    await fsp.writeFile(path.join(workspaceRoot, "pnpm-workspace.yaml"), "packages: []\n", "utf8");
+    await fsp.mkdir(nestedCwd, { recursive: true });
     const client = {
       chat: {
         completions: {
@@ -254,25 +262,23 @@ describe("model API debug log", () => {
         model: "mock-root",
         messages: [{ role: "user", content: "nested" }],
       });
+
+      const raw = await fsp.readFile(logPath, "utf8");
+      const entries = raw
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toMatchObject({
+        providerScope: "model",
+        model: "mock-root",
+        response: {
+          message: { role: "assistant", content: "root log" },
+        },
+      });
     } finally {
       process.chdir(originalCwd);
+      await fsp.rm(workspaceRoot, { recursive: true, force: true });
     }
-
-    const after = await fsp.readFile(logPath, "utf8");
-    const appended = after.slice(before.length).trim();
-    expect(appended).not.toBe("");
-    const entries = appended
-      .split("\n")
-      .filter(Boolean)
-      .map((line) => JSON.parse(line) as Record<string, unknown>);
-    const entry = entries.find((item) => item.model === "mock-root");
-    expect(entry).toBeTruthy();
-    expect(entry).toMatchObject({
-      providerScope: "model",
-      model: "mock-root",
-      response: {
-        message: { role: "assistant", content: "root log" },
-      },
-    });
   });
 });
