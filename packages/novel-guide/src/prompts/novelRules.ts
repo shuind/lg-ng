@@ -10,11 +10,29 @@ export const DRAFT_POLICY_RULES = [
   "除非用户明确要求更新状态追踪，否则不要因为起草正文顺手修改 状态追踪/。",
 ].join("\n");
 
-export const LG_CONTENT_DIRECTORY_RULES = [
-  "除 Novel Guide 标准目录外，工作区还可能有 LG 内容目录。",
-  "人物设定/、世界观/、卷纲/、章节大纲/、章节正文/、剧情管理/、状态追踪/、读者体验/、写作约束/、章节摘要/、检查报告/ 都是一等小说材料。",
-  "不要因为 NOVEL.md、canon/ 或 drafts/ 稀疏就判断项目缺人物、设定、大纲或正文；先查 LG 内容目录。",
-].join("\n");
+export const LG_CONTENT_DIRECTORY_RULES = `书籍工作区常见文件树：
+/
+├── NOVEL.md                         # 书籍元信息、长期状态、核心入口
+├── GUIDE.md                         # 写作指南、项目规则、口径说明
+├── canon/                           # 已确认入典的设定与状态
+├── candidates/                      # 已分拣但未确认入典的材料
+├── inbox/                           # 原始外部材料、临时收件箱
+├── drafts/                          # 草稿、续写、改稿提案正文
+├── 章节正文/                        # 正式或导入的章节正文
+├── 人物设定/                        # 人物卡、关系、动机、状态
+├── 世界观/                          # 世界、规则、地点、势力、机制
+├── 卷纲/                            # 分卷规划
+├── 章节大纲/                        # 章节规划
+├── 章节摘要/                        # 已写章节摘要
+├── 剧情管理/                        # 伏笔、线索、事件因果、推进表
+├── 状态追踪/                        # 时间线、角色状态、物品状态、冲突
+├── 读者体验/                        # 爽点、悬念、节奏、反馈
+├── 写作约束/                        # 文风、禁忌、格式、用词约束
+├── 检查报告/                        # 审稿、连续性、问题报告
+└── .novel-guide/
+    ├── skills/<name>/SKILL.md       # 项目 skill
+    ├── agents/<name>.md             # 项目子智能体
+    └── output-styles/               # 输出风格`;
 
 export const LG_LEGACY_DIRECTORY_RULES = LG_CONTENT_DIRECTORY_RULES;
 

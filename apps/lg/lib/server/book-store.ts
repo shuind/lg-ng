@@ -132,32 +132,32 @@ export async function createBook(title: string): Promise<Book> {
     updatedAt: now,
   }
   await fs.writeFile(path.join(bookDir, "book.json"), JSON.stringify(bookMeta, null, 2), "utf-8")
-  await fs.writeFile(path.join(bookDir, "剧情设计指南.md"), `# 剧情设计指南\n\n（请在此整理本书的剧情设计方法：一句话故事、主角任务、动机、阻力、关卡、悬念和切入点。）\n`, "utf-8")
+  await fs.writeFile(path.join(bookDir, "剧情设计指南.md"), "# 剧情设计指南\n", "utf-8")
   await fs.writeFile(path.join(bookDir, "关系图谱.json"), "{}\n", "utf-8")
   await fs.writeFile(path.join(bookDir, "ledger.jsonl"), "", "utf-8")
   await fs.writeFile(path.join(bookDir, "messages.jsonl"), "", "utf-8")
 
   // system files — 剧情管理
-  await fs.writeFile(path.join(bookDir, "剧情管理", "主线.md"), `# 主线\n\n记录主线剧情走向和核心矛盾。\n`, "utf-8")
-  await fs.writeFile(path.join(bookDir, "剧情管理", "支线.md"), `# 支线\n\n记录各支线剧情及其与主线的关联。\n`, "utf-8")
-  await fs.writeFile(path.join(bookDir, "剧情管理", "伏笔清单.md"), `# 伏笔清单\n\n记录所有已埋设和待回收的伏笔。\n`, "utf-8")
-  await fs.writeFile(path.join(bookDir, "剧情管理", "关键事件.md"), `# 关键事件\n\n记录推动剧情的关键事件节点。\n`, "utf-8")
+  await fs.writeFile(path.join(bookDir, "剧情管理", "主线.md"), "# 主线\n", "utf-8")
+  await fs.writeFile(path.join(bookDir, "剧情管理", "支线.md"), "# 支线\n", "utf-8")
+  await fs.writeFile(path.join(bookDir, "剧情管理", "伏笔清单.md"), "# 伏笔清单\n", "utf-8")
+  await fs.writeFile(path.join(bookDir, "剧情管理", "关键事件.md"), "# 关键事件\n", "utf-8")
 
   // 状态追踪
-  await fs.writeFile(path.join(bookDir, "状态追踪", "时间线.md"), `# 时间线\n\n按故事内时间记录重大事件。\n`, "utf-8")
-  await fs.writeFile(path.join(bookDir, "状态追踪", "角色位置.md"), `# 角色位置\n\n追踪各角色在不同章节中的当前位置。\n`, "utf-8")
-  await fs.writeFile(path.join(bookDir, "状态追踪", "当前冲突.md"), `# 当前冲突\n\n记录当前章节中未解决的冲突和矛盾。\n`, "utf-8")
-  await fs.writeFile(path.join(bookDir, "状态追踪", "章节状态.md"), `# 章节状态\n\n记录各章节的写作状态和待办事项。\n`, "utf-8")
+  await fs.writeFile(path.join(bookDir, "状态追踪", "时间线.md"), "# 时间线\n", "utf-8")
+  await fs.writeFile(path.join(bookDir, "状态追踪", "角色位置.md"), "# 角色位置\n", "utf-8")
+  await fs.writeFile(path.join(bookDir, "状态追踪", "当前冲突.md"), "# 当前冲突\n", "utf-8")
+  await fs.writeFile(path.join(bookDir, "状态追踪", "章节状态.md"), "# 章节状态\n", "utf-8")
 
   // 读者体验
-  await fs.writeFile(path.join(bookDir, "读者体验", "信息差.md"), `# 信息差\n\n追踪读者与角色之间的信息差。哪些信息读者已知但角色不知，反之亦然。\n`, "utf-8")
-  await fs.writeFile(path.join(bookDir, "读者体验", "情绪账户.md"), `# 情绪账户\n\n记录对读者的情绪承诺：哪些期待已被种下，哪些还需要兑现。\n`, "utf-8")
-  await fs.writeFile(path.join(bookDir, "读者体验", "爽点债务.md"), `# 爽点债务\n\n记录已承诺但尚未交付的爽点：复仇、逆袭、揭秘等。\n`, "utf-8")
+  await fs.writeFile(path.join(bookDir, "读者体验", "信息差.md"), "# 信息差\n", "utf-8")
+  await fs.writeFile(path.join(bookDir, "读者体验", "情绪账户.md"), "# 情绪账户\n", "utf-8")
+  await fs.writeFile(path.join(bookDir, "读者体验", "爽点债务.md"), "# 爽点债务\n", "utf-8")
 
   // 写作约束
-  await fs.writeFile(path.join(bookDir, "写作约束", "禁止项.md"), `# 禁止项\n\n记录写作中应避免的套路、表达和模式。\n`, "utf-8")
-  await fs.writeFile(path.join(bookDir, "写作约束", "类型规则.md"), `# 类型规则\n\n记录本作品类型（武侠/玄幻/言情等）的写作规范。\n`, "utf-8")
-  await fs.writeFile(path.join(bookDir, "写作约束", "质量约束.md"), `# 质量约束\n\n记录写作质量要求：词汇、节奏、描写比例等。\n`, "utf-8")
+  await fs.writeFile(path.join(bookDir, "写作约束", "禁止项.md"), "# 禁止项\n", "utf-8")
+  await fs.writeFile(path.join(bookDir, "写作约束", "类型规则.md"), "# 类型规则\n", "utf-8")
+  await fs.writeFile(path.join(bookDir, "写作约束", "质量约束.md"), "# 质量约束\n", "utf-8")
 
   await rebuildBookIndexes(id).catch(() => {})
 

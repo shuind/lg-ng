@@ -281,7 +281,11 @@ function buildPrompt(input: {
 }
 
 const LG_LEGACY_PROMPT = `LG 集成说明：
-${LG_CONTENT_DIRECTORY_RULES.split("\n").map((line) => `- ${line}`).join("\n")}
+
+\`\`\`text
+${LG_CONTENT_DIRECTORY_RULES}
+\`\`\`
+
 - LG UI 另存聊天轮次；除非用户明确要求，不要编辑 thread-messages.jsonl。`
 
 type ReviewChecker = {
