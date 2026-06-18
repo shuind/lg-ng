@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { Message } from "@/lib/types"
 
+export type ChatTranscriptScrollToBottom = (options?: { force?: boolean }) => void
+
 export function useChatTranscriptNavigation({
   bookId,
   activeThreadId,
@@ -18,12 +20,15 @@ export function useChatTranscriptNavigation({
 }) {
   const [highlightedUserTurnId, setHighlightedUserTurnId] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
   const liveTailRef = useRef<HTMLDivElement>(null)
   const userMessageRefs = useRef(new Map<string, HTMLDivElement>())
   const followOutputRef = useRef(true)
   const highlightResetRef = useRef<number | null>(null)
   const questionJumpRef = useRef<{ sourceTurnId: string; offset: number } | null>(null)
   const scrollFrameRef = useRef<number | null>(null)
+  const scrollToBottomHandlerRef = useRef<ChatTranscriptScrollToBottom | null>(null)
+  const pendingScrollToBottomRef = useRef<{ force: boolean } | null>(null)
   const latestUserTurnRef = useRef<string | null>(null)
   const latestUserTurnId = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -38,22 +43,45 @@ export function useChatTranscriptNavigation({
     return maxScrollTop - element.scrollTop < threshold
   }, [])
 
-  const scrollToBottom = useCallback(() => {
+  const scrollToBottom = useCallback((options: { force?: boolean } = {}) => {
     if (scrollFrameRef.current !== null) {
       window.cancelAnimationFrame(scrollFrameRef.current)
       scrollFrameRef.current = null
     }
 
+    const force = options.force === true
+    if (force) followOutputRef.current = true
+
     const applyScroll = () => {
+      if (!force && !followOutputRef.current) return
+      const handler = scrollToBottomHandlerRef.current
+      if (handler) {
+        pendingScrollToBottomRef.current = null
+        handler({ force })
+        return
+      }
+
       const scroller = scrollRef.current
-      if (!scroller || !followOutputRef.current) return
-      scroller.scrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight)
+      if (!scroller) return
+      pendingScrollToBottomRef.current = { force }
     }
 
+    applyScroll()
     scrollFrameRef.current = window.requestAnimationFrame(() => {
       scrollFrameRef.current = null
       applyScroll()
     })
+  }, [])
+
+  const registerScrollToBottom = useCallback((handler: ChatTranscriptScrollToBottom | null) => {
+    scrollToBottomHandlerRef.current = handler
+    if (!handler) return
+
+    const pending = pendingScrollToBottomRef.current
+    if (!pending) return
+    if (!pending.force && !followOutputRef.current) return
+    pendingScrollToBottomRef.current = null
+    window.requestAnimationFrame(() => handler({ force: pending.force }))
   }, [])
 
   useEffect(() => {
@@ -84,9 +112,9 @@ export function useChatTranscriptNavigation({
 
   useEffect(() => {
     questionJumpRef.current = null
-    followOutputRef.current = true
     latestUserTurnRef.current = null
-    scrollToBottom()
+    followOutputRef.current = true
+    scrollToBottom({ force: true })
   }, [activeThreadId, bookId, scrollToBottom])
 
   useEffect(() => {
@@ -96,13 +124,13 @@ export function useChatTranscriptNavigation({
     latestUserTurnRef.current = latestUserTurnId
     if (previousTurnId && latestUserTurnId) {
       followOutputRef.current = true
-      scrollToBottom()
+      scrollToBottom({ force: true })
     }
   }, [latestUserTurnId, scrollToBottom])
 
   useEffect(() => {
-    const tail = liveTailRef.current
-    if (!tail || typeof ResizeObserver === "undefined") return
+    const content = contentRef.current
+    if (!content || typeof ResizeObserver === "undefined") return
 
     const observer = new ResizeObserver(() => {
       const scroller = scrollRef.current
@@ -111,7 +139,8 @@ export function useChatTranscriptNavigation({
       scrollToBottom()
     })
 
-    observer.observe(tail)
+    observer.observe(content)
+    if (liveTailRef.current) observer.observe(liveTailRef.current)
     scrollToBottom()
     return () => observer.disconnect()
   }, [bookId, activeThreadId, runningTurnId, scrollToBottom])
@@ -171,7 +200,9 @@ export function useChatTranscriptNavigation({
 
   return {
     scrollRef,
+    contentRef,
     liveTailRef,
+    registerScrollToBottom,
     latestUserTurnId,
     highlightedUserTurnId,
     registerUserMessage,

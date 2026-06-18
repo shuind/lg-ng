@@ -131,7 +131,9 @@ export function ChatPanel({
   )
   const {
     scrollRef,
+    contentRef,
     liveTailRef,
+    registerScrollToBottom,
     latestUserTurnId,
     highlightedUserTurnId,
     registerUserMessage,
@@ -177,7 +179,9 @@ export function ChatPanel({
 
       <ChatTranscript
         scrollRef={scrollRef}
+        contentRef={contentRef}
         liveTailRef={liveTailRef}
+        registerScrollToBottom={registerScrollToBottom}
         messages={messages}
         runningTurn={runningTurn}
         selectedTurnId={selectedTurnId}

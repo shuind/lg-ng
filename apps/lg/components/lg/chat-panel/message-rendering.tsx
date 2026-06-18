@@ -1,16 +1,19 @@
 ﻿"use client"
 
-import { memo, useMemo } from "react"
+import { memo, useCallback, useEffect, useMemo } from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import type { Message, Turn } from "@/lib/types"
 import { ActivityIndicator } from "./activity-indicator"
 import { EmptyState } from "./empty-state"
 import { MessageBubble } from "./message-bubble"
 import type { TurnBranchNavigation } from "./types"
+import type { ChatTranscriptScrollToBottom } from "./use-chat-transcript-navigation"
 
 interface ChatTranscriptProps {
   scrollRef: React.RefObject<HTMLDivElement | null>
+  contentRef: React.RefObject<HTMLDivElement | null>
   liveTailRef: React.RefObject<HTMLDivElement | null>
+  registerScrollToBottom: (handler: ChatTranscriptScrollToBottom | null) => void
   messages: Message[]
   runningTurn?: Turn
   selectedTurnId: string | null
@@ -30,7 +33,9 @@ interface ChatTranscriptProps {
 
 export const ChatTranscript = memo(function ChatTranscript({
   scrollRef,
+  contentRef,
   liveTailRef,
+  registerScrollToBottom,
   messages,
   runningTurn,
   selectedTurnId,
@@ -79,6 +84,29 @@ export const ChatTranscript = memo(function ChatTranscript({
     estimateSize: () => 160,
     overscan: 6,
   })
+  const scrollToBottom = useCallback<ChatTranscriptScrollToBottom>((options = {}) => {
+    const scroller = scrollRef.current
+    if (!scroller) return
+
+    if (liveTailMessage || showPendingActivity) {
+      liveTailRef.current?.scrollIntoView({ block: "end", behavior: "auto" })
+      return
+    }
+
+    if (rows.length > 0) {
+      virtualizer.scrollToIndex(rows.length - 1, { align: "end", behavior: "auto" })
+      return
+    }
+
+    if (options.force) {
+      scroller.scrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight)
+    }
+  }, [liveTailMessage, liveTailRef, rows.length, scrollRef, showPendingActivity, virtualizer])
+
+  useEffect(() => {
+    registerScrollToBottom(scrollToBottom)
+    return () => registerScrollToBottom(null)
+  }, [registerScrollToBottom, scrollToBottom])
 
   return (
     <div
@@ -86,7 +114,7 @@ export const ChatTranscript = memo(function ChatTranscript({
       data-chat-transcript-scroller
       className="min-h-0 flex-1 overflow-y-auto scrollbar-thin px-8 pb-3"
     >
-      <div className="mx-auto max-w-[760px]">
+      <div ref={contentRef} className="mx-auto max-w-[760px]">
         {messages.length === 0 && !runningTurn && <EmptyState />}
         {rows.length > 0 && (
           <div
