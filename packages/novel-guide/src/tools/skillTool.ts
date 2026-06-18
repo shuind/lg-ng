@@ -5,7 +5,7 @@ export function createSkillTools(): Tool[] {
   return [
     {
       name: "load_skill",
-      description: "按名称加载项目 skill 的完整 prompt 内容。",
+      description: "按名称从项目 `.novel-guide/skills/<name>/SKILL.md` 中加载项目 skill 的完整 prompt 内容。若要创建新 skill，请使用 write_file 写入该路径，并包含 name 和 description 的 YAML 头部。",
       readonly: true,
       parameters: {
         type: "object",
