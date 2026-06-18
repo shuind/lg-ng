@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { applyProposal, createProposal, discardProposal, generateDraft, getChapter, saveChapter } from "@/lib/api"
-import type { ProposalSummary } from "@/lib/types"
+import { useCallback, useEffect, useState } from "react"
+import type { Skill } from "@/lib/types"
+import { generateDraft, getChapter, listSkills, saveChapter } from "@/lib/api"
 import { DraftSandbox } from "./writing-desk/draft-sandbox"
 import { WritingDeskHeader } from "./writing-desk/writing-desk-header"
 import { WritingDeskNotFound } from "./writing-desk/writing-desk-not-found"
@@ -12,19 +12,51 @@ import { WritingToolbar } from "./writing-desk/writing-toolbar"
 interface WritingDeskProps {
   bookId: string
   chapterId: string
-  onProposalApplied: () => Promise<void>
 }
 
-export function WritingDesk({ bookId, chapterId, onProposalApplied }: WritingDeskProps) {
+export function WritingDesk({ bookId, chapterId }: WritingDeskProps) {
   const [title, setTitle] = useState("")
   const [content, setContent] = useState("")
-  const [chapterPath, setChapterPath] = useState("")
   const [draft, setDraft] = useState<string>("")
-  const [draftProposal, setDraftProposal] = useState<ProposalSummary | null>(null)
+  const [draftIntent, setDraftIntent] = useState("")
+  const [skills, setSkills] = useState<Skill[]>([])
+  const [draftSkillIds, setDraftSkillIds] = useState<string[]>([])
   const [generating, setGenerating] = useState(false)
-  const [applyingProposal, setApplyingProposal] = useState(false)
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const [notFound, setNotFound] = useState(false)
+
+  const applySkills = useCallback((items: Skill[]) => {
+    setSkills(items)
+    setDraftSkillIds((current) => current.filter((id) => items.some((skill) => skill.id === id && skill.kind === "writing")))
+  }, [])
+
+  const refreshSkills = useCallback(async () => {
+    try {
+      const items = await listSkills(bookId)
+      applySkills(items)
+    } catch {
+      setSkills([])
+      setDraftSkillIds([])
+    }
+  }, [applySkills, bookId])
+
+  useEffect(() => {
+    let cancelled = false
+    listSkills(bookId)
+      .then((items) => {
+        if (cancelled) return
+        applySkills(items)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSkills([])
+          setDraftSkillIds([])
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [applySkills, bookId])
 
   useEffect(() => {
     setNotFound(false)
@@ -36,8 +68,9 @@ export function WritingDesk({ bookId, chapterId, onProposalApplied }: WritingDes
       }
       setTitle(chapter.title)
       setContent(chapter.content)
-      setChapterPath(chapter.path)
-      setDraftProposal(null)
+      setDraft("")
+      setDraftIntent("")
+      setDraftSkillIds([])
     })
   }, [bookId, chapterId])
 
@@ -58,48 +91,41 @@ export function WritingDesk({ bookId, chapterId, onProposalApplied }: WritingDes
 
   async function handleGenerate() {
     setGenerating(true)
-    const prompt = draft ? `已有试写内容：\n${draft}\n\n请继续续写。` : undefined
-    const text = await generateDraft(bookId, chapterId, prompt)
-    setDraft((previousDraft) => (previousDraft ? previousDraft + "\n\n" + text : text))
-    setGenerating(false)
+    try {
+      const promptParts = [
+        draft ? `已有试写内容：\n${draft}\n\n请继续生成，不要重复已有试写。` : "",
+        draftIntent.trim() ? `本次写作意图：\n${draftIntent.trim()}` : "",
+      ].filter(Boolean)
+      const text = await generateDraft(
+        bookId,
+        chapterId,
+        promptParts.length > 0 ? promptParts.join("\n\n") : undefined,
+        draftSkillIds,
+      )
+      setDraft((previousDraft) => (previousDraft ? previousDraft + "\n\n" + text : text))
+    } finally {
+      setGenerating(false)
+    }
   }
 
-  async function handleKeepDraft() {
-    if (!draft.trim() || !chapterPath) return
-    const cleaned = draft.replace(/^（试写）/, "")
-    const proposal = await createProposal(bookId, {
-      targetPath: chapterPath,
-      baseContent: content,
-      afterContent: `${content}\n\n${cleaned}`,
-      summary: "采纳试写到当前章节",
-      source: "draft",
+  function handleToggleDraftSkill(skillId: string) {
+    setDraftSkillIds((current) =>
+      current.includes(skillId)
+        ? current.filter((id) => id !== skillId)
+        : [...current, skillId],
+    )
+  }
+
+  function handleAppendDraft() {
+    const cleaned = draft.replace(/^（试写）/, "").trim()
+    if (!cleaned) return
+    setContent((previousContent) => {
+      if (!previousContent) return cleaned
+      const separator = previousContent.endsWith("\n\n") ? "" : previousContent.endsWith("\n") ? "\n" : "\n\n"
+      return `${previousContent}${separator}${cleaned}`
     })
-    setDraftProposal(proposal)
     setDraft("")
-  }
-
-  async function handleApplyDraftProposal(hunkIds?: string[]) {
-    if (!draftProposal || applyingProposal) return
-    setApplyingProposal(true)
-    try {
-      const result = await applyProposal(bookId, draftProposal.id, hunkIds)
-      setDraftProposal(result.proposal)
-      setContent(result.updatedContent)
-      await onProposalApplied()
-    } finally {
-      setApplyingProposal(false)
-    }
-  }
-
-  async function handleDiscardDraftProposal() {
-    if (!draftProposal || applyingProposal) return
-    setApplyingProposal(true)
-    try {
-      const proposal = await discardProposal(bookId, draftProposal.id)
-      setDraftProposal(proposal)
-    } finally {
-      setApplyingProposal(false)
-    }
+    setDraftIntent("")
   }
 
   const wordCount = content.replace(/\s/g, "").length
@@ -118,13 +144,15 @@ export function WritingDesk({ bookId, chapterId, onProposalApplied }: WritingDes
           <WritingEditor content={content} onContentChange={setContent} />
           <DraftSandbox
             draft={draft}
-            proposal={draftProposal}
+            intent={draftIntent}
+            skills={skills.filter((skill) => skill.kind === "writing")}
+            selectedSkillIds={draftSkillIds}
             generating={generating}
-            applyingProposal={applyingProposal}
+            onIntentChange={setDraftIntent}
+            onToggleSkill={handleToggleDraftSkill}
+            onRefreshSkills={refreshSkills}
             onGenerate={handleGenerate}
-            onKeepDraft={handleKeepDraft}
-            onApplyProposal={handleApplyDraftProposal}
-            onDiscardProposal={handleDiscardDraftProposal}
+            onAppendDraft={handleAppendDraft}
             onClearDraft={() => setDraft("")}
           />
         </div>

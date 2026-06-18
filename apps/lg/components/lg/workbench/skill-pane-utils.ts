@@ -1,11 +1,11 @@
-import type { Skill } from "@/lib/types"
+import type { Skill, SkillKind } from "@/lib/types"
 import { LEGACY_WORKSPACE_SKILLS_DIR, WORKSPACE_SKILLS_DIR } from "@/lib/workspace-layout"
 
 export function skillDisplayName(skill: Skill): string {
   return skill.name || (skill.type === "plot_design" ? "剧情设计指南" : skill.id)
 }
 
-export function skillKindLabel(skill: Skill): string {
+export function skillSourceLabel(skill: Skill): string {
   if (skill.source === "plot_design" || skill.type === "plot_design") return "剧情设计指南"
   if (skill.source === "workspace_skill") return "本地 Skill"
   return skill.type
@@ -52,10 +52,29 @@ export function syncSkillMdName(content: string, nextName: string, previousName:
   return content
 }
 
-export function createDefaultSkillMd(name: string): string {
+export function syncSkillMdKind(content: string, nextKind: SkillKind): string {
+  const lines = content.split(/\r?\n/)
+  if (lines[0] !== "---") return content
+
+  for (let index = 1; index < lines.length; index += 1) {
+    if (lines[index] === "---") {
+      lines.splice(index, 0, `kind: ${nextKind}`)
+      return lines.join("\n")
+    }
+    if (!lines[index].match(/^kind:\s*/)) continue
+
+    lines[index] = `kind: ${nextKind}`
+    return lines.join("\n")
+  }
+
+  return content
+}
+
+export function createDefaultSkillMd(name: string, kind: SkillKind = "method"): string {
   return [
     "---",
     `name: ${name}`,
+    `kind: ${kind}`,
     'description: "当前书籍项目内可复用的小说写作流程。"',
     'when_to_use: "当用户明确需要这套写作流程时使用。"',
     'argument-hint: "[范围或参考材料]"',

@@ -32,6 +32,7 @@ export function AppShell(props: AppShellProps) {
             onSelectChapter={props.onSelectChapter}
             onBackToChat={props.onBackToChat}
             onNewBook={props.onNewBook}
+            onDeleteBook={props.onDeleteBook}
             onNewChapter={props.onNewChapter}
             onDeleteChapter={props.onDeleteChapter}
             onRenameBook={props.onRenameBook}
@@ -74,7 +75,6 @@ export function AppShell(props: AppShellProps) {
           onRollbackLedgerEntry={props.onRollbackLedgerEntry}
           onApplyProposal={props.onApplyProposal}
           onDiscardProposal={props.onDiscardProposal}
-          onProposalApplied={props.onProposalApplied}
         />
 
         <RightSidebarColumn

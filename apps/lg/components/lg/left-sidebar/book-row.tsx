@@ -1,7 +1,7 @@
 ﻿"use client"
 
 import { useEffect, useRef, type RefObject } from "react"
-import { Pencil } from "lucide-react"
+import { Pencil, Trash2 } from "lucide-react"
 import type { Book } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -17,6 +17,7 @@ export function BookRow({
   onSelectBook,
   onPrefetchBook,
   onStartRename,
+  onDeleteBook,
 }: {
   book: Book
   active: boolean
@@ -29,6 +30,7 @@ export function BookRow({
   onSelectBook: (bookId: string) => void
   onPrefetchBook: (bookId: string) => void
   onStartRename: (bookId: string, currentTitle: string) => void
+  onDeleteBook: (bookId: string) => Promise<void>
 }) {
   const prefetchTimerRef = useRef<number | null>(null)
 
@@ -92,6 +94,25 @@ export function BookRow({
               title="重命名书籍"
             >
               <Pencil className="h-3 w-3" />
+            </button>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation()
+                if (window.confirm(`删除书籍「${book.title}」？这会永久删除整本书的文件、章节和工作记录。`)) {
+                  void onDeleteBook(book.id)
+                }
+              }}
+              className={cn(
+                "rounded-md p-1 transition",
+                active
+                  ? "text-muted-foreground opacity-100 hover:bg-background/40 hover:text-destructive"
+                  : "text-muted-foreground/0 group-hover:text-muted-foreground group-hover:opacity-100 hover:bg-sidebar-accent hover:text-destructive",
+              )}
+              aria-label={`删除书籍 ${book.title}`}
+              title="删除书籍"
+            >
+              <Trash2 className="h-3 w-3" />
             </button>
           </div>
           <button

@@ -2,7 +2,7 @@
 
 import { Sparkles, XCircle } from "lucide-react"
 import type { Skill } from "@/lib/types"
-import { skillDisplayName, skillTypeLabel } from "./picker-utils"
+import { skillDisplayName, skillKindTag } from "./picker-utils"
 
 export function SkillChipBar({
   skills,
@@ -23,7 +23,7 @@ export function SkillChipBar({
             <Sparkles className="h-3 w-3 shrink-0 text-muted-foreground" />
             <span className="truncate">{skillDisplayName(skill)}</span>
             <span className="hidden rounded bg-muted/60 px-1 text-[10px] text-muted-foreground sm:inline">
-              {skillTypeLabel(skill)}
+              {skillKindTag(skill)}
             </span>
             {skill.stage === "experimental" && (
               <span className="hidden rounded-full bg-accent/20 px-1 text-[10px] text-accent-foreground sm:inline">

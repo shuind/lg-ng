@@ -4,6 +4,7 @@ import type {
   LedgerEntry,
   Skill,
   SkillExperimentSaveRequest,
+  SkillKind,
   SkillLabAnalyzeRequest,
   SkillLabMeta,
   SkillLabResponse,
@@ -18,7 +19,7 @@ import { readBookFile } from "@/lib/server/book-store"
 import { callChatCompletion, getConfig } from "@/lib/server/llm"
 import { parseJsonFromModel } from "@/lib/server/llm-json"
 import { draftWorkspaceSkill } from "@/lib/server/skill-draft-service"
-import { normalizeSkillName } from "@/lib/server/skill-validation"
+import { normalizeSkillKind, normalizeSkillName } from "@/lib/server/skill-validation"
 import { nowIso } from "@/lib/server/ids"
 import { getBookDir } from "@/lib/server/paths"
 import { LEGACY_WORKSPACE_SKILLS_DIR, WORKSPACE_SKILLS_DIR } from "@/lib/workspace-layout"
@@ -76,11 +77,32 @@ function normalizeOrigin(value: unknown): SkillSuggestion["origin"] {
   return "ai_diff"
 }
 
+function guessSkillKind(text: string): SkillKind {
+  if (/(开篇|正文|描写|对白|视角|章末|心理|情绪|语言|段落|动作)/.test(text)) return "writing"
+  if (/(诊断|判断|检查|审稿|是否|成立|有效|密度|读者疑问|AI 味|AI味|问题)/.test(text)) return "judgment"
+  if (/(流程|步骤|方法|更新|维护|抽取|记录|生成|拆|归档|交接|状态|时间线|冲突表)/.test(text)) return "method"
+  return "writing"
+}
+
+function normalizeLabSkillKind(value: unknown, fallbackText = ""): SkillKind {
+  const guessed = fallbackText ? guessSkillKind(fallbackText) : undefined
+  if (guessed === "writing" && value === "method") return "writing"
+  if (value === "writing" || value === "judgment" || value === "method") return value
+  return guessed ?? "writing"
+}
+
 function normalizeStoredSuggestion(value: unknown): SkillSuggestion | null {
   if (!isSuggestion(value)) return null
   const confidence = normalizeScore(typeof value.confidence === "number" ? value.confidence : 0.5)
+  const fallbackText = [
+    value.title,
+    value.observation,
+    Array.isArray(value.proposedRules) ? value.proposedRules.join("\n") : "",
+    value.proposedChange,
+  ].filter((item): item is string => typeof item === "string").join("\n")
   return {
     ...value,
+    skillKind: normalizeLabSkillKind(value.skillKind, fallbackText),
     status: normalizeStatus(value.status),
     confidence,
     strength: normalizeScore(typeof value.strength === "number" ? value.strength : confidence),
@@ -257,7 +279,7 @@ async function collectExistingSkills(bookId: string): Promise<ExistingSkill[]> {
 
 const SYSTEM_PROMPT = [
   "你在帮一位中文网文作者，从他主动选择的真实使用样本里提炼“值得拿去试验台打磨”的写作线索。",
-  "线索不是 Skill。线索只是一条候选指令或改进假设，必须由用户拿去试验台 A/B 后，才可能保存成实验 Skill。",
+  "线索不是 Skill。线索只是一条候选指令或改进假设，用户可以直接保存，也可以先拿去试跑验证。",
   "",
   "你会拿到：",
   "- SELECTED_REVISIONS：用户主动挑选的真实改动 diff，每条带一个 id。",
@@ -265,13 +287,14 @@ const SYSTEM_PROMPT = [
   "- EXISTING_SKILLS：已经建好的 Skill，含 name（目录名）、title、description、正文摘录。",
   "",
   "请优先围绕 FOCUS 找出在多条样本里【反复出现】、且值得试验的 craft 规律；FOCUS 为空时，从样本本身归纳。不要拿一次性的剧情/操作指令凑数。",
-  '- kind="new"：作者反复在做、但现有 Skill 没覆盖的可试验写法。给 proposedName（小写英文+连字符）、title（中文）、observation（你观察到的具体规律）、proposedRules（2-4 条可直接送进试验台的中文规则）。',
+  '每条线索必须给 skillKind："writing" | "judgment" | "method"。writing 控制正文怎么写；judgment 控制怎么判断问题；method 控制怎么完成任务流程。',
+  '- kind="new"：作者反复在做、但现有 Skill 没覆盖的可试验写法。给 proposedName（小写英文+连字符）、title（中文）、observation（你观察到的具体规律）、proposedRules（2-4 条可直接保存/送进试跑的中文规则）。',
   '- kind="improve"：某个现有 Skill 的规则与样本冲突，或没覆盖样本暴露出的情况。把 targetSkillName 设为【完全一致】的现有 Skill name，给 observation（差距在哪）、proposedChange（试验台里的 B 版指令应该怎么改，中文、具体）。',
   "",
   "每条线索必须引用 2 条以上证据，每条证据引用一个真实的 SELECTED_REVISIONS id，并用一句话说明这条样本体现了什么。不要编造 id。",
   "宁可少给也不要给空泛或牵强的线索。最多 5 条。如果没有可靠线索，返回空数组。",
   "",
-  '只返回 JSON：{ "suggestions": [ { "kind", "title", "observation", "confidence"(0~1), "evidence": [{ "ledgerEntryId", "note" }], "proposedName"?, "proposedRules"?, "targetSkillName"?, "proposedChange"? } ] }',
+  '只返回 JSON：{ "suggestions": [ { "kind", "skillKind", "title", "observation", "confidence"(0~1), "evidence": [{ "ledgerEntryId", "note" }], "proposedName"?, "proposedRules"?, "targetSkillName"?, "proposedChange"? } ] }',
   "除 name/id 外，所有面向人的文字用简体中文。",
 ].join("\n")
 
@@ -322,8 +345,15 @@ function normalizeSuggestions(
     if (evidence.length === 0) continue
 
     const confidence = normalizeScore(typeof s.confidence === "number" ? s.confidence : 0.5)
+    const proposedRules = toStringArray(s.proposedRules)
+    const proposedChange = typeof s.proposedChange === "string" ? s.proposedChange.trim() : ""
+    const skillKind = normalizeLabSkillKind(
+      s.skillKind,
+      [title, observation, proposedRules.join("\n"), proposedChange].join("\n"),
+    )
     const base = {
       kind: kind as SkillSuggestionKind,
+      skillKind,
       title,
       observation,
       confidence,
@@ -337,7 +367,6 @@ function normalizeSuggestions(
 
     if (kind === "new") {
       const proposedName = normalizeSkillName(typeof s.proposedName === "string" ? s.proposedName : "")
-      const proposedRules = toStringArray(s.proposedRules)
       if (!proposedName || proposedRules.length === 0) continue
       const id = `new:${proposedName}`
       if (seen.has(id)) continue
@@ -345,7 +374,6 @@ function normalizeSuggestions(
       out.push({ id, status: "surfacing", proposedName, proposedRules, ...base })
     } else {
       const targetSkillName = normalizeSkillName(typeof s.targetSkillName === "string" ? s.targetSkillName : "")
-      const proposedChange = typeof s.proposedChange === "string" ? s.proposedChange.trim() : ""
       if (!targetSkillName || !existingNames.has(targetSkillName) || !proposedChange) continue
       const id = `improve:${targetSkillName}:${slug(title)}`
       if (seen.has(id)) continue
@@ -380,6 +408,7 @@ function normalizeEvidence(raw: unknown, revisionsById: Map<string, LedgerEntry>
       ledgerEntryId,
       targetPath: entry.targetPath,
       note: typeof e.note === "string" ? e.note.trim() : entry.summary,
+      sampleText: clipText(entry.afterSnapshot ?? entry.beforeSnapshot ?? entry.diffPatch ?? entry.summary, 1200),
     })
   }
   return result
@@ -525,6 +554,7 @@ export async function saveSkillExperiment(
   const nameHint = normalizeSkillName(input.nameHint || sourceNameHint || "experimental-skill") || "experimental-skill"
   const title = clipText(input.title ?? sourceSuggestion?.title ?? "实验 Skill", 80)
   const sampleText = clipText(input.sampleText ?? "", 1200)
+  const kind = normalizeSkillKind(input.kind ?? sourceSuggestion?.skillKind ?? "writing")
   const originExperimentId = typeof input.originExperimentId === "string" && input.originExperimentId.trim()
     ? input.originExperimentId.trim()
     : undefined
@@ -543,9 +573,14 @@ export async function saveSkillExperiment(
 
   const draft = await draftWorkspaceSkill({
     nameHint,
+    kind,
     goal: `${title}\n\n当前试验通过的指令：\n${instruction}`,
     triggers: [
-      "当用户需要沿用这条已经在试验台打磨过的写作指令时使用。",
+      kind === "writing"
+        ? "当用户需要控制正文语言、视角、节奏或信息释放方式时使用。"
+        : kind === "judgment"
+          ? "当用户需要分析、诊断、审稿或判断文本问题时使用。"
+          : "当用户需要按固定步骤完成写作相关任务时使用。",
       title,
     ].join("\n"),
     examples,

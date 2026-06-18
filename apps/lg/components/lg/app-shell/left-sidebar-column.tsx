@@ -19,6 +19,7 @@ type LeftSidebarColumnProps = Pick<
   | "onSelectChapter"
   | "onBackToChat"
   | "onNewBook"
+  | "onDeleteBook"
   | "onNewChapter"
   | "onDeleteChapter"
   | "onRenameBook"
@@ -38,6 +39,7 @@ export function LeftSidebarColumn({
   onSelectChapter,
   onBackToChat,
   onNewBook,
+  onDeleteBook,
   onNewChapter,
   onDeleteChapter,
   onRenameBook,
@@ -71,6 +73,7 @@ export function LeftSidebarColumn({
         onSelectChapter={onSelectChapter}
         onBackToChat={onBackToChat}
         onNewBook={onNewBook}
+        onDeleteBook={onDeleteBook}
         onNewChapter={onNewChapter}
         onDeleteChapter={onDeleteChapter}
         onRenameBook={onRenameBook}

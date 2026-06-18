@@ -4,6 +4,7 @@ import { parseJsonFromModel } from "@/lib/server/llm-json"
 import {
   normalizeResourceKinds,
   normalizeResourcePath,
+  normalizeSkillKind,
   normalizeSkillName,
   safeYamlValue,
   validateSkillDraft,
@@ -19,6 +20,7 @@ function fallbackSkillName(nameHint: string): { name: string; warnings: string[]
 }
 
 function createTemplateSkillMd(name: string, input: SkillDraftRequest): string {
+  const kind = normalizeSkillKind(input.kind)
   const goal = input.goal.trim() || "说明这个 Skill 要沉淀哪一种可复用的小说写作能力。"
   const triggers = (input.triggers ?? "").trim() || "当用户明确需要这套流程时使用。"
   const examples = (input.examples ?? "").trim()
@@ -26,8 +28,9 @@ function createTemplateSkillMd(name: string, input: SkillDraftRequest): string {
     ? `\n## 示例\n\n${examples}\n`
     : ""
 
-  return `---
+return `---
 name: ${name}
+kind: ${kind}
 description: ${safeYamlValue(goal)}
 when_to_use: ${safeYamlValue(triggers)}
 argument-hint: "[范围或参考材料]"
@@ -71,15 +74,36 @@ function createTemplateResources(kinds: SkillResourceKind[]): SkillTextResource[
   return resources
 }
 
-function normalizeDraftResponse(raw: unknown, fallbackName: string, fallback: SkillDraftResponse): SkillDraftResponse {
+function ensureSkillMdKind(skillMd: string, kind: string): string {
+  const lines = skillMd.split(/\r?\n/)
+  if (lines[0] !== "---") return skillMd
+
+  for (let index = 1; index < lines.length; index += 1) {
+    if (lines[index] === "---") {
+      lines.splice(index, 0, `kind: ${kind}`)
+      return lines.join("\n")
+    }
+    if (!lines[index].match(/^kind:\s*/)) continue
+
+    lines[index] = `kind: ${kind}`
+    return lines.join("\n")
+  }
+
+  return skillMd
+}
+
+function normalizeDraftResponse(raw: unknown, fallbackName: string, kind: string, fallback: SkillDraftResponse): SkillDraftResponse {
   const data = raw && typeof raw === "object" ? raw as Partial<SkillDraftResponse> : {}
   const warnings = Array.isArray(data.warnings)
     ? data.warnings.filter((item): item is string => typeof item === "string")
     : []
   const name = normalizeSkillName(typeof data.name === "string" ? data.name : fallbackName) || fallbackName
-  const skillMd = typeof data.skillMd === "string" && data.skillMd.trim()
-    ? data.skillMd.trimEnd() + "\n"
-    : fallback.skillMd
+  const skillMd = ensureSkillMdKind(
+    typeof data.skillMd === "string" && data.skillMd.trim()
+      ? data.skillMd.trimEnd() + "\n"
+      : fallback.skillMd,
+    kind,
+  )
   const rawResources = Array.isArray(data.resources) ? data.resources : []
   const resources: SkillTextResource[] = []
 
@@ -108,6 +132,7 @@ function normalizeDraftResponse(raw: unknown, fallbackName: string, fallback: Sk
 
 export async function draftWorkspaceSkill(input: SkillDraftRequest): Promise<SkillDraftResponse> {
   const resourceKinds = normalizeResourceKinds(input.resourceKinds)
+  const kind = normalizeSkillKind(input.kind)
   const { name, warnings } = fallbackSkillName(input.nameHint)
   const fallback: SkillDraftResponse = {
     name,
@@ -131,7 +156,8 @@ export async function draftWorkspaceSkill(input: SkillDraftRequest): Promise<Ski
           "You create concise project-local Novel Guide skills for Chinese novel projects.",
           "Return only JSON with keys: name, skillMd, resources, warnings.",
           "The skill name must use lowercase English letters, digits, and hyphens only.",
-          "SKILL.md must start with YAML frontmatter containing name and description.",
+          "SKILL.md must start with YAML frontmatter containing name, kind, and description.",
+          "The frontmatter kind must be exactly the provided kind: writing, judgment, or method.",
           "Allowed optional frontmatter keys: when_to_use, argument-hint, user-invocable, disable-model-invocation.",
           "Keep SKILL.md focused and under 120 lines. Move detailed material into resources.",
           "Resource paths must start with references/, scripts/, or assets/ and contain text content only.",
@@ -143,6 +169,7 @@ export async function draftWorkspaceSkill(input: SkillDraftRequest): Promise<Ski
         content: JSON.stringify({
           nameHint: input.nameHint,
           safeName: name,
+          kind,
           goal: input.goal,
           triggers: input.triggers,
           examples: input.examples,
@@ -151,7 +178,7 @@ export async function draftWorkspaceSkill(input: SkillDraftRequest): Promise<Ski
       },
     ], { temperature: 0.2, maxTokens: 2400, feature: "skill_draft" })
 
-    return normalizeDraftResponse(parseJsonFromModel(result.content), name, fallback)
+    return normalizeDraftResponse(parseJsonFromModel(result.content), name, kind, fallback)
   } catch (error) {
     return {
       ...fallback,

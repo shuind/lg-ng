@@ -51,7 +51,7 @@ export function ChatComposerPanel({
   onToggleSkill,
   onSelectWorkflowAction,
   onAddCitation,
-  onToggleConstraintPicker,
+  onToggleSkillPicker,
   onToggleReferencePicker,
 }: {
   inputRef: RefObject<HTMLTextAreaElement | null>
@@ -93,7 +93,7 @@ export function ChatComposerPanel({
   onToggleSkill: (skillId: string) => void
   onSelectWorkflowAction: (action: WorkflowAction) => void
   onAddCitation: (reference: ChatReference) => void
-  onToggleConstraintPicker: () => void
+  onToggleSkillPicker: () => void
   onToggleReferencePicker: () => void
 }) {
   const [slashDismissed, setSlashDismissed] = useState(false)
@@ -239,7 +239,7 @@ export function ChatComposerPanel({
             onSend={onSend}
             onCancel={onCancelSend}
             onSelectWorkflowAction={onSelectWorkflowAction}
-            onToggleConstraintPicker={onToggleConstraintPicker}
+            onToggleSkillPicker={onToggleSkillPicker}
             onToggleReferencePicker={onToggleReferencePicker}
           />
         </div>

@@ -22,6 +22,7 @@ interface LeftSidebarProps {
   onSelectChapter: (id: string) => void
   onBackToChat: () => void
   onNewBook: () => void
+  onDeleteBook: (bookId: string) => Promise<void>
   onNewChapter: () => void
   onDeleteChapter: (chapterId: string) => Promise<void>
   onRenameBook: (bookId: string, newTitle: string) => void
@@ -41,6 +42,7 @@ export function LeftSidebar({
   onSelectChapter,
   onBackToChat,
   onNewBook,
+  onDeleteBook,
   onNewChapter,
   onDeleteChapter,
   onRenameBook,
@@ -72,6 +74,7 @@ export function LeftSidebar({
           onSelectBook={onSelectBook}
           onPrefetchBook={onPrefetchBook}
           onRenameBook={onRenameBook}
+          onDeleteBook={onDeleteBook}
         />
 
         <div className="mt-4">

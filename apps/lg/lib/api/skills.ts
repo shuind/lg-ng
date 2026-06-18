@@ -19,6 +19,7 @@ function fallbackPlotDesignSkill(bookId: string): Skill {
   return {
     id: `skill-plot-design-${bookId}`,
     type: "plot_design",
+    kind: "method",
     name: "剧情设计指南",
     description: "剧情主线、关卡、冲突、悬念和切入点的压缩层",
     scope: "book",
@@ -66,6 +67,7 @@ export async function draftSkill(bookId: string, input: SkillDraftRequest): Prom
       skillMd: [
         "---",
         "name: novel-skill",
+        "kind: method",
         "description: \"当前书籍项目内可复用的小说写作流程。\"",
         "when_to_use: \"当用户明确需要这套写作流程时使用。\"",
         "argument-hint: \"[范围或参考材料]\"",

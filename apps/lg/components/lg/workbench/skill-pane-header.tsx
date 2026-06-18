@@ -14,7 +14,7 @@ export function SkillPaneHeader({
       <div>
         <div className="font-serif text-[16px] text-foreground">Skill</div>
         <div className="mt-1 max-w-xl text-[12px] leading-relaxed text-muted-foreground">
-          可复用写作能力包。每个 Skill 都是同等地位的可插拔任务流程，试写会按意图动态启用合适的书籍 Skill · {skillCount} 个可用
+          可复用写作能力包。Skill 分为写作、判断、方法三类；试写区可手动选择写作 Skill · {skillCount} 个可用
         </div>
       </div>
       <button

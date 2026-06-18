@@ -120,9 +120,12 @@ export interface ChatReference {
   updatedAt?: string
 }
 
+export type SkillKind = "writing" | "judgment" | "method"
+
 export interface Skill {
   id: string
   type: string
+  kind: SkillKind
   name?: string
   description?: string
   scope: "global" | "book"
@@ -156,6 +159,7 @@ export interface SkillTextResource {
 
 export interface SkillDraftRequest {
   nameHint: string
+  kind?: SkillKind
   goal: string
   triggers?: string
   examples?: string
@@ -188,6 +192,7 @@ export interface SkillSuggestionEvidence {
   ledgerEntryId: string
   targetPath: string
   note: string
+  sampleText?: string
 }
 
 export interface SkillUsageStats {
@@ -231,6 +236,7 @@ export interface SkillExperimentResult {
 
 export interface SkillExperimentSaveRequest {
   nameHint: string
+  kind?: SkillKind
   title?: string
   instruction: string
   sampleText?: string
@@ -261,6 +267,7 @@ export interface SkillLabMeta {
 export interface SkillSuggestion {
   id: string
   kind: SkillSuggestionKind
+  skillKind: SkillKind
   status: SkillSuggestionStatus
   title: string
   observation: string

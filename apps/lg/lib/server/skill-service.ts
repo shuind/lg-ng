@@ -30,6 +30,7 @@ import {
   SkillNotFoundError,
   SkillValidationError,
   isValidSkillName,
+  normalizeSkillKind,
   normalizeSkillName,
   parseSkillFrontmatter,
   validateSkillDraft,
@@ -314,6 +315,7 @@ function toWorkspaceSkillRecord(
   return {
     id: `workspace-skill-${directoryName}`,
     type: "workspace_skill",
+    kind: normalizeSkillKind(meta.kind),
     name: meta.name || directoryName,
     description: meta.description || meta.when_to_use || "",
     scope: "book",
@@ -554,6 +556,7 @@ function normalizePlotDesignSkill(bookId: string, skill: Skill, dirty: boolean):
     ...skill,
     id: `skill-plot-design-${bookId}`,
     type: "plot_design",
+    kind: normalizeSkillKind(skill.kind),
     name: skill.name || "剧情设计指南",
     description: skill.description || "剧情主线、关卡、冲突、悬念和切入点的压缩层",
     scope: "book",
@@ -659,6 +662,7 @@ export async function getPlotDesignSkill(bookId: string): Promise<Skill> {
     skill = {
       id: `skill-plot-design-${bookId}`,
       type: "plot_design",
+      kind: "method",
       name: "剧情设计指南",
       description: "剧情主线、关卡、冲突、悬念和切入点的压缩层",
       scope: "book",

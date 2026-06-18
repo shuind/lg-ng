@@ -12,6 +12,7 @@ async function POSTHandler(
     const body = await request.json()
     return NextResponse.json(await saveSkillExperiment(bookId, {
       nameHint: typeof body?.nameHint === "string" ? body.nameHint : "",
+      kind: body?.kind,
       title: typeof body?.title === "string" ? body.title : undefined,
       instruction: typeof body?.instruction === "string" ? body.instruction : "",
       sampleText: typeof body?.sampleText === "string" ? body.sampleText : undefined,

@@ -1,12 +1,13 @@
 "use client"
 
 import { useState } from "react"
-import type { Skill, SkillDraftResponse, SkillTextResource } from "@/lib/types"
+import type { Skill, SkillDraftResponse, SkillKind, SkillTextResource } from "@/lib/types"
 import { createSkill, draftSkill, getSkillDraft, updateSkill } from "@/lib/api"
 import {
   createDefaultSkillMd,
   normalizeSkillInputName,
   skillDirectoryName,
+  syncSkillMdKind,
   syncSkillMdName,
 } from "./skill-pane-utils"
 
@@ -25,8 +26,9 @@ export function useSkillDialogState({
   const [step, setStep] = useState<SkillDialogStep>("intent")
   const [editingSkillName, setEditingSkillName] = useState<string | null>(null)
   const [skillName, setSkillName] = useState("novel-skill")
+  const [skillKind, setSkillKind] = useState<SkillKind>("method")
   const [intent, setIntent] = useState("")
-  const [skillMd, setSkillMd] = useState(() => createDefaultSkillMd("novel-skill"))
+  const [skillMd, setSkillMd] = useState(() => createDefaultSkillMd("novel-skill", "method"))
   const [resources, setResources] = useState<SkillTextResource[]>([])
   const [warnings, setWarnings] = useState<string[]>([])
   const [hint, setHint] = useState("")
@@ -51,15 +53,26 @@ export function useSkillDialogState({
       return
     }
     if (!skillMdEdited) {
-      setSkillMd(createDefaultSkillMd(nextName))
+      setSkillMd(createDefaultSkillMd(nextName, skillKind))
     }
+  }
+
+  function handleSkillKindChange(kind: SkillKind) {
+    setSkillKind(kind)
+    if (!skillMdEdited) {
+      const name = normalizeSkillInputName(skillName) || "novel-skill"
+      setSkillMd(createDefaultSkillMd(name, kind))
+      return
+    }
+    setSkillMd((current) => syncSkillMdKind(current, kind))
   }
 
   function openCreateSkillDialog() {
     setEditingSkillName(null)
     setSkillName("novel-skill")
+    setSkillKind("method")
     setIntent("")
-    setSkillMd(createDefaultSkillMd("novel-skill"))
+    setSkillMd(createDefaultSkillMd("novel-skill", "method"))
     setResources([])
     setWarnings([])
     setHint("")
@@ -74,6 +87,7 @@ export function useSkillDialogState({
     setEditingSkillName(null)
     setIntent("")
     setSkillName(draft.name)
+    setSkillKind("method")
     setSkillMd(draft.skillMd)
     setResources(draft.resources)
     setWarnings(draft.warnings)
@@ -87,6 +101,7 @@ export function useSkillDialogState({
   async function loadSkillByName(directoryName: string, nextHint: string) {
     setEditingSkillName(directoryName)
     setSkillName(directoryName)
+    setSkillKind("method")
     setIntent("")
     setSkillMd("")
     setResources([])
@@ -125,7 +140,7 @@ export function useSkillDialogState({
     setGenerating(true)
     setCreateError("")
     try {
-      const draft = await draftSkill(bookId, { nameHint: skillName, goal: intent })
+      const draft = await draftSkill(bookId, { nameHint: skillName, kind: skillKind, goal: intent })
       setSkillName(draft.name)
       setSkillMd(draft.skillMd)
       setResources(draft.resources)
@@ -141,7 +156,7 @@ export function useSkillDialogState({
 
   function skipToManualDraft() {
     const name = normalizeSkillInputName(skillName) || "novel-skill"
-    if (!skillMdEdited) setSkillMd(createDefaultSkillMd(name))
+    if (!skillMdEdited) setSkillMd(createDefaultSkillMd(name, skillKind))
     setStep("preview")
   }
 
@@ -190,6 +205,7 @@ export function useSkillDialogState({
     step,
     isEditingSkill,
     skillName,
+    skillKind,
     intent,
     skillMd,
     resources,
@@ -200,6 +216,7 @@ export function useSkillDialogState({
     savingSkill,
     loadingSkillDraft,
     setIntent,
+    handleSkillKindChange,
     handleOpenChange,
     handleSkillNameChange,
     handleSkillNameBlur: () => setSkillName((current) => normalizeSkillInputName(current) || "novel-skill"),

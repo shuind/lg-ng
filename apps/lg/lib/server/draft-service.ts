@@ -2,7 +2,8 @@ import { getConfig, callChatCompletion } from "@/lib/server/llm"
 import { getChapter } from "@/lib/server/chapter-store"
 import { listIndexedFiles, listIndexedSettingCards, type IndexedBookFile } from "@/lib/server/book-index"
 import { readBookFile } from "@/lib/server/book-store"
-import type { SettingCard } from "@/lib/types"
+import { resolveSkillSummaries } from "@/lib/server/skill-service"
+import type { SettingCard, SkillSummary } from "@/lib/types"
 
 const SYSTEM_PROMPT = `你是 LG 的写作试写助手。你只负责基于当前章节上下文生成一段临时试写文本。
 这段文本不会自动写入正文，用户确认后才会保留。
@@ -11,6 +12,7 @@ const SYSTEM_PROMPT = `你是 LG 的写作试写助手。你只负责基于当�
 - 延续当前章节的叙事视角、语气和节奏
 - 先判断本次任务是偏正文续写、润色，还是偏剧情推进；只有在需要剧情规划时才启用剧情设计 Skill
 - 用户额外要求只约束本次试写目标，不能覆盖项目事实、系统规则或已给正文
+- 如果本次启用了写作 Skill，必须把它当作正文生成规则执行
 - 不要解释你的写作思路
 - 不要输出标题、列表或 Markdown
 - 不要重复已有段落
@@ -20,6 +22,8 @@ const FALLBACK_TEXT = "（试写）夜色沉沉，远处隐约传来更鼓声。
 const DRAFT_SUPPORT_FILE_LIMIT = 8
 const DRAFT_SUPPORT_CARD_LIMIT = 10
 const DRAFT_SUPPORT_EXCERPT_CHARS = 700
+const DRAFT_SKILL_LIMIT = 6
+const DRAFT_SKILL_EXCERPT_CHARS = 1200
 const DRAFT_CONTEXT_ROOT_PRIORITY = [
   "NOVEL.md",
   "GUIDE.md",
@@ -111,6 +115,22 @@ function shouldEnablePlotDesignSkill(queryText: string): boolean {
   return PLOT_DESIGN_SKILL_HINTS.some((hint) => haystack.includes(hint.toLowerCase()))
 }
 
+function normalizeSkillIds(skillIds: string[] | undefined): string[] {
+  return [...new Set((skillIds ?? []).filter((id): id is string => typeof id === "string" && id.trim().length > 0))]
+    .slice(0, DRAFT_SKILL_LIMIT)
+}
+
+function formatDraftWritingSkills(summaries: SkillSummary[]): string {
+  const writingSkills = summaries.filter((item) => item.skill.kind === "writing")
+  if (writingSkills.length === 0) return ""
+  return writingSkills
+    .map((item) => {
+      const name = item.skill.name || item.skill.id
+      return `## ${name}\n${clipText(item.summary, DRAFT_SKILL_EXCERPT_CHARS)}`
+    })
+    .join("\n\n")
+}
+
 function formatSettingCards(cards: SettingCard[], queryText: string): string {
   const lines = [...cards]
     .sort((a, b) => scoreSettingCard(b, queryText) - scoreSettingCard(a, queryText) || a.name.localeCompare(b.name, "zh-CN"))
@@ -161,6 +181,7 @@ export async function generateDraftForChapter(input: {
   bookId: string
   chapterId: string
   prompt?: string
+  skillIds?: string[]
 }): Promise<string> {
   const config = getConfig()
   if (!config) return FALLBACK_TEXT
@@ -173,6 +194,10 @@ export async function generateDraftForChapter(input: {
     const context = truncateEnd(chapter.content, 1000)
     const queryText = `${chapter.title}\n${context}\n${input.prompt ?? ""}`
     const enablePlotDesignSkill = shouldEnablePlotDesignSkill(queryText)
+    const skillIds = normalizeSkillIds(input.skillIds)
+    const writingSkillBlock = skillIds.length > 0
+      ? formatDraftWritingSkills(await resolveSkillSummaries(input.bookId, skillIds).catch(() => []))
+      : ""
     const supportContext = await buildDraftSupportContext({
       bookId: input.bookId,
       chapterPath: chapter.path,
@@ -180,12 +205,13 @@ export async function generateDraftForChapter(input: {
       enablePlotDesignSkill,
     }).catch(() => "")
     const supportBlock = supportContext.trim() ? `\n\n项目约束与参考：\n${supportContext}` : ""
+    const skillBlock = writingSkillBlock.trim() ? `\n\n本次启用的写作 Skill：\n${writingSkillBlock}` : ""
     const promptBlock = input.prompt?.trim()
       ? `\n\n用户额外要求（只约束本次试写，不覆盖项目事实或当前正文）：\n${input.prompt.trim()}`
       : ""
 
     const userContent = `当前章节正文（末尾部分）：
-${context}${supportBlock}${promptBlock}
+${context}${supportBlock}${skillBlock}${promptBlock}
 
 请续写 300-600 字，直接接在正文后面。`
 

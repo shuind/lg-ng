@@ -55,6 +55,24 @@ export function useChatComposerState({
     [skills, skillIds],
   )
 
+  const applySkills = useCallback((items: Skill[]) => {
+    setSkills(items)
+    setSkillIds((current) => current.filter((id) => items.some((skill) => skill.id === id)))
+  }, [])
+
+  const refreshSkills = useCallback(async () => {
+    if (!bookId) {
+      applySkills([])
+      return
+    }
+    try {
+      const items = await listSkills(bookId)
+      applySkills(items)
+    } catch {
+      setSkills([])
+    }
+  }, [applySkills, bookId])
+
   useEffect(() => {
     let cancelled = false
     if (!bookId) {
@@ -66,8 +84,7 @@ export function useChatComposerState({
     listSkills(bookId)
       .then((items) => {
         if (cancelled) return
-        setSkills(items)
-        setSkillIds((current) => current.filter((id) => items.some((skill) => skill.id === id)))
+        applySkills(items)
       })
       .catch(() => {
         if (!cancelled) setSkills([])
@@ -76,7 +93,7 @@ export function useChatComposerState({
     return () => {
       cancelled = true
     }
-  }, [bookId])
+  }, [applySkills, bookId])
 
   useEffect(() => {
     function handlePointerDown(event: PointerEvent) {
@@ -193,10 +210,20 @@ export function useChatComposerState({
     setSkillIds((current) => current.filter((id) => id !== skillId))
   }, [])
 
-  const handleToggleConstraintPicker = useCallback(() => {
-    setConstraintPickerOpen((open) => !open)
+  const handleTabChange = useCallback((tab: "constraints" | "skills") => {
+    setPlusTab(tab)
+    if (tab === "skills") void refreshSkills()
+  }, [refreshSkills])
+
+  const handleToggleSkillPicker = useCallback(() => {
     setReferencePickerOpen(false)
-  }, [])
+    setPlusTab("skills")
+    setConstraintPickerOpen((open) => {
+      const nextOpen = plusTab === "skills" ? !open : true
+      if (nextOpen) void refreshSkills()
+      return nextOpen
+    })
+  }, [plusTab, refreshSkills])
 
   const handleToggleReferencePicker = useCallback(() => {
     setReferencePickerOpen((open) => !open)
@@ -218,7 +245,7 @@ export function useChatComposerState({
     readonlyOnly,
     workflowAction,
     setInput,
-    setPlusTab,
+    handleTabChange,
     editLatest,
     handleSend,
     handleCancelSend,
@@ -231,7 +258,7 @@ export function useChatComposerState({
     handleRemoveConstraint,
     handleRemoveTemporaryConstraint,
     handleRemoveSkill,
-    handleToggleConstraintPicker,
+    handleToggleSkillPicker,
     handleToggleReferencePicker,
   }
 }

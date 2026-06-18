@@ -36,6 +36,7 @@ import {
   updateThread,
   createBook,
   createChapter,
+  deleteBook,
   deleteChapter,
   renameBook,
   createResponseConstraint,
@@ -95,6 +96,7 @@ export default function Page() {
     hasSnapshot,
     loadSnapshot,
     updateSnapshot,
+    removeSnapshot,
   } = useBookSnapshotCache()
   const chatThreadView = useMemo(
     () => buildChatThreadView(turns, messages, activeLeafTurnId),
@@ -472,6 +474,39 @@ export default function Page() {
       toast({
         variant: "destructive",
         title: "重命名书籍失败",
+        description: getErrorMessage(err),
+      })
+    }
+  }
+
+  async function handleDeleteBook(bookId: string) {
+    if (!bookId) return
+
+    try {
+      await deleteBook(bookId)
+      removeSnapshot(bookId)
+      workbench.close()
+
+      let nextBooks = books.filter((book) => book.id !== bookId)
+      try {
+        nextBooks = await listBooks()
+      } catch {
+        // The delete has already succeeded; keep the UI consistent with an optimistic list.
+      }
+      setBooks(nextBooks)
+
+      if (activeBookId === bookId) {
+        const nextBookId = nextBooks[0]?.id ?? ""
+        setActiveBookId(nextBookId)
+        setActiveChapterId(null)
+        setMode("chat")
+        setChatCitations([])
+        if (!nextBookId) clearBookSnapshot()
+      }
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "删除书籍失败",
         description: getErrorMessage(err),
       })
     }
@@ -1022,13 +1057,13 @@ export default function Page() {
   const onSelectChapter = useStableCallback(handleSelectChapter)
   const onBackToChat = useStableCallback(handleBackToChat)
   const onNewBook = useStableCallback(handleNewBook)
+  const onDeleteBook = useStableCallback(handleDeleteBook)
   const onNewChapter = useStableCallback(handleNewChapter)
   const onDeleteChapter = useStableCallback(handleDeleteChapter)
   const onOpenWorkbench = useStableCallback(handleOpenWorkbench)
   const onRollbackLedgerEntry = useStableCallback(handleRollbackLedgerEntry)
   const onApplyProposal = useStableCallback(handleApplyProposal)
   const onDiscardProposal = useStableCallback(handleDiscardProposal)
-  const onProposalApplied = useStableCallback(refreshBookDerivedData)
   const onRenameBook = useStableCallback(handleRenameBook)
   const onSelectTurn = useStableCallback((turnId: string) => setSelectedTurnId(turnId))
   const onSend = useStableCallback(handleSend)
@@ -1088,13 +1123,13 @@ export default function Page() {
       onSelectChapter={onSelectChapter}
       onBackToChat={onBackToChat}
       onNewBook={onNewBook}
+      onDeleteBook={onDeleteBook}
       onNewChapter={onNewChapter}
       onDeleteChapter={onDeleteChapter}
       onOpenWorkbench={onOpenWorkbench}
       onRollbackLedgerEntry={onRollbackLedgerEntry}
       onApplyProposal={onApplyProposal}
       onDiscardProposal={onDiscardProposal}
-      onProposalApplied={onProposalApplied}
       onRenameBook={onRenameBook}
       onSelectTurn={onSelectTurn}
       onSend={onSend}

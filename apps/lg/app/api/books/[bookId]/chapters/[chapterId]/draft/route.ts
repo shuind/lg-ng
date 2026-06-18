@@ -13,6 +13,7 @@ async function POSTHandler(
       bookId,
       chapterId,
       prompt: body.prompt,
+      skillIds: Array.isArray(body.skillIds) ? body.skillIds : undefined,
     })
     return NextResponse.json({ draft })
   } catch (err) {

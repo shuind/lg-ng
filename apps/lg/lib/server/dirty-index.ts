@@ -60,3 +60,9 @@ export async function clearDirty(bookId: string, filePath: string): Promise<void
   const filtered = entries.filter((e) => !(e.bookId === bookId && e.path === filePath))
   await writeDirtyFile(filtered)
 }
+
+export async function clearDirtyBook(bookId: string): Promise<void> {
+  const entries = await readDirtyFile()
+  const filtered = entries.filter((e) => e.bookId !== bookId)
+  await writeDirtyFile(filtered)
+}

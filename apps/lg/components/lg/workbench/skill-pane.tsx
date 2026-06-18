@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import type { Skill } from "@/lib/types"
+import type { Skill, SkillKind } from "@/lib/types"
 import { deleteSkill } from "@/lib/api"
 import { LoadingPane } from "./shared"
 import { SkillDialog } from "./skill-dialog"
@@ -16,6 +16,7 @@ export function SkillPane({ bookId, onOpenFile }: { bookId: string; onOpenFile: 
   const dialog = useSkillDialogState({ bookId, onReloadSkills: loadSkillData, onOpenFile })
   const [deletingSkillId, setDeletingSkillId] = useState<string | null>(null)
   const [skillError, setSkillError] = useState("")
+  const [kindFilter, setKindFilter] = useState<SkillKind | "all">("all")
 
   async function handleDeleteSkill(skill: Skill) {
     const directoryName = skillDirectoryName(skill)
@@ -47,6 +48,8 @@ export function SkillPane({ bookId, onOpenFile }: { bookId: string; onOpenFile: 
 
         <SkillList
           skills={skills}
+          kindFilter={kindFilter}
+          onKindFilterChange={setKindFilter}
           deletingSkillId={deletingSkillId}
           error={skillError}
           onEdit={dialog.openEditSkillDialog}

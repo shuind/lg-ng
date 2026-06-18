@@ -9,11 +9,13 @@ import type {
   SkillExperimentEntry,
   SkillExperimentMode,
   SkillExperimentResult,
+  SkillKind,
   SkillLabResponse,
   SkillSuggestion,
   SkillTrial,
   SkillTrialVerdict,
 } from "@/lib/types"
+import { SKILL_KIND_OPTIONS, skillKindLabel } from "@/lib/skill-kind"
 import {
   analyzeSkillLab,
   dismissSkillSuggestion,
@@ -44,6 +46,7 @@ type BenchState = {
   baselineInstruction: string
   sampleText: string
   sampleSource: "paste" | "ledger" | "editor"
+  skillKind: SkillKind
   nameHint: string
   title: string
   sourceSuggestionId?: string
@@ -59,6 +62,7 @@ function emptyBench(): BenchState {
     baselineInstruction: "",
     sampleText: "",
     sampleSource: "paste",
+    skillKind: "writing",
     nameHint: "",
     title: "",
     result: null,
@@ -102,6 +106,27 @@ function actorLabel(actor: LedgerEntry["actor"]): string {
   return actor === "agent" ? "AI" : "用户"
 }
 
+function suggestionInstruction(suggestion: SkillSuggestion): string {
+  if (suggestion.kind === "improve") return suggestion.proposedChange ?? suggestion.observation
+  const rules = suggestion.proposedRules?.length
+    ? `\n\n规则：\n${suggestion.proposedRules.map((rule) => `- ${rule}`).join("\n")}`
+    : ""
+  return `${suggestion.observation}${rules}`
+}
+
+function suggestionNameHint(suggestion: SkillSuggestion): string {
+  if (suggestion.kind === "improve") return `${suggestion.targetSkillName ?? "skill"}-experiment`
+  return suggestion.proposedName ?? "experimental-skill"
+}
+
+function suggestionSampleText(suggestion: SkillSuggestion): string {
+  return suggestion.evidence
+    .map((item) => item.sampleText || `${item.targetPath}\n${item.note}`)
+    .filter(Boolean)
+    .join("\n\n---\n\n")
+    .slice(0, 4000)
+}
+
 export function SkillLabPane({ bookId, onOpenFile }: { bookId: string; onOpenFile: (path: string) => void }) {
   const [suggestions, setSuggestions] = useState<SkillSuggestion[]>([])
   const [skills, setSkills] = useState<Skill[]>([])
@@ -119,6 +144,8 @@ export function SkillLabPane({ bookId, onOpenFile }: { bookId: string; onOpenFil
   const [bench, setBench] = useState<BenchState>(() => emptyBench())
   const [runningBench, setRunningBench] = useState(false)
   const [savingBench, setSavingBench] = useState(false)
+  const [activeSuggestionId, setActiveSuggestionId] = useState<string | null>(null)
+  const [savingSuggestionId, setSavingSuggestionId] = useState<string | null>(null)
   const [promotingName, setPromotingName] = useState<string | null>(null)
   const [runningTrialName, setRunningTrialName] = useState<string | null>(null)
   const [verdictingTrialId, setVerdictingTrialId] = useState<string | null>(null)
@@ -228,21 +255,16 @@ export function SkillLabPane({ bookId, onOpenFile }: { bookId: string; onOpenFil
 
   function handleSendToBench(suggestion: SkillSuggestion) {
     const isImprove = suggestion.kind === "improve"
-    const rules = suggestion.proposedRules?.length
-      ? `\n\n规则：\n${suggestion.proposedRules.map((rule) => `- ${rule}`).join("\n")}`
-      : ""
+    setActiveSuggestionId(suggestion.id)
     setBench({
       entry: isImprove ? "improve_skill" : "from_lead",
       mode: isImprove ? "a_b" : "with_without",
-      instruction: isImprove
-        ? suggestion.proposedChange ?? suggestion.observation
-        : `${suggestion.observation}${rules}`,
+      instruction: suggestionInstruction(suggestion),
       baselineInstruction: "",
-      sampleText: "",
-      sampleSource: "paste",
-      nameHint: isImprove
-        ? `${suggestion.targetSkillName ?? "skill"}-experiment`
-        : suggestion.proposedName ?? "experimental-skill",
+      sampleText: suggestionSampleText(suggestion),
+      sampleSource: "ledger",
+      skillKind: suggestion.skillKind,
+      nameHint: suggestionNameHint(suggestion),
       title: suggestion.title,
       sourceSuggestionId: suggestion.id,
       targetSkillName: suggestion.targetSkillName,
@@ -278,6 +300,7 @@ export function SkillLabPane({ bookId, onOpenFile }: { bookId: string; onOpenFil
     try {
       const result = await saveSkillExperiment(bookId, {
         nameHint: bench.nameHint,
+        kind: bench.skillKind,
         title: bench.title,
         instruction: bench.instruction,
         sampleText: bench.sampleText,
@@ -295,6 +318,28 @@ export function SkillLabPane({ bookId, onOpenFile }: { bookId: string; onOpenFil
       setError(err instanceof Error ? err.message : "保存实验 Skill 失败。")
     } finally {
       setSavingBench(false)
+    }
+  }
+
+  async function handleSaveSuggestion(suggestion: SkillSuggestion) {
+    setSavingSuggestionId(suggestion.id)
+    setError("")
+    try {
+      const result = await saveSkillExperiment(bookId, {
+        nameHint: suggestionNameHint(suggestion),
+        kind: suggestion.skillKind,
+        title: suggestion.title,
+        instruction: suggestionInstruction(suggestion),
+        sampleText: suggestionSampleText(suggestion),
+        sourceSuggestionId: suggestion.id,
+      })
+      applyResponse(result.lab)
+      await reloadSkills()
+      setActiveSuggestionId(suggestion.id)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "保存 Skill 失败。")
+    } finally {
+      setSavingSuggestionId(null)
     }
   }
 
@@ -347,6 +392,10 @@ export function SkillLabPane({ bookId, onOpenFile }: { bookId: string; onOpenFil
     () => suggestions.filter((suggestion) => suggestion.status !== "dismissed" && suggestion.status !== "incubated"),
     [suggestions],
   )
+  const activeSuggestion = useMemo(
+    () => observations.find((suggestion) => suggestion.id === activeSuggestionId) ?? observations[0] ?? null,
+    [activeSuggestionId, observations],
+  )
   const experimentalSkills = useMemo(
     () => skills.filter((skill) => skill.stage === "experimental"),
     [skills],
@@ -365,12 +414,12 @@ export function SkillLabPane({ bookId, onOpenFile }: { bookId: string; onOpenFil
                 <div className="font-serif text-[16px] text-foreground">Skill Lab</div>
               </div>
               <span className="rounded-full border border-border/60 px-2 py-0.5 text-[10.5px] text-muted-foreground">
-                试验台为主 · 线索只送试验
+                从真实改稿沉淀 Skill
               </span>
             </div>
             {analyzedAt && (
               <p className="mt-1.5 text-[11px] text-muted-foreground/70">
-                上次找线索：{formatWorkbenchTimestamp(analyzedAt)} · 入模 {analyzedRevisionCount} 条选中样本
+                上次分析：{formatWorkbenchTimestamp(analyzedAt)} · 入模 {analyzedRevisionCount} 条选中样本
               </p>
             )}
           </div>
@@ -380,7 +429,7 @@ export function SkillLabPane({ bookId, onOpenFile }: { bookId: string; onOpenFil
             className="flex shrink-0 items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-[11.5px] font-medium text-background transition hover:opacity-90 disabled:opacity-40"
           >
             <Beaker className="h-3 w-3" />
-            {samplePickerOpen ? "收起线索样本" : "从最近使用找线索"}
+            {samplePickerOpen ? "收起样本选择" : "分析最近改稿"}
           </button>
         </div>
 
@@ -412,17 +461,55 @@ export function SkillLabPane({ bookId, onOpenFile }: { bookId: string; onOpenFil
         {!modelConfigured ? (
           <EmptyState>当前没有可用的模型通道。请在设置里启用余额通道，或保存自己的 API Key 后再使用试验台。</EmptyState>
         ) : (
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_420px]">
             <div className="min-w-0 space-y-4">
+              <section className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Lightbulb className="h-3.5 w-3.5 text-muted-foreground" />
+                    <div className="text-[12px] font-medium text-foreground">可沉淀的经验</div>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">{observations.length} 条</div>
+                </div>
+                {observations.length === 0 ? (
+                  <EmptyState>
+                    {analyzedAt
+                      ? "这次没有发现明显线索。继续写作或改稿后，再分析最近改稿。"
+                      : "点上方“分析最近改稿”，系统会从真实改稿里提炼可保存的 Skill 线索。"}
+                  </EmptyState>
+                ) : (
+                  <div className="space-y-3">
+                  {observations.map((suggestion) => (
+                    <SkillSuggestionCard
+                      key={suggestion.id}
+                      suggestion={suggestion}
+                      active={activeSuggestion?.id === suggestion.id}
+                      saving={savingSuggestionId === suggestion.id}
+                      onSelect={() => setActiveSuggestionId(suggestion.id)}
+                      onSave={() => handleSaveSuggestion(suggestion)}
+                      onRun={() => handleSendToBench(suggestion)}
+                      onDismiss={() => handleDismiss(suggestion.id)}
+                      onOpenFile={onOpenFile}
+                    />
+                  ))}
+                  </div>
+                )}
+              </section>
+            </div>
+
+            <aside className="min-w-0 space-y-4">
               <ExperimentBench
                 bench={bench}
+                activeSuggestion={activeSuggestion}
                 running={runningBench}
                 saving={savingBench}
                 onChange={(patch) => setBench((current) => ({ ...current, ...patch }))}
+                onUseSuggestion={activeSuggestion ? () => handleSendToBench(activeSuggestion) : undefined}
                 onRun={handleRunBench}
                 onSave={handleSaveBench}
                 onReset={() => {
                   setBench(emptyBench())
+                  setActiveSuggestionId(null)
                   setError("")
                 }}
               />
@@ -436,7 +523,7 @@ export function SkillLabPane({ bookId, onOpenFile }: { bookId: string; onOpenFil
                   <div className="text-[11px] text-muted-foreground">{experimentalSkills.length} 条</div>
                 </div>
                 {experimentalSkills.length === 0 ? (
-                  <EmptyState>还没有实验中的 Skill。可以直接在试验台打磨一条指令，满意后再保存。</EmptyState>
+                  <EmptyState>还没有实验中的 Skill。可以直接保存线索，也可以先试跑再保存。</EmptyState>
                 ) : (
                   experimentalSkills.map((skill) => {
                     const name = skillDirectoryName(skill) ?? skill.id
@@ -458,35 +545,6 @@ export function SkillLabPane({ bookId, onOpenFile }: { bookId: string; onOpenFil
                   })
                 )}
               </section>
-            </div>
-
-            <aside className="min-w-0 space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <Lightbulb className="h-3.5 w-3.5 text-muted-foreground" />
-                  <div className="text-[12px] font-medium text-foreground">线索流</div>
-                </div>
-                <div className="text-[11px] text-muted-foreground">{observations.length} 条</div>
-              </div>
-              {observations.length === 0 ? (
-                <EmptyState>
-                  {analyzedAt
-                    ? "这次没有发现明显线索。继续写作或改稿后，再从最近使用里提取。"
-                    : "点上方“从最近使用找线索”，线索会出现在这里；也可以直接空手使用试验台。"}
-                </EmptyState>
-              ) : (
-                <div className="space-y-3">
-                  {observations.map((suggestion) => (
-                    <SkillSuggestionCard
-                      key={suggestion.id}
-                      suggestion={suggestion}
-                      onSendToBench={() => handleSendToBench(suggestion)}
-                      onDismiss={() => handleDismiss(suggestion.id)}
-                      onOpenFile={onOpenFile}
-                    />
-                  ))}
-                </div>
-              )}
             </aside>
           </div>
         )}
@@ -505,17 +563,21 @@ function EmptyState({ children }: { children: ReactNode }) {
 
 function ExperimentBench({
   bench,
+  activeSuggestion,
   running,
   saving,
   onChange,
+  onUseSuggestion,
   onRun,
   onSave,
   onReset,
 }: {
   bench: BenchState
+  activeSuggestion: SkillSuggestion | null
   running: boolean
   saving: boolean
   onChange: (patch: Partial<BenchState>) => void
+  onUseSuggestion?: () => void
   onRun: () => void
   onSave: () => void
   onReset: () => void
@@ -523,7 +585,7 @@ function ExperimentBench({
   const instruction = bench.instruction.trim()
   const sampleText = bench.sampleText.trim()
   const canRun = instruction.length >= 8 && sampleText.length >= 20 && !running
-  const canSave = Boolean(bench.result) && instruction.length >= 8 && !saving
+  const canSave = instruction.length >= 8 && !saving
   const entryLabel = bench.entry === "from_lead"
     ? "来自线索"
     : bench.entry === "improve_skill"
@@ -538,9 +600,12 @@ function ExperimentBench({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <Beaker className="h-4 w-4 text-muted-foreground" />
-            <div className="font-serif text-[15px] text-foreground">试验台</div>
+            <div className="font-serif text-[15px] text-foreground">试跑与保存</div>
             <span className="rounded-full border border-border/60 px-2 py-0.5 text-[10px] text-muted-foreground">
               {entryLabel}
+            </span>
+            <span className="rounded-full bg-muted/60 px-2 py-0.5 text-[10px] text-muted-foreground">
+              {skillKindLabel(bench.skillKind)}
             </span>
             {bench.targetSkillName && (
               <span className="rounded-full bg-muted/60 px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
@@ -559,45 +624,75 @@ function ExperimentBench({
         </button>
       </div>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
+      {activeSuggestion && !bench.sourceSuggestionId && (
+        <button
+          type="button"
+          onClick={onUseSuggestion}
+          className="mt-3 w-full rounded-md border border-border/70 bg-background/45 px-3 py-2 text-left text-[11.5px] leading-relaxed text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+        >
+          使用当前线索：{activeSuggestion.title}
+        </button>
+      )}
+
+      <div className="mt-4 space-y-3">
+        <div>
+          <div className="text-[11px] font-medium text-foreground">分类</div>
+          <div className="mt-1.5 grid grid-cols-3 rounded-md border border-border/70 bg-background/45 p-0.5">
+            {SKILL_KIND_OPTIONS.map((option) => (
+              <BenchModeButton
+                key={option.kind}
+                active={bench.skillKind === option.kind}
+                onClick={() => onChange({ skillKind: option.kind, result: null })}
+              >
+                {option.label}
+              </BenchModeButton>
+            ))}
+          </div>
+        </div>
+
         <label className="block">
           <span className="text-[11px] font-medium text-foreground">指令</span>
           <textarea
             value={bench.instruction}
             onChange={(event) => onChange({ instruction: event.target.value, result: null })}
-            placeholder="写一条想试的提示词。可以从零开始，也可以从右侧线索预填。"
+            placeholder="从左侧线索自动带入；也可以直接写一条想沉淀的 Skill 指令。"
             className="mt-1.5 min-h-36 w-full resize-y rounded-md border border-border/70 bg-background/55 px-3 py-2 text-[12px] leading-relaxed outline-none transition placeholder:text-muted-foreground/60 focus:border-foreground/40"
           />
         </label>
-        <div className="space-y-3">
-          <label className="block">
-            <span className="text-[11px] font-medium text-foreground">保存短名</span>
-            <input
-              value={bench.nameHint}
-              onChange={(event) => onChange({ nameHint: event.target.value })}
-              placeholder="experimental-skill"
-              className="mt-1.5 h-8 w-full rounded-md border border-border/70 bg-background/55 px-2.5 font-mono text-[11.5px] outline-none transition placeholder:text-muted-foreground/60 focus:border-foreground/40"
-            />
-          </label>
-          <label className="block">
-            <span className="text-[11px] font-medium text-foreground">标题</span>
-            <input
-              value={bench.title}
-              onChange={(event) => onChange({ title: event.target.value })}
-              placeholder="给这次试验起个名字"
-              className="mt-1.5 h-8 w-full rounded-md border border-border/70 bg-background/55 px-2.5 text-[11.5px] outline-none transition placeholder:text-muted-foreground/60 focus:border-foreground/40"
-            />
-          </label>
-          <div>
-            <div className="text-[11px] font-medium text-foreground">比较方式</div>
-            <div className="mt-1.5 grid grid-cols-2 rounded-md border border-border/70 bg-background/45 p-0.5">
-              <BenchModeButton active={bench.mode === "with_without"} onClick={() => onChange({ mode: "with_without", result: null })}>
-                带/不带
-              </BenchModeButton>
-              <BenchModeButton active={bench.mode === "a_b"} onClick={() => onChange({ mode: "a_b", result: null })}>
-                A/B 版本
-              </BenchModeButton>
-            </div>
+
+        <details className="rounded-md border border-border/70 bg-background/35 px-3 py-2">
+          <summary className="cursor-pointer text-[11px] font-medium text-foreground">保存设置</summary>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-[11px] font-medium text-foreground">短名</span>
+              <input
+                value={bench.nameHint}
+                onChange={(event) => onChange({ nameHint: event.target.value })}
+                placeholder="experimental-skill"
+                className="mt-1.5 h-8 w-full rounded-md border border-border/70 bg-background/55 px-2.5 font-mono text-[11.5px] outline-none transition placeholder:text-muted-foreground/60 focus:border-foreground/40"
+              />
+            </label>
+            <label className="block">
+              <span className="text-[11px] font-medium text-foreground">标题</span>
+              <input
+                value={bench.title}
+                onChange={(event) => onChange({ title: event.target.value })}
+                placeholder="给这条 Skill 起个名字"
+                className="mt-1.5 h-8 w-full rounded-md border border-border/70 bg-background/55 px-2.5 text-[11.5px] outline-none transition placeholder:text-muted-foreground/60 focus:border-foreground/40"
+              />
+            </label>
+          </div>
+        </details>
+
+        <div>
+          <div className="text-[11px] font-medium text-foreground">比较方式</div>
+          <div className="mt-1.5 grid grid-cols-2 rounded-md border border-border/70 bg-background/45 p-0.5">
+            <BenchModeButton active={bench.mode === "with_without"} onClick={() => onChange({ mode: "with_without", result: null })}>
+              带/不带
+            </BenchModeButton>
+            <BenchModeButton active={bench.mode === "a_b"} onClick={() => onChange({ mode: "a_b", result: null })}>
+              A/B 版本
+            </BenchModeButton>
           </div>
         </div>
       </div>
@@ -615,37 +710,39 @@ function ExperimentBench({
       )}
 
       <label className="mt-3 block">
-        <span className="text-[11px] font-medium text-foreground">样本</span>
+        <span className="text-[11px] font-medium text-foreground">试跑样本</span>
         <textarea
           value={bench.sampleText}
           onChange={(event) => onChange({ sampleText: event.target.value, result: null })}
-          placeholder="粘贴一段要改写的正文样本；A/B 只返回纯文本结果，不写项目文件。"
+          placeholder="点左侧“试跑一下”会自动带入证据样本。试跑只返回纯文本，不写项目文件。"
           className="mt-1.5 min-h-32 w-full resize-y rounded-md border border-border/70 bg-background/55 px-3 py-2 text-[12px] leading-relaxed outline-none transition placeholder:text-muted-foreground/60 focus:border-foreground/40"
         />
       </label>
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
         <div className="text-[11px] text-muted-foreground">
-          {canRun ? "样本和指令就绪。" : "至少需要 8 字指令和 20 字样本。"}
+          {canSave
+            ? canRun ? "可以直接保存；试跑只是可选验证。" : "可以直接保存；补一段样本后可试跑。"
+            : "至少需要 8 字指令。"}
         </div>
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={onRun}
             disabled={!canRun}
-            className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-[11.5px] font-medium text-background transition hover:opacity-90 disabled:opacity-40"
+            className="inline-flex items-center gap-1.5 rounded-md border border-border/70 px-3 py-1.5 text-[11.5px] font-medium text-foreground transition hover:bg-secondary disabled:opacity-40"
           >
             <Play className="h-3 w-3" />
-            {running ? "运行中…" : "跑 A/B"}
+            {running ? "运行中…" : "试跑一下"}
           </button>
           <button
             type="button"
             onClick={onSave}
             disabled={!canSave}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border/70 px-3 py-1.5 text-[11.5px] font-medium text-foreground transition hover:bg-secondary disabled:opacity-40"
+            className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-[11.5px] font-medium text-background transition hover:opacity-90 disabled:opacity-40"
           >
             <Save className="h-3 w-3" />
-            {saving ? "保存中…" : "存成 Skill（实验中）"}
+            {saving ? "保存中…" : "保存为 Skill"}
           </button>
         </div>
       </div>
@@ -726,7 +823,7 @@ function SamplePicker({
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-[12px] font-medium text-foreground">
             <Beaker className="h-3.5 w-3.5 text-muted-foreground" />
-            选择改稿样本
+            选择分析样本
           </div>
           <p className="mt-1 text-[11px] text-muted-foreground">
             已选 {selectedIds.length}/{MAX_ANALYZE_SAMPLES} 条 · diff {selectedDiffChars}/{MAX_ANALYZE_DIFF_CHARS} 字符 · 约 {selectedTokenEstimate} tokens
@@ -746,7 +843,7 @@ function SamplePicker({
       <textarea
         value={focus}
         onChange={(event) => onFocusChange(event.target.value)}
-        placeholder="这次想找什么规律/想验证什么假设（可选）"
+        placeholder="这次想从改稿里沉淀什么经验（可选）"
         className="mt-3 min-h-20 w-full resize-y rounded-md border border-border/70 bg-background/55 px-3 py-2 text-[12px] leading-relaxed outline-none transition placeholder:text-muted-foreground/60 focus:border-foreground/40"
       />
 
@@ -796,7 +893,7 @@ function SamplePicker({
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
         <div className={`text-[11px] ${blockReason ? "text-destructive" : "text-muted-foreground"}`}>
-          {blockReason || "样本就绪，分析只会读取这些选中的 diff。"}
+          {blockReason || "样本就绪，只会读取这些选中的 diff 来提炼 Skill 线索。"}
         </div>
         <button
           type="button"
@@ -805,7 +902,7 @@ function SamplePicker({
           className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-[11.5px] font-medium text-background transition hover:opacity-90 disabled:opacity-40"
         >
           <Sparkles className="h-3 w-3" />
-          {analyzing ? "分析中..." : "分析选中样本"}
+          {analyzing ? "分析中..." : "分析最近改稿"}
         </button>
       </div>
     </section>
@@ -899,19 +996,40 @@ function SampleRow({
 
 function SkillSuggestionCard({
   suggestion,
-  onSendToBench,
+  active,
+  saving,
+  onSelect,
+  onSave,
+  onRun,
   onDismiss,
   onOpenFile,
 }: {
   suggestion: SkillSuggestion
-  onSendToBench: () => void
+  active: boolean
+  saving: boolean
+  onSelect: () => void
+  onSave: () => void
+  onRun: () => void
   onDismiss: () => void
   onOpenFile: (path: string) => void
 }) {
   const isNew = suggestion.kind === "new"
 
   return (
-    <article className="paper rounded-md border border-border/60 bg-card/60 p-4 backdrop-blur">
+    <article
+      role="button"
+      tabIndex={0}
+      onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault()
+          onSelect()
+        }
+      }}
+      className={`paper rounded-md border p-4 text-left backdrop-blur transition ${
+        active ? "border-foreground/35 bg-card/85 shadow-sm" : "border-border/60 bg-card/60 hover:bg-card/80"
+      }`}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -921,6 +1039,9 @@ function SkillSuggestionCard({
               <Lightbulb className="h-3.5 w-3.5 text-accent-foreground" />
             )}
             <div className="font-serif text-[14.5px] text-foreground">{suggestion.title}</div>
+            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+              {skillKindLabel(suggestion.skillKind)} Skill
+            </span>
             <span className="rounded-full bg-muted/60 px-2 py-0.5 text-[10px] text-muted-foreground">
               {isNew ? "新观察" : `改进 ${suggestion.targetSkillTitle ?? suggestion.targetSkillName}`}
             </span>
@@ -935,7 +1056,7 @@ function SkillSuggestionCard({
               </span>
             )}
             <span className="rounded-full border border-border/60 px-2 py-0.5 text-[10px] text-muted-foreground">
-              strength {percent(suggestion.strength)}
+              可信 {percent(suggestion.strength)}
             </span>
             <span className="rounded-full border border-border/60 px-2 py-0.5 text-[10px] text-muted-foreground">
               已在 {suggestion.seenInAnalyses} 轮分析出现
@@ -943,16 +1064,33 @@ function SkillSuggestionCard({
           </div>
           <p className="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">{suggestion.observation}</p>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
           <button
-            onClick={onSendToBench}
+            onClick={(event) => {
+              event.stopPropagation()
+              onSave()
+            }}
+            disabled={saving}
             className="flex items-center gap-1 rounded-md bg-foreground px-2.5 py-1 text-[11.5px] font-medium text-background transition hover:opacity-90"
           >
-            <Beaker className="h-3 w-3" />
-            拿去试验
+            <Save className="h-3 w-3" />
+            {saving ? "保存中" : "保存为 Skill"}
           </button>
           <button
-            onClick={onDismiss}
+            onClick={(event) => {
+              event.stopPropagation()
+              onRun()
+            }}
+            className="flex items-center gap-1 rounded-md border border-border/70 px-2.5 py-1 text-[11.5px] font-medium text-foreground transition hover:bg-secondary"
+          >
+            <Beaker className="h-3 w-3" />
+            试跑一下
+          </button>
+          <button
+            onClick={(event) => {
+              event.stopPropagation()
+              onDismiss()
+            }}
             className="rounded-md p-1.5 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
             aria-label="忽略观察"
             title="忽略观察"
@@ -987,7 +1125,10 @@ function SkillSuggestionCard({
             {suggestion.evidence.map((item) => (
               <button
                 key={`${item.ledgerEntryId}:${item.note}`}
-                onClick={() => onOpenFile(item.targetPath)}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onOpenFile(item.targetPath)
+                }}
                 className="flex w-full items-start gap-2 rounded-md bg-muted/30 px-3 py-2 text-left transition hover:bg-muted/50"
               >
                 <FileText className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
@@ -1041,6 +1182,9 @@ function ExperimentSkillCard({
             <span className="font-serif text-[15px] text-foreground">{skillDisplayName(skill)}</span>
             <span className="rounded-full bg-accent/20 px-2 py-0.5 text-[10px] font-medium text-accent-foreground">
               实验中
+            </span>
+            <span className="rounded-full bg-muted/60 px-2 py-0.5 text-[10px] text-muted-foreground">
+              {skillKindLabel(skill.kind)} Skill
             </span>
             <span className="rounded-full border border-border/60 px-2 py-0.5 text-[10px] text-muted-foreground">
               探针 有效 {counts.helped} · 无差 {counts.noDiff} · 无用 {counts.hurt}

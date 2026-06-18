@@ -47,6 +47,13 @@ export async function renameBook(bookId: string, title: string): Promise<Book> {
   return normalizeBook(book)
 }
 
+export async function deleteBook(bookId: string): Promise<{ success: boolean }> {
+  const res = await fetch(`/api/books/${bookId}`, {
+    method: "DELETE",
+  })
+  return readJsonResponse(res)
+}
+
 export async function initBook(bookId: string): Promise<{
   chapters: Chapter[]
   outlines: OutlineFile[]
@@ -133,11 +140,16 @@ export async function deleteChapter(bookId: string, chapterId: string): Promise<
   return readJsonResponse(res)
 }
 
-export async function generateDraft(bookId: string, chapterId: string, prompt?: string): Promise<string> {
+export async function generateDraft(
+  bookId: string,
+  chapterId: string,
+  prompt?: string,
+  skillIds?: string[],
+): Promise<string> {
   const res = await fetch(`/api/books/${bookId}/chapters/${encodeURIComponent(chapterId)}/draft`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt }),
+    body: JSON.stringify({ prompt, skillIds }),
   })
   const data = await readJsonResponse<{ draft?: string }>(res)
   if (typeof data.draft !== "string") throw new Error("试写接口没有返回正文")

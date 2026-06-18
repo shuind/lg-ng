@@ -1,6 +1,6 @@
 import { withAuthRoute } from "@/lib/server/auth-route"
 import { NextRequest, NextResponse } from "next/server"
-import { updateBookTitle } from "@/lib/server/book-store"
+import { deleteBook, updateBookTitle } from "@/lib/server/book-store"
 
 async function PATCHHandler(
   req: NextRequest,
@@ -22,4 +22,24 @@ async function PATCHHandler(
   return NextResponse.json(book)
 }
 
+async function DELETEHandler(
+  _req: NextRequest,
+  { params }: { params: Promise<{ bookId: string }> },
+) {
+  const { bookId } = await params
+
+  try {
+    const deleted = await deleteBook(bookId)
+    if (!deleted) {
+      return NextResponse.json({ error: "书籍不存在" }, { status: 404 })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (err) {
+    console.error("[api/books/:id] delete error:", err)
+    return NextResponse.json({ error: "删除书籍失败" }, { status: 500 })
+  }
+}
+
 export const PATCH = withAuthRoute(PATCHHandler)
+export const DELETE = withAuthRoute(DELETEHandler)

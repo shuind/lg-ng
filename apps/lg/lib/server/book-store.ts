@@ -1,10 +1,10 @@
 import fs from "fs/promises"
 import path from "path"
 import type { Book, BookTreeNode, OutlineFile } from "@/lib/types"
-import { clearDirty, markDirty } from "@/lib/server/dirty-index"
+import { clearDirty, clearDirtyBook, markDirty } from "@/lib/server/dirty-index"
 import { appendLedgerEntry } from "@/lib/server/ledger"
 import { withBookMutationQueue } from "@/lib/server/book-mutation-queue"
-import { getBookDir, getBooksRoot } from "@/lib/server/paths"
+import { getBookDir, getBooksRoot, getIndexRoot } from "@/lib/server/paths"
 import { resolveInsideBook } from "@/lib/server/safe-paths"
 import { getBookTreeFromIndex, listOutlineFilesFromIndex, rebuildBookIndexes, removeIndexedFile, updateIndexedFile } from "@/lib/server/book-index"
 
@@ -36,6 +36,17 @@ async function fileExists(filePath: string) {
   } catch {
     return false
   }
+}
+
+function resolveDirectChild(root: string, child: string): string | null {
+  if (!child || path.isAbsolute(child) || child.includes("/") || child.includes("\\")) return null
+
+  const resolvedRoot = path.resolve(root)
+  const resolvedChild = path.resolve(resolvedRoot, child)
+  const relative = path.relative(resolvedRoot, resolvedChild)
+
+  if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) return null
+  return resolvedChild
 }
 
 export type WriteBookFileOptions = {
@@ -180,6 +191,29 @@ export async function updateBookTitle(bookId: string, newTitle: string): Promise
   } catch {
     return null
   }
+}
+
+export async function deleteBook(bookId: string): Promise<boolean> {
+  return withBookMutationQueue(bookId, async () => {
+    const bookDir = resolveDirectChild(getBooksRoot(), bookId)
+    if (!bookDir) return false
+
+    const bookJsonPath = path.join(bookDir, "book.json")
+    if (!(await fileExists(bookJsonPath))) return false
+
+    const bookStat = await fs.stat(bookDir).catch(() => null)
+    if (!bookStat?.isDirectory()) return false
+
+    await fs.rm(bookDir, { recursive: true, force: false })
+
+    const bookIndexDir = resolveDirectChild(path.join(getIndexRoot(), "books"), bookId)
+    if (bookIndexDir) {
+      await fs.rm(bookIndexDir, { recursive: true, force: true }).catch(() => {})
+    }
+    await clearDirtyBook(bookId).catch(() => {})
+
+    return true
+  })
 }
 
 export async function touchBookUpdatedAt(bookId: string): Promise<string> {

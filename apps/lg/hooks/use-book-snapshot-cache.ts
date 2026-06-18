@@ -14,6 +14,7 @@ export type BookSnapshot = BookInitSnapshot & {
 export function useBookSnapshotCache() {
   const cacheRef = useRef<Map<string, BookSnapshot>>(new Map())
   const inflightRef = useRef<Map<string, Promise<BookSnapshot>>>(new Map())
+  const evictionVersionRef = useRef<Map<string, number>>(new Map())
 
   const getSnapshot = useCallback((bookId: string) => {
     return cacheRef.current.get(bookId)
@@ -33,14 +34,24 @@ export function useBookSnapshotCache() {
     })
   }, [])
 
+  const removeSnapshot = useCallback((bookId: string) => {
+    cacheRef.current.delete(bookId)
+    inflightRef.current.delete(bookId)
+    evictionVersionRef.current.set(bookId, (evictionVersionRef.current.get(bookId) ?? 0) + 1)
+  }, [])
+
   const loadSnapshot = useCallback((bookId: string): Promise<BookSnapshot> => {
     const inflight = inflightRef.current.get(bookId)
     if (inflight) return inflight
 
+    const evictionVersion = evictionVersionRef.current.get(bookId) ?? 0
     const request = Promise.all([
       initBook(bookId),
       listLedgerEntries(bookId, { limit: 24 }).catch(() => ({ entries: [] as LedgerEntry[] })),
     ]).then(([snapshot, ledger]) => {
+      if ((evictionVersionRef.current.get(bookId) ?? 0) !== evictionVersion) {
+        throw new Error("书籍快照已失效")
+      }
       const next: BookSnapshot = {
         ...snapshot,
         ledgerEntries: ledger.entries,
@@ -63,5 +74,6 @@ export function useBookSnapshotCache() {
     hasSnapshot,
     loadSnapshot,
     updateSnapshot,
+    removeSnapshot,
   }
 }

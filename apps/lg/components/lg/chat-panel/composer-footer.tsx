@@ -1,11 +1,11 @@
 "use client"
 
-import { ArrowUp, AtSign, ListChecks, Plus, Square } from "lucide-react"
+import { ArrowUp, AtSign, FolderOpen, ListChecks, Plus, Square } from "lucide-react"
+import { useWorkbenchOpen } from "@/components/lg/workbench-open-context"
 import { cn } from "@/lib/utils"
 import type { MessageContextWindow, WorkflowAction } from "@/lib/types"
 import { ContextWindowIndicator } from "./context-window-indicator"
 import { ToolBtn } from "./pickers"
-import { WorkflowActionMenu } from "./workflow-action-menu"
 
 export function ComposerFooter({
   input,
@@ -18,7 +18,7 @@ export function ComposerFooter({
   onSend,
   onCancel,
   onSelectWorkflowAction,
-  onToggleConstraintPicker,
+  onToggleSkillPicker,
   onToggleReferencePicker,
 }: {
   input: string
@@ -31,9 +31,11 @@ export function ComposerFooter({
   onSend: () => void
   onCancel: () => void
   onSelectWorkflowAction: (action: WorkflowAction) => void
-  onToggleConstraintPicker: () => void
+  onToggleSkillPicker: () => void
   onToggleReferencePicker: () => void
 }) {
+  const workbench = useWorkbenchOpen()
+
   return (
     <div className="flex items-center justify-between gap-3 px-3 pb-2.5">
       <div className="flex min-w-0 items-center gap-1" data-chat-popover-keepopen="true">
@@ -42,7 +44,7 @@ export function ComposerFooter({
           label="Skill"
           active={constraintPickerOpen}
           showLabel
-          onClick={onToggleConstraintPicker}
+          onClick={onToggleSkillPicker}
         />
         <ToolBtn
           icon={<AtSign className="h-3.5 w-3.5" />}
@@ -59,10 +61,12 @@ export function ComposerFooter({
           showLabel
           onClick={() => onSelectWorkflowAction("plan")}
         />
-        <WorkflowActionMenu
-          workflowAction={workflowAction}
-          disabled={sending}
-          onSelectWorkflowAction={onSelectWorkflowAction}
+        <ToolBtn
+          icon={<FolderOpen className="h-3.5 w-3.5" />}
+          label="工作台"
+          disabled={!workbench}
+          showLabel
+          onClick={() => workbench?.open()}
         />
       </div>
       <div className="flex items-center gap-1.5">

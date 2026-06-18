@@ -1,9 +1,10 @@
 import path from "path"
-import type { CreateSkillRequest, SkillResourceKind, SkillTextResource } from "@/lib/types"
+import type { CreateSkillRequest, SkillKind, SkillResourceKind, SkillTextResource } from "@/lib/types"
 
 const MAX_RESOURCE_CHARS = 200_000
 
 export const RESOURCE_ROOTS: SkillResourceKind[] = ["references", "scripts", "assets"]
+export const SKILL_KINDS: SkillKind[] = ["writing", "judgment", "method"]
 
 export function normalizeSkillName(input: string): string {
   return input
@@ -39,6 +40,10 @@ export class SkillNotFoundError extends Error {
 
 export function isValidSkillName(name: string): boolean {
   return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name) && name.length <= 64
+}
+
+export function normalizeSkillKind(value: unknown): SkillKind {
+  return SKILL_KINDS.includes(value as SkillKind) ? value as SkillKind : "method"
 }
 
 export function safeYamlValue(value: string): string {
@@ -148,6 +153,9 @@ function validateSkillMd(name: string, skillMd: string): Record<string, string> 
   }
   if (meta.name !== name) {
     throw new SkillValidationError("frontmatter 里的 name 必须和 Skill 目录短名一致。")
+  }
+  if (meta.kind && normalizeSkillKind(meta.kind) !== meta.kind) {
+    throw new SkillValidationError("frontmatter 里的 kind 只能是 writing、judgment 或 method。")
   }
 
   return meta

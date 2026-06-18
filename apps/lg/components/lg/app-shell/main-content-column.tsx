@@ -47,7 +47,6 @@ type MainContentColumnProps = Pick<
   | "onRollbackLedgerEntry"
   | "onApplyProposal"
   | "onDiscardProposal"
-  | "onProposalApplied"
 >
 
 export function MainContentColumn({
@@ -87,7 +86,6 @@ export function MainContentColumn({
   onRollbackLedgerEntry,
   onApplyProposal,
   onDiscardProposal,
-  onProposalApplied,
 }: MainContentColumnProps) {
   return (
     <div className="relative min-h-0 min-w-0">
@@ -129,7 +127,7 @@ export function MainContentColumn({
           onDiscardProposal={onDiscardProposal}
         />
       ) : activeChapterId ? (
-        <WritingDesk bookId={activeBookId} chapterId={activeChapterId} onProposalApplied={onProposalApplied} />
+        <WritingDesk bookId={activeBookId} chapterId={activeChapterId} />
       ) : null}
     </div>
   )

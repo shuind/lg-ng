@@ -41,13 +41,13 @@ export interface AppShellProps {
   onSelectChapter: (chapterId: string) => void
   onBackToChat: () => void
   onNewBook: () => void
+  onDeleteBook: (bookId: string) => Promise<void>
   onNewChapter: () => void
   onDeleteChapter: (chapterId: string) => Promise<void>
   onOpenWorkbench: (bookId: string, options?: string | WorkbenchOpenOptions) => void
   onRollbackLedgerEntry: (entryId: string) => Promise<void>
   onApplyProposal: (proposalId: string, hunkIds?: string[]) => Promise<string | undefined>
   onDiscardProposal: (proposalId: string) => Promise<void>
-  onProposalApplied: () => Promise<void>
   onRenameBook: (bookId: string, newTitle: string) => void
   onSelectTurn: (turnId: string) => void
   onSend: (text: string, citations: ChatCitation[], options: ChatSendOptions) => Promise<void>

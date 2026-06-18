@@ -1,8 +1,9 @@
 "use client"
 
 import { PenLine, Sparkles, Trash2 } from "lucide-react"
+import { skillKindLabel } from "@/lib/skill-kind"
 import type { Skill } from "@/lib/types"
-import { skillDirectoryName, skillDisplayName, skillKindLabel } from "./skill-pane-utils"
+import { skillDirectoryName, skillDisplayName, skillSourceLabel } from "./skill-pane-utils"
 
 export function SkillCard({
   skill,
@@ -27,7 +28,10 @@ export function SkillCard({
             <Sparkles className="h-4 w-4 text-muted-foreground/80" />
             <span className="font-serif text-[15px] text-foreground">{skillDisplayName(skill)}</span>
             <span className="rounded-full bg-muted/50 px-2 py-0.5 text-[10px] text-muted-foreground">
-              {skillKindLabel(skill)}
+              {skillKindLabel(skill.kind)}
+            </span>
+            <span className="rounded-full bg-background/70 px-2 py-0.5 text-[10px] text-muted-foreground ring-1 ring-border/60">
+              {skillSourceLabel(skill)}
             </span>
             {skill.stage === "experimental" && (
               <span className="rounded-full bg-accent/20 px-2 py-0.5 text-[10px] font-medium text-accent-foreground">

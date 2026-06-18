@@ -12,6 +12,8 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import { SKILL_KIND_OPTIONS } from "@/lib/skill-kind"
+import { cn } from "@/lib/utils"
 import { SkillResourcesEditor } from "./skill-dialog-resources"
 import type { SkillDialogController } from "./use-skill-dialog-state"
 
@@ -76,6 +78,28 @@ function IntentStep({ dialog }: { dialog: SkillDialogController }) {
           className="min-h-28 text-[12px] leading-relaxed"
           autoFocus
         />
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="text-[12px] font-medium text-foreground">分类</label>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {SKILL_KIND_OPTIONS.map((option) => (
+            <button
+              key={option.kind}
+              type="button"
+              onClick={() => dialog.handleSkillKindChange(option.kind)}
+              className={cn(
+                "rounded-lg border px-3 py-2 text-left transition",
+                dialog.skillKind === option.kind
+                  ? "border-primary/40 bg-primary/5 text-foreground"
+                  : "border-border/60 bg-background/40 text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
+              )}
+            >
+              <span className="block text-[12px] font-medium">{option.label}</span>
+              <span className="mt-0.5 block text-[11px] leading-relaxed">{option.description}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {dialog.createError && (
