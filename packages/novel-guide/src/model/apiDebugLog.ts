@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import type {
@@ -12,6 +12,7 @@ import type { ModelUsage } from "./deepseek.js";
 
 const DEBUG_LOG_DIR = "api-calls";
 const DEBUG_LOG_FILE = "model-api-calls.jsonl";
+const API_DEBUG_LOG_SETTINGS_FILE = "api-debug-log-settings.json";
 
 export interface ModelDebugLogRequest {
   model: string;
@@ -38,15 +39,47 @@ interface ModelDebugLogInput {
   durationMs: number;
 }
 
-function isDebugLogEnabled(): boolean {
-  if (process.env.NODE_ENV === "production") return false;
+type RuntimeApiDebugLogSettings = {
+  enabled?: boolean;
+  logDir?: string;
+};
+
+function readRuntimeApiDebugLogSettings(): RuntimeApiDebugLogSettings {
+  try {
+    const raw = JSON.parse(readFileSync(runtimeSettingsPath(), "utf8")) as Partial<RuntimeApiDebugLogSettings>;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+    return {
+      ...(typeof raw.enabled === "boolean" ? { enabled: raw.enabled } : {}),
+      ...(typeof raw.logDir === "string" && raw.logDir.trim() ? { logDir: raw.logDir.trim() } : {}),
+    };
+  } catch {
+    return {};
+  }
+}
+
+function runtimeDataRoot(): string {
+  if (process.env.LG_DATA_DIR) return path.resolve(process.env.LG_DATA_DIR);
+  return path.join(findWorkspaceRoot(process.cwd()), ".lg-data");
+}
+
+function runtimeSettingsPath(): string {
+  return path.join(runtimeDataRoot(), "admin", API_DEBUG_LOG_SETTINGS_FILE);
+}
+
+function isDebugLogEnabled(runtimeSettings = readRuntimeApiDebugLogSettings()): boolean {
+  // Explicit opt-in wins, even in production. This log captures full prompts and
+  // responses, so only enable it temporarily (e.g. to compare server vs. local).
   if (process.env.NG_API_DEBUG_LOG === "true") return true;
+  if (typeof runtimeSettings.enabled === "boolean") return runtimeSettings.enabled;
+  if (process.env.NODE_ENV === "production") return false;
   if (process.env.NODE_ENV === "test") return false;
   return process.env.NG_API_DEBUG_LOG !== "false";
 }
 
-function debugLogDir(): string {
+function debugLogDir(runtimeSettings = readRuntimeApiDebugLogSettings()): string {
   if (process.env.NG_API_DEBUG_LOG_DIR) return path.resolve(process.env.NG_API_DEBUG_LOG_DIR);
+  if (runtimeSettings.logDir) return path.resolve(runtimeSettings.logDir);
+  if (process.env.LG_DATA_DIR) return path.join(runtimeDataRoot(), DEBUG_LOG_DIR);
   return path.join(findWorkspaceRoot(process.cwd()), DEBUG_LOG_DIR);
 }
 
@@ -79,7 +112,8 @@ function serializeError(error: unknown): { name: string; message: string } {
 }
 
 export async function recordModelApiDebugLog(input: ModelDebugLogInput): Promise<void> {
-  if (!isDebugLogEnabled()) return;
+  const runtimeSettings = readRuntimeApiDebugLogSettings();
+  if (!isDebugLogEnabled(runtimeSettings)) return;
 
   const entry = {
     id: crypto.randomUUID(),
@@ -95,7 +129,7 @@ export async function recordModelApiDebugLog(input: ModelDebugLogInput): Promise
   };
 
   try {
-    const filePath = path.join(debugLogDir(), DEBUG_LOG_FILE);
+    const filePath = path.join(debugLogDir(runtimeSettings), DEBUG_LOG_FILE);
     await fsp.mkdir(path.dirname(filePath), { recursive: true });
     await fsp.appendFile(filePath, `${JSON.stringify(entry)}\n`, "utf8");
   } catch (error) {

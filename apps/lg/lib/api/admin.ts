@@ -5,6 +5,7 @@ import type {
   BillingSettingsUpdateInput,
   BillingUserSummary,
 } from "@/lib/billing"
+import type { AdminApiDebugLogSettings, AdminApiDebugLogSettingsUpdateInput } from "@/lib/admin-debug"
 
 export type AdminUserOverview = {
   id: string
@@ -64,6 +65,9 @@ export type AdminOverviewPayload = {
     platformBalanceEnabled: boolean
   }
   billing: BillingAdminSummary
+  debug: {
+    apiDebugLog: AdminApiDebugLogSettings
+  }
   users: AdminUserOverview[]
 }
 
@@ -117,6 +121,17 @@ export async function updateAdminBillingSettings(input: BillingSettingsUpdateInp
     body: JSON.stringify(input),
   })
   return readAdminResponse<BillingAdminSummary>(res, "余额设置保存失败")
+}
+
+export async function updateAdminApiDebugLogSettings(
+  input: AdminApiDebugLogSettingsUpdateInput,
+): Promise<AdminApiDebugLogSettings> {
+  const res = await fetch("/api/admin/debug-log", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  })
+  return readAdminResponse<AdminApiDebugLogSettings>(res, "调试日志设置保存失败")
 }
 
 export async function saveAdminPlatformKey(input: {

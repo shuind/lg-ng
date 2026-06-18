@@ -1,10 +1,11 @@
 ﻿import type { AgentEvent } from "@/lib/types"
 
 export function appendEventMarkdown(lines: string[], events: AgentEvent[]) {
-  if (events.length === 0) return
+  const exportableEvents = events.filter((event) => event.type !== "reasoning")
+  if (exportableEvents.length === 0) return
 
   lines.push("### 行动摘要")
-  for (const event of events) {
+  for (const event of exportableEvents) {
     lines.push(`- ${eventLabel(event.type)}: ${event.text ?? event.message ?? event.name ?? ""}`.trim())
     if (event.paths && event.paths.length > 0) {
       for (const path of event.paths) {

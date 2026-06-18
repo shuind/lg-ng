@@ -6,6 +6,7 @@ import Link from "next/link"
 import type { LucideIcon } from "lucide-react"
 import {
   AlertTriangle,
+  Bug,
   Coins,
   Database,
   HardDrive,
@@ -28,6 +29,7 @@ import {
   getAdminOverview,
   saveAdminPlatformKey,
   testAdminPlatformKey,
+  updateAdminApiDebugLogSettings,
   updateAdminBillingSettings,
   updateAdminInvite,
   type AdminInviteOverview,
@@ -89,6 +91,12 @@ function formatActivePlatformSource(
   if (source === "environment") return "环境变量"
   if (source === "admin") return preview ? `后台保存 ${preview}` : "后台保存"
   return "无"
+}
+
+function formatApiDebugLogSource(source: AdminOverviewPayload["debug"]["apiDebugLog"]["source"]): string {
+  if (source === "environment") return "环境变量"
+  if (source === "admin") return "后台开关"
+  return "默认关闭"
 }
 
 function defaultPlatformDraft(pricing?: BillingPricing) {
@@ -447,6 +455,10 @@ export function AdminPanel() {
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [accessDenied, setAccessDenied] = useState(false)
+  const [apiDebugLogEnabledDraft, setApiDebugLogEnabledDraft] = useState(false)
+  const [apiDebugLogSaving, setApiDebugLogSaving] = useState(false)
+  const [apiDebugLogMessage, setApiDebugLogMessage] = useState<string | null>(null)
+  const [apiDebugLogError, setApiDebugLogError] = useState<string | null>(null)
   const [billingPlatformEnabledDraft, setBillingPlatformEnabledDraft] = useState(false)
   const [billingPricingDraft, setBillingPricingDraft] = useState<BillingPricing | null>(null)
   const [billingSettingsSaving, setBillingSettingsSaving] = useState(false)
@@ -478,6 +490,7 @@ export function AdminPanel() {
     try {
       const nextOverview = await getAdminOverview()
       setOverview(nextOverview)
+      setApiDebugLogEnabledDraft(nextOverview.debug.apiDebugLog.runtimeEnabled)
       setBillingPlatformEnabledDraft(nextOverview.billing.settings.platformEnabled)
       setBillingPricingDraft(createBillingPricingDraft(nextOverview.billing.settings.pricing))
       setBillingAdjustmentDrafts(createBillingAdjustmentDrafts(nextOverview.users))
@@ -491,6 +504,32 @@ export function AdminPanel() {
     } finally {
       setLoading(false)
       setRefreshing(false)
+    }
+  }
+
+  async function saveApiDebugLogSettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (apiDebugLogSaving || overview?.debug.apiDebugLog.envEnabled) return
+    setApiDebugLogSaving(true)
+    setApiDebugLogError(null)
+    setApiDebugLogMessage(null)
+    try {
+      const apiDebugLog = await updateAdminApiDebugLogSettings({
+        enabled: apiDebugLogEnabledDraft,
+      })
+      setApiDebugLogEnabledDraft(apiDebugLog.runtimeEnabled)
+      setOverview((current) => current ? {
+        ...current,
+        debug: {
+          ...current.debug,
+          apiDebugLog,
+        },
+      } : current)
+      setApiDebugLogMessage(apiDebugLog.enabled ? "调试日志已开启。" : "调试日志已关闭。")
+    } catch (err) {
+      setApiDebugLogError(getErrorMessage(err))
+    } finally {
+      setApiDebugLogSaving(false)
     }
   }
 
@@ -793,6 +832,11 @@ export function AdminPanel() {
     ? overview.billing.platformProviders.find((provider) => provider.id === platformDraft.id)
     : null
   const platformDraftCanTest = Boolean(platformDraft.apiKey.trim() || platformDraftExisting?.configured)
+  const apiDebugLog = overview.debug.apiDebugLog
+  const apiDebugLogCanSave = !apiDebugLogSaving &&
+    !apiDebugLog.envEnabled &&
+    apiDebugLogEnabledDraft !== apiDebugLog.runtimeEnabled
+  const apiDebugLogSourceLabel = formatApiDebugLogSource(apiDebugLog.source)
 
   return (
     <div className="space-y-6">
@@ -819,6 +863,9 @@ export function AdminPanel() {
           <StatusPill tone={overview.llm.platformBalanceEnabled ? "good" : "warning"}>
             {overview.llm.platformBalanceEnabled ? "平台余额可用" : "平台余额不可用"}
           </StatusPill>
+          <StatusPill tone={apiDebugLog.enabled ? "warning" : "neutral"}>
+            {apiDebugLog.enabled ? "API 调试日志开启" : "API 调试日志关闭"}
+          </StatusPill>
           <StatusPill>总余额 {formatMoney(overview.billing.total.balanceCny)} CNY</StatusPill>
           <StatusPill>已用余额 {formatMoney(overview.billing.total.usedBalanceCny)} CNY</StatusPill>
           <StatusPill tone={overview.auth.adminEmailCount > 0 ? "good" : "warning"}>管理员 {overview.auth.adminEmailCount}</StatusPill>
@@ -827,6 +874,32 @@ export function AdminPanel() {
           <Database className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span className="break-all font-mono">{overview.dataRoot}</span>
         </div>
+        <div className="mt-2 flex items-start gap-2 text-[12px] leading-relaxed text-muted-foreground">
+          <Bug className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span className="break-all font-mono">{apiDebugLog.logFile}</span>
+        </div>
+        <form className="mt-3 flex flex-wrap items-center gap-3 border-t border-border/60 pt-3" onSubmit={saveApiDebugLogSettings}>
+          <label className="flex items-center gap-2 text-[13px]">
+            <input
+              type="checkbox"
+              checked={apiDebugLog.envEnabled || apiDebugLogEnabledDraft}
+              disabled={apiDebugLog.envEnabled}
+              onChange={(event) => setApiDebugLogEnabledDraft(event.target.checked)}
+              className="h-4 w-4"
+            />
+            记录模型 API 调试日志
+          </label>
+          <StatusPill tone={apiDebugLog.enabled ? "warning" : "neutral"}>{apiDebugLogSourceLabel}</StatusPill>
+          <Button type="submit" size="sm" disabled={!apiDebugLogCanSave}>
+            <Save className={cn("h-4 w-4", apiDebugLogSaving && "animate-pulse")} />
+            {apiDebugLogSaving ? "保存中..." : "保存调试开关"}
+          </Button>
+          {apiDebugLog.enabled ? (
+            <span className="text-[12px] text-amber-700 dark:text-amber-300">会记录完整 prompt，用完请关闭。</span>
+          ) : null}
+          {apiDebugLogMessage ? <span className="text-[12px] text-emerald-700 dark:text-emerald-300">{apiDebugLogMessage}</span> : null}
+          {apiDebugLogError ? <span className="text-[12px] text-destructive">{apiDebugLogError}</span> : null}
+        </form>
       </section>
 
       <section className="rounded-lg border border-border/70 bg-card/75 p-4">

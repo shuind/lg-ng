@@ -4,6 +4,8 @@ import { getAuthAdminSnapshot, type AuthInviteOverview } from "@/lib/server/auth
 import { getGlobalDataRoot } from "@/lib/server/paths"
 import { getBillingAdminSummary } from "@/lib/server/billing-store"
 import type { BillingAdminSummary } from "@/lib/billing"
+import { getApiDebugLogSettings } from "@/lib/server/api-debug-settings"
+import type { AdminApiDebugLogSettings } from "@/lib/admin-debug"
 
 export type AdminUserOverview = {
   id: string
@@ -41,6 +43,9 @@ export type AdminOverviewPayload = {
     platformBalanceEnabled: boolean
   }
   billing: BillingAdminSummary
+  debug: {
+    apiDebugLog: AdminApiDebugLogSettings
+  }
   users: AdminUserOverview[]
 }
 
@@ -119,7 +124,10 @@ async function readUserAppSettings(userRoot: string): Promise<UserAppSettingsInf
 
 export async function getAdminOverview(): Promise<AdminOverviewPayload> {
   const snapshot = await getAuthAdminSnapshot()
-  const billing = await getBillingAdminSummary(snapshot.users.map((user) => user.id))
+  const [billing, apiDebugLog] = await Promise.all([
+    getBillingAdminSummary(snapshot.users.map((user) => user.id)),
+    getApiDebugLogSettings(),
+  ])
   const now = Date.now()
   const dataRoot = getGlobalDataRoot()
   const invitesByUserId = new Map(snapshot.redeemedInvites.map((invite) => [invite.userId, invite]))
@@ -186,6 +194,9 @@ export async function getAdminOverview(): Promise<AdminOverviewPayload> {
       platformBalanceEnabled: billing.platformApiKeyConfigured && billing.settings.platformEnabled,
     },
     billing,
+    debug: {
+      apiDebugLog,
+    },
     users,
   }
 }

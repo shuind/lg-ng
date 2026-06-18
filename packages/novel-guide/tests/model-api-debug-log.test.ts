@@ -5,7 +5,7 @@ import type OpenAI from "openai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createChatCompletion, createChatCompletionStream } from "../src/model/deepseek.js";
 
-const ENV_KEYS = ["NODE_ENV", "NG_API_DEBUG_LOG", "NG_API_DEBUG_LOG_DIR"] as const;
+const ENV_KEYS = ["NODE_ENV", "NG_API_DEBUG_LOG", "NG_API_DEBUG_LOG_DIR", "LG_DATA_DIR"] as const;
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 
 let tempDir = "";
@@ -234,6 +234,47 @@ describe("model API debug log", () => {
     });
 
     await expect(fsp.stat(path.join(tempDir, "model-api-calls.jsonl"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("honors runtime admin settings in production", async () => {
+    const dataRoot = path.join(tempDir, "data");
+    await fsp.mkdir(path.join(dataRoot, "admin"), { recursive: true });
+    await fsp.writeFile(
+      path.join(dataRoot, "admin", "api-debug-log-settings.json"),
+      `${JSON.stringify({ enabled: true, logDir: tempDir, updatedAt: new Date().toISOString() })}\n`,
+      "utf8",
+    );
+    process.env.NODE_ENV = "production";
+    delete process.env.NG_API_DEBUG_LOG;
+    delete process.env.NG_API_DEBUG_LOG_DIR;
+    process.env.LG_DATA_DIR = dataRoot;
+
+    const client = {
+      chat: {
+        completions: {
+          create: async () => ({
+            choices: [{ message: { role: "assistant", content: "ok" } }],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          }),
+        },
+      },
+    } as unknown as OpenAI;
+
+    await createChatCompletion({
+      client,
+      model: "mock-runtime",
+      messages: [{ role: "user", content: "runtime" }],
+    });
+
+    const entries = await readLogEntries();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      providerScope: "model",
+      model: "mock-runtime",
+      request: {
+        messages: [{ role: "user", content: "runtime" }],
+      },
+    });
   });
 
   it("defaults to the workspace api-calls directory from nested app cwd", async () => {

@@ -151,8 +151,10 @@ async function sendThreadMessageUnlocked(bookId: string, body: unknown): Promise
       result.usage.totalTokens > 0 ||
       changedPaths.length > 0
       ? {
-          understood: ["已读取项目资料并生成回复。"],
-          contextPaths: [result.workspacePath, ...skillReferences.map((reference) => reference.path)],
+          understood: ["已处理本轮请求。"],
+          contextPaths: skillReferences.length > 0
+            ? skillReferences.map((reference) => reference.path)
+            : undefined,
           changedPaths: changedPaths.length > 0 ? changedPaths : undefined,
           diagnosis: result.failedTools.length > 0 ? result.failedTools : undefined,
           toolTrace: result.toolTrace.length > 0 ? result.toolTrace : undefined,
@@ -168,7 +170,7 @@ async function sendThreadMessageUnlocked(bookId: string, body: unknown): Promise
         : proposals.length > 0
           ? `已生成 ${proposals.length} 个待采纳 proposal。`
         : result.toolTrace.length > 0
-          ? "已读取项目资料并生成回复。"
+          ? "已完成工具辅助处理并生成回复。"
           : "处理完成。",
       paths: changedPaths.length > 0 ? changedPaths : undefined,
       ledgerEntryIds: changeRecord.entries.map((entry) => entry.id),
@@ -392,13 +394,7 @@ async function streamThreadMessageUnlocked(
         emitSse(controller, "assistant_delta", { text: queryEvent.accumulatedText, delta: queryEvent.text })
         await persistProgressMessage()
       } else if (queryEvent.type === "reasoning_delta") {
-        const event = createAgentEvent(turn.id, {
-          type: "reasoning",
-          text: queryEvent.text,
-        })
-        events.push(event)
         emitSse(controller, "reasoning_delta", { text: queryEvent.text, loop: queryEvent.loop })
-        await persistProgressMessage()
       } else if (queryEvent.type === "usage_update") {
         const event = createAgentEvent(turn.id, {
           type: "observe",
@@ -464,8 +460,10 @@ async function streamThreadMessageUnlocked(
       finalResult.usage.totalTokens > 0 ||
       changedPaths.length > 0
       ? {
-          understood: ["已读取项目资料并生成回复。"],
-          contextPaths: [finalResult.workspacePath, ...skillReferences.map((reference) => reference.path)],
+          understood: ["已处理本轮请求。"],
+          contextPaths: skillReferences.length > 0
+            ? skillReferences.map((reference) => reference.path)
+            : undefined,
           changedPaths: changedPaths.length > 0 ? changedPaths : undefined,
           diagnosis: finalResult.failedTools.length > 0 ? finalResult.failedTools : undefined,
           toolTrace: finalResult.toolTrace.length > 0 ? finalResult.toolTrace : undefined,
@@ -481,7 +479,7 @@ async function streamThreadMessageUnlocked(
         : proposals.length > 0
           ? `已生成 ${proposals.length} 个待采纳 proposal。`
         : finalResult.toolTrace.length > 0
-          ? "已读取项目资料并生成回复。"
+          ? "已完成工具辅助处理并生成回复。"
           : "处理完成。",
       paths: changedPaths.length > 0 ? changedPaths : undefined,
       ledgerEntryIds: changeRecord.entries.map((entry) => entry.id),
