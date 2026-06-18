@@ -141,7 +141,10 @@ function isHiddenPath(filePath: string): boolean {
   if (segments.length === 0) return true
   if (segments.some((segment) => segment.startsWith("."))) return true
   if (segments.some((segment) => HIDDEN_SEGMENTS.has(segment.toLowerCase()))) return true
-  return HIDDEN_FILE_NAMES.has(fileNameFromPath(filePath).toLowerCase())
+  if (segments.some((segment) => segment.toLowerCase() === "skills")) return true
+  const name = fileNameFromPath(filePath).toLowerCase()
+  if (name === "skill-lab.json" || name.endsWith(".skill.json")) return true
+  return HIDDEN_FILE_NAMES.has(name)
 }
 
 async function readEnvelope<T>(filePath: string): Promise<IndexEnvelope<T> | null> {
