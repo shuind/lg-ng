@@ -46,6 +46,7 @@ export interface EngineConfig {
   initialCompaction?: SessionCompactionState;
   appendSystemPrompt?: string;
   projectContext?: string;
+  disableProjectContext?: boolean;
   userMemoryContext?: string;
   askConfirmation?: (question: string) => Promise<boolean>;
   permissionMode?: "bypass" | "confirm";
@@ -225,6 +226,8 @@ export class AgentEngine {
   }
 
   private async buildProjectContext(): Promise<string> {
+    if (this.config.disableProjectContext) return "";
+
     const [skills, agents, memoryCard] = await Promise.all([
       loadSkillsDir(this.config.cwd),
       loadAgentsDir(this.config.cwd),
@@ -240,7 +243,7 @@ export class AgentEngine {
     return [
       PROJECT_CONTEXT_PREFIX,
       `工作区：${this.config.cwd}`,
-      "下方只是导航索引，不是内容事实；需要项目事实时读取对应文件。",
+      "下方是运行时导航信息。",
       memoryCard,
       skillSummary ? `可用技能：\n${skillSummary}` : "可用技能：无",
       agentSummary ? `可用子智能体：\n${agentSummary}` : "可用子智能体：无",
@@ -275,6 +278,7 @@ export class AgentEngine {
       readonlyOnly: input.readonly === true,
       appendSystemPrompt: `你正在作为子智能体 ${agent.name} 运行。默认拥有完整工具权限；如果任务要求只读，不要改文件。`,
       projectContext: this.config.projectContext,
+      disableProjectContext: this.config.disableProjectContext,
       userMemoryContext: this.config.userMemoryContext,
       onModelUsage: this.config.onModelUsage,
     });

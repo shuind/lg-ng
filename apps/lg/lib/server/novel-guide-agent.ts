@@ -14,13 +14,12 @@ import {
 import { getBook } from "@/lib/server/book-store"
 import { getEffectiveOpenAICompatibleConfig } from "@/lib/server/app-settings-store"
 import { recordApiCallUsage } from "@/lib/server/api-call-ledger"
-import { listIndexedFiles, listIndexedSettingCards, type IndexedBookFile } from "@/lib/server/book-index"
 import { getBookDir } from "@/lib/server/paths"
 import { recordBillingUsage } from "@/lib/server/billing-store"
 import { resolveUserMemoryForPrompt } from "@/lib/server/user-memory-store"
 import { parseJsonFromModel } from "@/lib/server/llm-json"
 import type { BillingLedgerEntry } from "@/lib/billing"
-import type { AppliedResponseConstraint, ChatReference, Message, SettingCard, SkillSummary, UserMemoryUsageSnapshot, WorkflowAction } from "@/lib/types"
+import type { AppliedResponseConstraint, ChatReference, Message, SkillSummary, UserMemoryUsageSnapshot, WorkflowAction } from "@/lib/types"
 
 export interface NovelGuideAgentResult {
   reply: string
@@ -109,7 +108,7 @@ function formatReferences(references: ChatReference[]): string {
   })
   return [
     "LG 用户选中的引用：",
-    "这些是用户明确选择的上下文。若引用有 path，涉及它的判断或修改前先读文件；不要把 summary 当完整内容。",
+    "这些是用户明确选择的上下文。若引用有 summary，它只是用户侧摘要，不是完整内容。",
     ...lines,
   ].join("\n")
 }
@@ -228,122 +227,9 @@ function formatWritePolicy(input: {
     return "提案模式：本轮只生成可审阅 proposal，不直接写入项目文件。"
   }
   if (isProposalWorkflow(input.workflowAction) && input.directWriteIntent) {
-    return "直写模式：用户本轮明确要求保存/写入/应用；允许在读取证据后按工具权限直接写入目标文件，并报告真实变更。"
+    return "直写模式：用户本轮明确要求保存/写入/应用；允许按工具权限直接写入目标文件，并报告真实变更。"
   }
-  return "按当前权限与任务决定；需要判断或修改前先读取文件证据。"
-}
-
-const PROJECT_CONTEXT_CARD_LIMIT = 60
-const PROJECT_CONTEXT_FILE_LIMIT = 80
-const PROJECT_CONTEXT_FILE_EXTENSIONS = new Set([".md", ".json", ".txt"])
-
-export type PromptTaskMode = "chat" | "continue" | "revise" | "review" | "archive" | "plan" | "diagnose"
-
-const TASK_MODE_FILE_ROOT_PRIORITY: Record<PromptTaskMode, string[]> = {
-  chat: ["NOVEL.md", "GUIDE.md", "canon", "人物设定", "世界观", "章节大纲", "drafts", "章节正文"],
-  continue: ["NOVEL.md", "GUIDE.md", "drafts", "章节正文", "章节大纲", "卷纲", "人物设定", "世界观", "canon", "剧情管理"],
-  revise: ["NOVEL.md", "GUIDE.md", "drafts", "章节正文", "章节大纲", "人物设定", "世界观", "canon", "写作约束", "读者体验"],
-  review: ["NOVEL.md", "GUIDE.md", "检查报告", "章节正文", "drafts", "章节摘要", "canon", "人物设定", "世界观", "剧情管理", "状态追踪"],
-  archive: ["NOVEL.md", "GUIDE.md", "canon", "candidates", "inbox", "人物设定", "世界观", "剧情管理", "状态追踪", "archive"],
-  plan: ["NOVEL.md", "GUIDE.md", "卷纲", "章节大纲", "剧情管理", "章节摘要", "人物设定", "世界观", "canon", "drafts"],
-  diagnose: ["NOVEL.md", "GUIDE.md", "剧情管理", "状态追踪", "章节大纲", "章节摘要", "drafts", "章节正文", "人物设定", "世界观", "canon"],
-}
-
-const TASK_MODE_CARD_CATEGORY_PRIORITY: Record<PromptTaskMode, SettingCard["category"][]> = {
-  chat: ["character", "location", "faction", "mechanism", "event", "rule", "formation", "other"],
-  continue: ["character", "event", "location", "faction", "mechanism", "rule", "formation", "other"],
-  revise: ["character", "event", "rule", "location", "faction", "mechanism", "formation", "other"],
-  review: ["event", "character", "rule", "location", "faction", "mechanism", "formation", "other"],
-  archive: ["character", "location", "faction", "mechanism", "formation", "event", "rule", "other"],
-  plan: ["event", "character", "location", "faction", "mechanism", "rule", "formation", "other"],
-  diagnose: ["event", "character", "rule", "location", "faction", "mechanism", "formation", "other"],
-}
-
-function compareIndexedPaths(a: { path?: string }, b: { path?: string }): number {
-  return (a.path ?? "").localeCompare(b.path ?? "", "zh-CN", { numeric: true })
-}
-
-export function inferPromptTaskMode(userMessage: string, workflowAction?: WorkflowAction): PromptTaskMode {
-  if (workflowAction === "continue") return "continue"
-  if (workflowAction === "revise") return "revise"
-  if (workflowAction === "plan") return "plan"
-  if (workflowAction === "diagnose") return "diagnose"
-  if (workflowAction === "plant" || workflowAction === "resolve") return "archive"
-
-  const normalized = userMessage.toLowerCase()
-  if (/review|检查|审阅|看看有没有问题|前后矛盾|冲突|连续性/.test(normalized)) return "review"
-  if (/归档|入典|入正典|整理进去|记下来|写入项目|更新设定|保存设定/.test(normalized)) return "archive"
-  if (/续写|接着写|继续写/.test(normalized)) return "continue"
-  if (/改稿|重写|润色|修改/.test(normalized)) return "revise"
-  if (/计划|规划|大纲|章纲/.test(normalized)) return "plan"
-  if (/卡点|诊断|哪里不对|怎么推进/.test(normalized)) return "diagnose"
-  return "chat"
-}
-
-function scoreRootPriority(rootOrPath: string, priorities: string[]): number {
-  const normalized = rootOrPath.replace(/\\/g, "/")
-  const directIndex = priorities.indexOf(normalized)
-  if (directIndex >= 0) return directIndex
-  const root = normalized.split("/").filter(Boolean)[0] ?? normalized
-  const rootIndex = priorities.indexOf(root)
-  return rootIndex >= 0 ? rootIndex : priorities.length + 10
-}
-
-function compareSettingCardsForMode(mode: PromptTaskMode, a: SettingCard, b: SettingCard): number {
-  const priorities = TASK_MODE_CARD_CATEGORY_PRIORITY[mode]
-  const categoryDiff = priorities.indexOf(a.category) - priorities.indexOf(b.category)
-  if (categoryDiff !== 0) return categoryDiff
-  return compareIndexedPaths(a, b)
-}
-
-export function compareIndexedFilesForMode(mode: PromptTaskMode, a: IndexedBookFile, b: IndexedBookFile): number {
-  const priorities = TASK_MODE_FILE_ROOT_PRIORITY[mode]
-  const scoreA = scoreRootPriority(a.path || a.root, priorities)
-  const scoreB = scoreRootPriority(b.path || b.root, priorities)
-  if (scoreA !== scoreB) return scoreA - scoreB
-  return compareIndexedPaths(a, b)
-}
-
-function formatIndexedFile(file: IndexedBookFile): string {
-  const label = file.name.replace(/\.[^.]+$/i, "")
-  return `- ${label} | ${file.root || "root"} | path=${file.path}`
-}
-
-function projectContextLimits(mode: PromptTaskMode): { cards: number; files: number } {
-  if (mode === "chat") return { cards: 24, files: 36 }
-  if (mode === "archive" || mode === "review") return { cards: PROJECT_CONTEXT_CARD_LIMIT, files: PROJECT_CONTEXT_FILE_LIMIT }
-  return { cards: 40, files: 56 }
-}
-
-async function buildStableProjectContext(bookId: string, mode: PromptTaskMode): Promise<string> {
-  const [settingCards, files] = await Promise.all([
-    listIndexedSettingCards(bookId).catch(() => []),
-    listIndexedFiles(bookId).catch(() => []),
-  ])
-  const limits = projectContextLimits(mode)
-  const cardPaths = new Set(settingCards.flatMap((card) => card.path ? [card.path] : []))
-  const cardLines = [...settingCards]
-    .sort((a, b) => compareSettingCardsForMode(mode, a, b))
-    .slice(0, limits.cards)
-    .map((card) => [
-      `- ${card.name}`,
-      card.category,
-      card.path ? `path=${card.path}` : "",
-    ].filter(Boolean).join(" | "))
-
-  const fileLines = [...files]
-    .filter((file) => PROJECT_CONTEXT_FILE_EXTENSIONS.has(file.extension))
-    .filter((file) => !cardPaths.has(file.path))
-    .sort((a, b) => compareIndexedFilesForMode(mode, a, b))
-    .slice(0, limits.files)
-    .map(formatIndexedFile)
-
-  return [
-    "LG 项目事实入口（路径索引，不是内容事实）：",
-    `任务模式：${mode}`,
-    cardLines.length > 0 ? `设定卡：\n${cardLines.join("\n")}` : "设定卡：无",
-    fileLines.length > 0 ? `工作区文件：\n${fileLines.join("\n")}` : "工作区文件：无",
-  ].join("\n\n")
+  return "按当前权限与任务决定。"
 }
 
 function isProposalWorkflow(action?: WorkflowAction): boolean {
@@ -655,7 +541,6 @@ export async function runNovelGuideAgent(input: {
   const workspacePath = getBookDir(input.bookId)
   const bookTitle = book?.title ?? input.bookId
   await initNovelWorkspace(workspacePath, bookTitle)
-  const taskMode = inferPromptTaskMode(input.userMessage, input.workflowAction)
 
   const agentSessionId = input.agentSessionId ?? input.threadId
   const baseAgentSessionId = input.baseAgentSessionId ?? agentSessionId
@@ -666,9 +551,6 @@ export async function runNovelGuideAgent(input: {
     readonlyOnly: input.readonlyOnly,
     userMessage: input.userMessage,
   })
-  // 工具常驻：不再用启发式猜测本轮是否需要工具。闲聊里也可能要读文件，
-  // 关掉工具会逼模型凭空猜测，反而违反“先读文件再判断”。taskMode 只用于决定索引大小。
-  const projectContext = await buildStableProjectContext(input.bookId, taskMode)
   const userMemory = await resolveUserMemoryForPrompt({
     bookId: input.bookId,
     userMessage: input.userMessage,
@@ -681,7 +563,7 @@ export async function runNovelGuideAgent(input: {
     initialMessages: session?.messages,
     initialCompaction: session?.compaction,
     appendSystemPrompt: LG_LEGACY_PROMPT,
-    projectContext,
+    disableProjectContext: true,
     userMemoryContext: userMemory.context,
     permissionMode: "bypass",
     readonlyOnly: input.readonlyOnly,
@@ -773,7 +655,6 @@ export async function* runNovelGuideAgentStream(input: {
   const workspacePath = getBookDir(input.bookId)
   const bookTitle = book?.title ?? input.bookId
   await initNovelWorkspace(workspacePath, bookTitle)
-  const taskMode = inferPromptTaskMode(input.userMessage, input.workflowAction)
 
   const agentSessionId = input.agentSessionId ?? input.threadId
   const baseAgentSessionId = input.baseAgentSessionId ?? agentSessionId
@@ -784,9 +665,6 @@ export async function* runNovelGuideAgentStream(input: {
     readonlyOnly: input.readonlyOnly,
     userMessage: input.userMessage,
   })
-  // 工具常驻：不再用启发式猜测本轮是否需要工具。闲聊里也可能要读文件，
-  // 关掉工具会逼模型凭空猜测，反而违反“先读文件再判断”。taskMode 只用于决定索引大小。
-  const projectContext = await buildStableProjectContext(input.bookId, taskMode)
   const userMemory = await resolveUserMemoryForPrompt({
     bookId: input.bookId,
     userMessage: input.userMessage,
@@ -799,7 +677,7 @@ export async function* runNovelGuideAgentStream(input: {
     initialMessages: session?.messages,
     initialCompaction: session?.compaction,
     appendSystemPrompt: LG_LEGACY_PROMPT,
-    projectContext,
+    disableProjectContext: true,
     userMemoryContext: userMemory.context,
     permissionMode: "bypass",
     readonlyOnly: input.readonlyOnly,
@@ -880,7 +758,6 @@ export async function runNovelGuideReview(input: {
   const workspacePath = getBookDir(input.bookId)
   const bookTitle = book?.title ?? input.bookId
   await initNovelWorkspace(workspacePath, bookTitle)
-  const projectContext = await buildStableProjectContext(input.bookId, "review")
 
   const engine = new AgentEngine({
     cwd: workspacePath,
@@ -888,7 +765,7 @@ export async function runNovelGuideReview(input: {
     model: config.model,
     sessionId: input.threadId,
     appendSystemPrompt: LG_LEGACY_PROMPT,
-    projectContext,
+    disableProjectContext: true,
     permissionMode: "bypass",
     maxLoops: 32,
     onModelUsage: createApiUsageRecorder({
