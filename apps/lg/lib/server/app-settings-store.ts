@@ -311,22 +311,16 @@ function genericEnvMatches(provider: AppProviderId): boolean {
 
 function modelEnvForProvider(provider: AppProviderId): string | undefined {
   if (provider === "deepseek") return process.env.DEEPSEEK_MODEL
-  if (provider === "mimo") return process.env.MIMO_MODEL
-  if (provider === "claude-relay") return process.env.CLAUDE_RELAY_MODEL ?? process.env.CLAUDE_MODEL
   return genericEnvMatches(provider) ? process.env.NG_MODEL : undefined
 }
 
 function baseUrlEnvForProvider(provider: AppProviderId): string | undefined {
   if (provider === "deepseek") return process.env.DEEPSEEK_BASE_URL
-  if (provider === "mimo") return process.env.MIMO_BASE_URL
-  if (provider === "claude-relay") return process.env.CLAUDE_RELAY_BASE_URL ?? process.env.CLAUDE_BASE_URL
   return genericEnvMatches(provider) ? process.env.NG_BASE_URL : undefined
 }
 
 function apiKeyEnvForProvider(provider: AppProviderId): string | undefined {
   if (provider === "deepseek") return process.env.DEEPSEEK_API_KEY
-  if (provider === "mimo") return process.env.MIMO_API_KEY
-  if (provider === "claude-relay") return process.env.CLAUDE_RELAY_API_KEY ?? process.env.CLAUDE_API_KEY
   return genericEnvMatches(provider) ? process.env.NG_API_KEY : undefined
 }
 

@@ -66,14 +66,6 @@ export const APP_PROVIDER_OPTIONS: AppProviderOption[] = [
     supportsBalance: true,
     apiKeyPlaceholder: "sk-...",
   },
-  {
-    id: "claude-relay",
-    label: "Claude 中转",
-    description: "通过 OpenAI 兼容中转站调用 Claude，作为备用选择。",
-    defaultBaseUrl: "",
-    supportsBalance: false,
-    apiKeyPlaceholder: "sk-...",
-  },
 ]
 
 export const APP_MODEL_OPTIONS: AppModelOption[] = [
@@ -88,18 +80,6 @@ export const APP_MODEL_OPTIONS: AppModelOption[] = [
     label: "DeepSeek V4 Pro",
     provider: "deepseek",
     description: "更强的 DeepSeek 模型，适合复杂推理。",
-  },
-  {
-    id: "claude-sonnet-4-6",
-    label: "Claude Sonnet 4.6",
-    provider: "claude-relay",
-    description: "Claude 中转站常用模型。",
-  },
-  {
-    id: "claude-haiku-4-5",
-    label: "Claude Haiku 4.5",
-    provider: "claude-relay",
-    description: "Claude 轻量模型。",
   },
 ]
 

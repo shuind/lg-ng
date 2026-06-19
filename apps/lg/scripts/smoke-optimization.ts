@@ -14,7 +14,6 @@ import { applyProposal, createProposal, discardProposal } from "@/lib/server/pro
 async function main() {
   process.env.LG_DATA_DIR = await mkdtemp(path.join(os.tmpdir(), "lg-ng-optimization-"))
   process.env.DEEPSEEK_API_KEY = ""
-  process.env.MIMO_API_KEY = ""
 
   const book = await createBook("Optimization Smoke")
   await writeBookFile(
