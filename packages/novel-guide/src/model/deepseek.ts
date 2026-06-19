@@ -152,6 +152,7 @@ export async function createChatCompletion(input: {
 }): Promise<ModelResponse> {
   const startedAt = Date.now();
   const request = buildDebugLogRequest(input, false);
+  const isThinkingModel = input.model.startsWith("deepseek");
   try {
     const response = await input.client.chat.completions.create({
       model: input.model,
@@ -161,9 +162,11 @@ export async function createChatCompletion(input: {
       temperature: input.temperature ?? 0.2,
       max_tokens: input.maxTokens ?? 4096,
       stream: false,
-    }, {
+      ...(isThinkingModel ? { reasoning_effort: "max" } : {}),
+    } as any, {
       ...(input.timeoutMs ? { timeout: input.timeoutMs } : {}),
       ...(input.signal ? { signal: input.signal } : {}),
+      ...(isThinkingModel ? { extraBody: { thinking: { type: "enabled" } } } : {}),
     }) as ChatCompletion;
     const usage = response.usage;
     const normalizedUsage = normalizeUsage(usage);
@@ -392,6 +395,7 @@ async function createStreamingResponse(input: {
     ...(input.timeoutMs ? { timeout: input.timeoutMs } : {}),
     ...(input.signal ? { signal: input.signal } : {}),
   };
+  const isThinkingModel = input.model.startsWith("deepseek");
   const base = {
     model: input.model,
     messages: input.messages,
@@ -400,18 +404,25 @@ async function createStreamingResponse(input: {
     temperature: input.temperature ?? 0.2,
     max_tokens: input.maxTokens ?? 4096,
     stream: true as const,
+    ...(isThinkingModel ? { reasoning_effort: "max" } : {}),
   };
   try {
     return await input.client.chat.completions.create({
       ...base,
       stream_options: { include_usage: true },
-    }, requestOptions);
+    } as any, {
+      ...requestOptions,
+      ...(isThinkingModel ? { extraBody: { thinking: { type: "enabled" } } } : {}),
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message.toLowerCase() : "";
     if (!message.includes("stream_options") && !message.includes("include_usage") && !message.includes("unrecognized")) {
       throw error;
     }
-    return await input.client.chat.completions.create(base, requestOptions);
+    return await input.client.chat.completions.create(base as any, {
+      ...requestOptions,
+      ...(isThinkingModel ? { extraBody: { thinking: { type: "enabled" } } } : {}),
+    });
   }
 }
 
@@ -423,6 +434,7 @@ function buildDebugLogRequest(input: {
   maxTokens?: number;
   timeoutMs?: number;
 }, stream: boolean) {
+  const isThinkingModel = input.model.startsWith("deepseek");
   return {
     model: input.model,
     messages: input.messages,
@@ -431,5 +443,6 @@ function buildDebugLogRequest(input: {
     maxTokens: input.maxTokens ?? 4096,
     timeoutMs: input.timeoutMs,
     stream,
+    ...(isThinkingModel ? { reasoning_effort: "max", thinking: { type: "enabled" } } : {}),
   };
 }
