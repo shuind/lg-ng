@@ -1,3 +1,5 @@
+import type { BillingPricing } from "@/lib/billing"
+
 export const DEFAULT_APP_PROVIDER = "deepseek"
 export const DEFAULT_APP_MODEL_ID = "deepseek-v4-flash"
 export const DEFAULT_PAYMENT_SOURCE = "balance" as const
@@ -44,6 +46,7 @@ export interface AppPlatformOption {
   enabled: boolean
   configured: boolean
   source: "environment" | "admin"
+  pricing: BillingPricing
   default: boolean
 }
 
@@ -71,14 +74,6 @@ export const APP_PROVIDER_OPTIONS: AppProviderOption[] = [
     supportsBalance: false,
     apiKeyPlaceholder: "sk-...",
   },
-  {
-    id: "mimo",
-    label: "Mimo",
-    description: "OpenAI 兼容接口，适合作为其它备用模型。",
-    defaultBaseUrl: "https://api.mimo-v2.com/v1",
-    supportsBalance: false,
-    apiKeyPlaceholder: "sk-...",
-  },
 ]
 
 export const APP_MODEL_OPTIONS: AppModelOption[] = [
@@ -95,12 +90,6 @@ export const APP_MODEL_OPTIONS: AppModelOption[] = [
     description: "更强的 DeepSeek 模型，适合复杂推理。",
   },
   {
-    id: "claude-opus-4-6",
-    label: "Claude Opus 4.6",
-    provider: "claude-relay",
-    description: "Claude 中转站高能力模型，成本通常更高。",
-  },
-  {
     id: "claude-sonnet-4-6",
     label: "Claude Sonnet 4.6",
     provider: "claude-relay",
@@ -111,12 +100,6 @@ export const APP_MODEL_OPTIONS: AppModelOption[] = [
     label: "Claude Haiku 4.5",
     provider: "claude-relay",
     description: "Claude 轻量模型。",
-  },
-  {
-    id: "mimo-v2.5-pro",
-    label: "Mimo V2.5 Pro",
-    provider: "mimo",
-    description: "Mimo 备用模型。",
   },
 ]
 

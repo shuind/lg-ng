@@ -935,9 +935,11 @@ export function AppSettingsPanel({ className }: { className?: string }) {
                     <div key={entry.id} className="grid gap-2 px-3 py-2 text-[12px] sm:grid-cols-[112px_minmax(0,1fr)_90px_90px] sm:items-center">
                       <div className="text-muted-foreground">{formatDateTime(entry.createdAt)}</div>
                       <div className="min-w-0">
-                        <div className="truncate text-foreground">{entry.feature ?? "AI 调用"} · {formatPaymentSource(entry.paymentSource)}</div>
-                        <div className="truncate font-mono text-[11px] text-muted-foreground">
-                          缓存命中 {formatTokenCount(entry.promptCacheHitTokens ?? 0)} / 读入 {formatTokenCount(entry.promptCacheMissTokens ?? 0)} / 输出 {formatTokenCount(entry.completionTokens ?? 0)}
+                        <div className="truncate font-mono text-foreground">
+                          {entry.provider && entry.model ? `${entry.provider} / ${entry.model}` : "未知模型"} · {formatPaymentSource(entry.paymentSource)}
+                        </div>
+                        <div className="truncate text-[11px] text-muted-foreground">
+                          {entry.feature ?? "AI 调用"} · 缓存 {formatTokenCount(entry.promptCacheHitTokens ?? 0)} / 读入 {formatTokenCount(entry.promptCacheMissTokens ?? 0)} / 输出 {formatTokenCount(entry.completionTokens ?? 0)}
                         </div>
                       </div>
                       <div className="font-mono text-muted-foreground">{formatTokenCount(entry.totalTokens ?? 0)} token</div>

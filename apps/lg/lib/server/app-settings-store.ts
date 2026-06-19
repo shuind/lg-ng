@@ -183,16 +183,19 @@ function customModelOptions(providers: StoredCustomProvider[]): AppModelOption[]
 }
 
 function platformOptions(defaultProviderId: string | null): AppPlatformOption[] {
-  return getBillingPlatformKeyStatus().platformProviders.map((provider) => ({
-    id: provider.id,
-    label: provider.label,
-    provider: provider.provider,
-    modelId: provider.modelId,
-    enabled: provider.enabled,
-    configured: provider.configured,
-    source: provider.source,
-    default: provider.id === defaultProviderId,
-  }))
+  return getBillingPlatformKeyStatus().platformProviders
+    .filter((provider) => provider.source === "admin")
+    .map((provider) => ({
+      id: provider.id,
+      label: provider.label,
+      provider: provider.provider,
+      modelId: provider.modelId,
+      enabled: provider.enabled,
+      configured: provider.configured,
+      source: provider.source,
+      pricing: provider.pricing,
+      default: provider.id === defaultProviderId,
+    }))
 }
 
 function isUserProviderConfigured(settings: StoredAppSettings, provider: AppProviderId): boolean {
@@ -361,8 +364,8 @@ function getProviderConfigForSettings(settings: StoredAppSettings): OpenAICompat
 }
 
 function getResolvedPlatformBillingConfig(settings: StoredAppSettings) {
-  const selectedConfig = settings.platformProviderId ? getPlatformBillingConfig(settings.platformProviderId) : null
-  return selectedConfig ?? getPlatformBillingConfig()
+  if (settings.platformProviderId) return getPlatformBillingConfig(settings.platformProviderId)
+  return getPlatformBillingConfig()
 }
 
 function getPlatformProviderConfig(settings: StoredAppSettings): EffectiveOpenAICompatibleConfig | null {

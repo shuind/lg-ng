@@ -75,22 +75,9 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error && error.message ? error.message : "管理后台数据加载失败"
 }
 
-function formatPlatformProviderSource(source: BillingPlatformProvider["source"]): string {
-  return source === "environment" ? "环境变量" : "后台保存"
-}
-
 function formatActivePlatformProvider(provider: BillingPlatformProvider | null): string {
-  if (!provider) return "未配置"
+  if (!provider || provider.source === "environment") return "未配置"
   return `${provider.label} · ${provider.provider} / ${provider.modelId}`
-}
-
-function formatActivePlatformSource(
-  source: AdminOverviewPayload["billing"]["platformKeySource"],
-  preview: string | null,
-): string {
-  if (source === "environment") return "环境变量"
-  if (source === "admin") return preview ? `后台保存 ${preview}` : "后台保存"
-  return "无"
 }
 
 function formatApiDebugLogSource(source: AdminOverviewPayload["debug"]["apiDebugLog"]["source"]): string {
@@ -853,13 +840,13 @@ export function AdminPanel() {
       billingPricingDraft?.promptCacheMissPricePerMillionCny !== overview.billing.settings.pricing.promptCacheMissPricePerMillionCny ||
       billingPricingDraft?.outputPricePerMillionCny !== overview.billing.settings.pricing.outputPricePerMillionCny
     )
-  const activePlatformLabel = formatActivePlatformProvider(overview.billing.activePlatformProvider)
-  const activePlatformSourceLabel = formatActivePlatformSource(
-    overview.billing.platformKeySource,
-    overview.billing.platformKeyPreview,
-  )
+  const managedPlatformProviders = overview.billing.platformProviders.filter((provider) => provider.source === "admin")
+  const managedActivePlatform = overview.billing.activePlatformProvider?.source === "admin"
+    ? overview.billing.activePlatformProvider
+    : null
+  const activePlatformLabel = formatActivePlatformProvider(managedActivePlatform)
   const platformDraftExisting = platformDraft.id
-    ? overview.billing.platformProviders.find((provider) => provider.id === platformDraft.id)
+    ? managedPlatformProviders.find((provider) => provider.id === platformDraft.id)
     : null
   const platformDraftCanTest = Boolean(platformDraft.apiKey.trim() || platformDraftExisting?.configured)
   const apiDebugLog = overview.debug.apiDebugLog
@@ -949,11 +936,8 @@ export function AdminPanel() {
           <StatusPill tone={overview.billing.settings.platformEnabled ? "good" : "warning"}>
             {overview.billing.settings.platformEnabled ? "余额通道已开启" : "余额通道已关闭"}
           </StatusPill>
-          <StatusPill tone={overview.billing.platformApiKeyConfigured ? "good" : "warning"}>
-            当前启用：{activePlatformLabel}
-          </StatusPill>
-          <StatusPill>
-            来源：{activePlatformSourceLabel}
+          <StatusPill tone={managedActivePlatform?.configured ? "good" : "warning"}>
+            当前默认：{activePlatformLabel}
           </StatusPill>
           <StatusPill>总额 {formatMoney(overview.billing.total.balanceCny)} CNY</StatusPill>
           <StatusPill>已用 {formatMoney(overview.billing.total.usedBalanceCny)} CNY</StatusPill>
@@ -1019,7 +1003,7 @@ export function AdminPanel() {
           </div>
 
           <div className="grid gap-2">
-            {overview.billing.platformProviders.length ? overview.billing.platformProviders.map((provider) => {
+            {managedPlatformProviders.length ? managedPlatformProviders.map((provider) => {
               const active = overview.billing.activePlatformProviderId === provider.id
               const deleting = platformKeyClearingId === provider.id
               const activating = platformKeyActivatingId === provider.id
@@ -1039,7 +1023,6 @@ export function AdminPanel() {
                       {active ? <StatusPill tone="good">默认</StatusPill> : <StatusPill>备用</StatusPill>}
                       <StatusPill tone={provider.enabled ? "good" : "warning"}>{provider.enabled ? "已开放" : "已停用"}</StatusPill>
                       <StatusPill tone={provider.configured ? "good" : "warning"}>{provider.configured ? "Key 已配置" : "缺少 Key"}</StatusPill>
-                      <StatusPill>来源：{formatPlatformProviderSource(provider.source)}</StatusPill>
                     </div>
                     <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
                       {provider.provider} / {provider.modelId}
