@@ -77,6 +77,7 @@ export const PUT = withAdminRoute(async (request: Request) => {
       modelId: body.modelId,
       pricing: body.pricing,
       apiKey: body.apiKey,
+      enabled: body.enabled,
       setActive: body.setActive,
     }))
   } catch (error) {

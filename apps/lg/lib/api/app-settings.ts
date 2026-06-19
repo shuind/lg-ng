@@ -10,6 +10,7 @@ export async function updateAppSettings(input: {
   provider?: AppProviderId
   modelId?: AppModelId
   paymentSource?: AppPaymentSource
+  platformProviderId?: string | null
   providerApiKey?: string
   providerBaseUrl?: string
   clearProviderApiKey?: boolean

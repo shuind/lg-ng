@@ -29,6 +29,8 @@ import {
   type AppProviderOption,
   type AppModelOption,
   type AppCustomProvider,
+  type AppPlatformOption,
+  type AppUserProviderOption,
   type AppSettingsPayload,
   type UpdateAppSettingsInput,
 } from "@/lib/app-settings"
@@ -37,6 +39,8 @@ import { getDataRoot } from "@/lib/server/paths"
 import { decryptSecret, encryptSecret, maskSecret } from "@/lib/server/secret-crypto"
 import {
   canUseBalanceBillingSync,
+  getBillingPlatformKeyStatus,
+  getBillingUserSummarySync,
   getPlatformBillingConfig,
 } from "@/lib/server/billing-store"
 
@@ -62,6 +66,7 @@ type StoredAppSettings = {
   provider: AppProviderId
   modelId: AppModelId
   paymentSource: AppPaymentSource
+  platformProviderId?: string | null
   updatedAt: string
   providerKeyUpdatedAt?: string
   deepSeekKeyUpdatedAt?: string
@@ -177,6 +182,39 @@ function customModelOptions(providers: StoredCustomProvider[]): AppModelOption[]
   }))
 }
 
+function platformOptions(defaultProviderId: string | null): AppPlatformOption[] {
+  return getBillingPlatformKeyStatus().platformProviders.map((provider) => ({
+    id: provider.id,
+    label: provider.label,
+    provider: provider.provider,
+    modelId: provider.modelId,
+    enabled: provider.enabled,
+    configured: provider.configured,
+    source: provider.source,
+    default: provider.id === defaultProviderId,
+  }))
+}
+
+function isUserProviderConfigured(settings: StoredAppSettings, provider: AppProviderId): boolean {
+  const custom = findCustomProvider(settings, provider)
+  if (custom) return Boolean(custom.apiKeyEncrypted)
+  return Boolean(settings.providerApiKeysEncrypted?.[provider] ?? apiKeyEnvForProvider(provider))
+}
+
+function userProviderOptions(settings: StoredAppSettings, customProviders: AppCustomProvider[]): AppUserProviderOption[] {
+  const builtin = APP_PROVIDER_OPTIONS.map((provider) => ({
+    id: provider.id,
+    label: provider.label,
+    configured: isUserProviderConfigured(settings, provider.id),
+  }))
+  const custom = customProviders.map((provider) => ({
+    id: provider.id,
+    label: provider.label,
+    configured: provider.configured,
+    custom: true,
+  }))
+  return [...builtin, ...custom]
+}
 function findCustomProvider(settings: StoredAppSettings, providerId: AppProviderId): StoredCustomProvider | undefined {
   return settings.customProviders.find((provider) => provider.id === providerId)
 }
@@ -196,6 +234,7 @@ function normalizeAppSettings(data: unknown): StoredAppSettings {
   const providerKeyPreviews = normalizeProviderMap(raw.providerKeyPreviews) ?? {}
   const providerKeyUpdatedAts = normalizeProviderMap(raw.providerKeyUpdatedAts) ?? {}
   const providerBaseUrls = normalizeProviderMap(raw.providerBaseUrls) ?? {}
+  const platformProviderId = stringOrEmpty(raw.platformProviderId) || null
 
   if (typeof raw.deepSeekApiKeyEncrypted === "string" && !providerApiKeysEncrypted.deepseek) {
     providerApiKeysEncrypted.deepseek = raw.deepSeekApiKeyEncrypted
@@ -221,6 +260,7 @@ function normalizeAppSettings(data: unknown): StoredAppSettings {
     provider: normalizedProvider,
     modelId: normalizeAppModelId(raw.modelId, normalizedProvider, publicCustomProviders(customProviders)),
     paymentSource,
+    platformProviderId,
     updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : DEFAULT_UPDATED_AT,
     providerApiKeysEncrypted,
     providerKeyPreviews,
@@ -320,8 +360,13 @@ function getProviderConfigForSettings(settings: StoredAppSettings): OpenAICompat
   }
 }
 
-function getPlatformProviderConfig(): EffectiveOpenAICompatibleConfig | null {
-  const platformConfig = getPlatformBillingConfig()
+function getResolvedPlatformBillingConfig(settings: StoredAppSettings) {
+  const selectedConfig = settings.platformProviderId ? getPlatformBillingConfig(settings.platformProviderId) : null
+  return selectedConfig ?? getPlatformBillingConfig()
+}
+
+function getPlatformProviderConfig(settings: StoredAppSettings): EffectiveOpenAICompatibleConfig | null {
+  const platformConfig = getResolvedPlatformBillingConfig(settings)
   if (!platformConfig || !canUseBalanceBillingSync()) return null
   return {
     provider: platformConfig.provider,
@@ -342,7 +387,7 @@ function resolveEffectiveConfig(
   userConfig: OpenAICompatibleConfig | null,
 ): EffectiveOpenAICompatibleConfig | null {
   if (settings.paymentSource === "api") return withUserPaymentSource(userConfig)
-  return getPlatformProviderConfig() ?? withUserPaymentSource(userConfig)
+  return getPlatformProviderConfig(settings) ?? withUserPaymentSource(userConfig)
 }
 
 function createDefaultSettings(): StoredAppSettings {
@@ -354,6 +399,7 @@ function createDefaultSettings(): StoredAppSettings {
     provider,
     modelId: defaultModelIdFromEnv(provider),
     paymentSource: normalizePaymentForProvider(DEFAULT_PAYMENT_SOURCE),
+    platformProviderId: null,
     updatedAt: DEFAULT_UPDATED_AT,
     providerApiKeysEncrypted: {},
     providerKeyPreviews: {},
@@ -368,7 +414,9 @@ function buildPayload(saved: StoredAppSettings | null): AppSettingsPayload {
   const publicCustom = publicCustomProviders(settings.customProviders)
   const userConfig = getProviderConfigForSettings(settings)
   const activeConfig = resolveEffectiveConfig(settings, userConfig)
-  const platformConfig = getPlatformBillingConfig()
+  const platformKeyStatus = getBillingPlatformKeyStatus()
+  const billingSummary = getBillingUserSummarySync()
+  const platformConfig = getResolvedPlatformBillingConfig(settings)
   const custom = findCustomProvider(settings, settings.provider)
   const providerKeyPreview = custom?.keyPreview ?? settings.providerKeyPreviews?.[settings.provider] ?? null
   const providerKeyUpdatedAt = custom?.keyUpdatedAt ?? settings.providerKeyUpdatedAts?.[settings.provider]
@@ -378,6 +426,7 @@ function buildPayload(saved: StoredAppSettings | null): AppSettingsPayload {
     provider: settings.provider,
     modelId: custom?.modelId ?? settings.modelId,
     paymentSource: settings.paymentSource,
+    platformProviderId: platformConfig?.id ?? null,
     updatedAt: settings.updatedAt,
     providerKeyUpdatedAt,
     deepSeekKeyUpdatedAt: settings.providerKeyUpdatedAts?.deepseek,
@@ -387,6 +436,10 @@ function buildPayload(saved: StoredAppSettings | null): AppSettingsPayload {
     activeModel: activeConfig?.model ?? null,
     platformProvider: platformConfig?.provider ?? null,
     platformModel: platformConfig?.model ?? null,
+    platformOptions: platformOptions(platformKeyStatus.activePlatformProviderId),
+    userProviderOptions: userProviderOptions(settings, publicCustom),
+    canUseBalance: Boolean(billingSummary?.canUseBalance),
+    platformEnabled: Boolean(billingSummary?.platformEnabled),
     providerConfigured: Boolean(custom?.apiKeyEncrypted ?? settings.providerApiKeysEncrypted?.[settings.provider] ?? apiKeyEnvForProvider(settings.provider)),
     providerKeyPreview,
     providerBaseUrl,
@@ -514,6 +567,12 @@ export async function saveAppSettings(input: UpdateAppSettingsInput): Promise<Ap
   if (!isAppPaymentSource(requestedPaymentSource)) {
     throw new Error("unsupported payment source")
   }
+  const requestedPlatformProviderId = input.platformProviderId === undefined
+    ? current.platformProviderId ?? null
+    : stringOrEmpty(input.platformProviderId) || null
+  if (requestedPlatformProviderId && !getPlatformBillingConfig(requestedPlatformProviderId)) {
+    throw new Error("unsupported platform provider")
+  }
 
   const now = new Date().toISOString()
   const settings: StoredAppSettings = {
@@ -521,6 +580,7 @@ export async function saveAppSettings(input: UpdateAppSettingsInput): Promise<Ap
     provider: nextProvider,
     modelId: nextModelId,
     paymentSource: normalizePaymentForProvider(requestedPaymentSource),
+    platformProviderId: requestedPlatformProviderId,
     providerApiKeysEncrypted,
     providerKeyPreviews,
     providerKeyUpdatedAts,

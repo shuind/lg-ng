@@ -112,6 +112,7 @@ function defaultPlatformDraft(pricing?: BillingPricing) {
       outputPricePerMillionCny: 0,
     }),
     apiKey: "",
+    enabled: true,
     setActive: true,
   }
 }
@@ -125,7 +126,8 @@ function platformDraftFromProvider(provider: BillingPlatformProvider) {
     modelId: provider.modelId,
     pricing: createBillingPricingDraft(provider.pricing),
     apiKey: "",
-    setActive: true,
+    enabled: provider.enabled,
+    setActive: false,
   }
 }
 
@@ -468,6 +470,7 @@ export function AdminPanel() {
   const [platformKeySaving, setPlatformKeySaving] = useState(false)
   const [platformKeyTesting, setPlatformKeyTesting] = useState(false)
   const [platformKeyActivatingId, setPlatformKeyActivatingId] = useState<string | null>(null)
+  const [platformKeyTogglingId, setPlatformKeyTogglingId] = useState<string | null>(null)
   const [platformKeyClearingId, setPlatformKeyClearingId] = useState<string | null>(null)
   const [platformKeyMessage, setPlatformKeyMessage] = useState<string | null>(null)
   const [platformKeyError, setPlatformKeyError] = useState<string | null>(null)
@@ -576,6 +579,7 @@ export function AdminPanel() {
         modelId: platformDraft.modelId,
         pricing: platformDraft.pricing,
         apiKey: platformDraft.apiKey || undefined,
+        enabled: platformDraft.enabled,
         setActive: platformDraft.setActive,
       })
       setPlatformDraft(defaultPlatformDraft(billingPricingDraft ?? undefined))
@@ -640,14 +644,40 @@ export function AdminPanel() {
         baseUrl: provider.baseUrl,
         modelId: provider.modelId,
         pricing: provider.pricing,
+        enabled: provider.enabled,
         setActive: true,
       })
-      setPlatformKeyMessage("余额通道已切换。")
+      setPlatformKeyMessage("默认平台模型已切换。")
       await loadOverview(true)
     } catch (err) {
       setPlatformKeyError(getErrorMessage(err))
     } finally {
       setPlatformKeyActivatingId(null)
+    }
+  }
+
+  async function togglePlatformProvider(provider: BillingPlatformProvider) {
+    if (platformKeyTogglingId || provider.source === "environment") return
+    setPlatformKeyTogglingId(provider.id)
+    setPlatformKeyError(null)
+    setPlatformKeyMessage(null)
+    try {
+      await saveAdminPlatformKey({
+        id: provider.id,
+        label: provider.label,
+        provider: provider.provider,
+        baseUrl: provider.baseUrl,
+        modelId: provider.modelId,
+        pricing: provider.pricing,
+        enabled: !provider.enabled,
+        setActive: false,
+      })
+      setPlatformKeyMessage(provider.enabled ? "平台模型已停用。" : "平台模型已启用。")
+      await loadOverview(true)
+    } catch (err) {
+      setPlatformKeyError(getErrorMessage(err))
+    } finally {
+      setPlatformKeyTogglingId(null)
     }
   }
 
@@ -993,18 +1023,21 @@ export function AdminPanel() {
               const active = overview.billing.activePlatformProviderId === provider.id
               const deleting = platformKeyClearingId === provider.id
               const activating = platformKeyActivatingId === provider.id
+              const toggling = platformKeyTogglingId === provider.id
               return (
                 <div
                   key={`${provider.source}:${provider.id}`}
                   className={cn(
                     "grid gap-3 rounded-lg border p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center",
                     active ? "border-primary/55 bg-primary/5" : "border-border/70 bg-background",
+                    !provider.enabled && "opacity-75",
                   )}
                 >
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-[13px] font-medium text-foreground">{provider.label}</span>
-                      {active ? <StatusPill tone="good">当前启用</StatusPill> : <StatusPill>备用</StatusPill>}
+                      {active ? <StatusPill tone="good">默认</StatusPill> : <StatusPill>备用</StatusPill>}
+                      <StatusPill tone={provider.enabled ? "good" : "warning"}>{provider.enabled ? "已开放" : "已停用"}</StatusPill>
                       <StatusPill tone={provider.configured ? "good" : "warning"}>{provider.configured ? "Key 已配置" : "缺少 Key"}</StatusPill>
                       <StatusPill>来源：{formatPlatformProviderSource(provider.source)}</StatusPill>
                     </div>
@@ -1033,7 +1066,17 @@ export function AdminPanel() {
                       onClick={() => void activatePlatformProvider(provider)}
                     >
                       {activating ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
-                      {active ? "已启用" : "启用"}
+                      {active ? "默认" : "设为默认"}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={provider.source === "environment" || Boolean(platformKeyTogglingId)}
+                      onClick={() => void togglePlatformProvider(provider)}
+                    >
+                      {toggling ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
+                      {provider.enabled ? "停用" : "启用"}
                     </Button>
                     <Button
                       type="button"
@@ -1110,11 +1153,20 @@ export function AdminPanel() {
             <label className="flex items-center gap-2 text-[13px]">
               <input
                 type="checkbox"
+                checked={platformDraft.enabled}
+                onChange={(event) => updatePlatformDraft("enabled", event.target.checked)}
+                className="h-4 w-4"
+              />
+              向用户开放此平台模型
+            </label>
+            <label className="flex items-center gap-2 text-[12px] text-muted-foreground">
+              <input
+                type="checkbox"
                 checked={platformDraft.setActive}
                 onChange={(event) => updatePlatformDraft("setActive", event.target.checked)}
                 className="h-4 w-4"
               />
-              保存后立即启用为余额通道
+              保存后设为默认平台模型
             </label>
             <div className="flex flex-wrap gap-2">
               <Button

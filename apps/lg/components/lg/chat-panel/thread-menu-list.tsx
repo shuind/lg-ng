@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
@@ -32,7 +32,7 @@ export function ThreadMenu({
 }) {
   const [open, setOpen] = useState(false)
   const [renameOpen, setRenameOpen] = useState(false)
-  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deletingThread, setDeletingThread] = useState<Thread | null>(null)
   const [renameTitle, setRenameTitle] = useState("")
   const activeThreads = threads.filter((thread) => thread.status === "active")
   const archivedThreads = threads.filter((thread) => thread.status === "archived")
@@ -52,9 +52,9 @@ export function ThreadMenu({
   }
 
   function submitDelete() {
-    if (!activeThread) return
-    onSetThreadStatus(activeThread.id, "deleted")
-    setDeleteOpen(false)
+    if (!deletingThread) return
+    onSetThreadStatus(deletingThread.id, "deleted")
+    setDeletingThread(null)
   }
 
   function closeAndRun(callback: () => void) {
@@ -80,7 +80,10 @@ export function ThreadMenu({
             }}
             onDeleteCurrent={() => {
               if (!activeThread) return
-              closeAndRun(() => setDeleteOpen(true))
+              closeAndRun(() => setDeletingThread(activeThread))
+            }}
+            onDeleteThread={(thread) => {
+              closeAndRun(() => setDeletingThread(thread))
             }}
             onRestoreThread={(threadId) => closeAndRun(() => onSetThreadStatus(threadId, "active"))}
           />
@@ -111,16 +114,16 @@ export function ThreadMenu({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+      <Dialog open={Boolean(deletingThread)} onOpenChange={(nextOpen) => { if (!nextOpen) setDeletingThread(null) }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>删除任务线程</DialogTitle>
             <DialogDescription>
-              {activeThread ? `确认删除「${activeThread.title}」？这个线程会从当前列表移除。` : "确认删除当前线程？"}
+              {deletingThread ? `确认删除「${deletingThread.title}」？这个线程会从当前列表移除。` : "确认删除当前线程？"}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => setDeleteOpen(false)}>取消</Button>
+            <Button type="button" variant="ghost" onClick={() => setDeletingThread(null)}>取消</Button>
             <Button type="button" variant="destructive" onClick={submitDelete}>删除</Button>
           </DialogFooter>
         </DialogContent>

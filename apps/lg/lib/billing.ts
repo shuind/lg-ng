@@ -49,6 +49,7 @@ export interface BillingPlatformProvider {
   baseUrl: string
   modelId: string
   pricing: BillingPricing
+  enabled: boolean
   configured: boolean
   keyPreview: string | null
   keyUpdatedAt: string | null

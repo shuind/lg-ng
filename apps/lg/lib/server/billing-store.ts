@@ -77,6 +77,7 @@ type StoredPlatformProvider = {
   baseUrl: string
   modelId: string
   pricing: BillingPricing
+  enabled: boolean
   apiKeyEncrypted?: string
   keyPreview?: string
   keyUpdatedAt?: string
@@ -103,6 +104,7 @@ export type PlatformBillingProviderInput = {
   modelId?: unknown
   pricing?: unknown
   apiKey?: unknown
+  enabled?: unknown
   setActive?: unknown
 }
 
@@ -289,6 +291,7 @@ function defaultDeepSeekPlatformProvider(input: {
     baseUrl: defaultPlatformBaseUrl(),
     modelId: defaultPlatformModel(),
     pricing: normalizePricing(input.pricing),
+    enabled: true,
     apiKeyEncrypted: input.apiKeyEncrypted,
     keyPreview: input.keyPreview,
     keyUpdatedAt: input.keyUpdatedAt,
@@ -318,6 +321,7 @@ function normalizeStoredPlatformProvider(
     baseUrl,
     modelId,
     pricing: normalizePricing(raw.pricing, fallbackPricing),
+    enabled: typeof raw.enabled === "boolean" ? raw.enabled : true,
     apiKeyEncrypted: typeof raw.apiKeyEncrypted === "string" && raw.apiKeyEncrypted ? raw.apiKeyEncrypted : undefined,
     keyPreview: typeof raw.keyPreview === "string" && raw.keyPreview ? raw.keyPreview : undefined,
     keyUpdatedAt: typeof raw.keyUpdatedAt === "string" ? raw.keyUpdatedAt : undefined,
@@ -416,8 +420,20 @@ function decryptStoredPlatformProvider(provider: StoredPlatformProvider | undefi
   }
 }
 
-function getActiveStoredPlatformProvider(settings = readPlatformLlmSettingsSync()): StoredPlatformProvider | undefined {
-  return settings.providers?.find((provider) => provider.id === settings.activeProviderId) ?? settings.providers?.[0]
+function isStoredPlatformProviderEnabled(provider: StoredPlatformProvider | undefined): boolean {
+  return provider?.enabled !== false
+}
+
+function decryptEnabledStoredPlatformProvider(provider: StoredPlatformProvider | undefined): EffectivePlatformBillingConfig | null {
+  return isStoredPlatformProviderEnabled(provider) ? decryptStoredPlatformProvider(provider) : null
+}
+
+
+function getDefaultStoredPlatformProvider(settings = readPlatformLlmSettingsSync()): StoredPlatformProvider | undefined {
+  const configuredEnabledProviders = (settings.providers ?? []).filter((provider) => (
+    isStoredPlatformProviderEnabled(provider) && Boolean(provider.apiKeyEncrypted)
+  ))
+  return configuredEnabledProviders.find((provider) => provider.id === settings.activeProviderId) ?? configuredEnabledProviders[0]
 }
 
 function publicPlatformProvider(provider: StoredPlatformProvider, source: "admin" | "environment"): BillingPlatformProvider {
@@ -429,6 +445,7 @@ function publicPlatformProvider(provider: StoredPlatformProvider, source: "admin
     baseUrl: provider.baseUrl,
     modelId: provider.modelId,
     pricing: provider.pricing,
+    enabled: provider.enabled !== false,
     configured: Boolean(provider.apiKeyEncrypted),
     keyPreview: provider.keyPreview ?? null,
     keyUpdatedAt: provider.keyUpdatedAt ?? null,
@@ -447,6 +464,7 @@ function environmentPlatformProviderStatus(config: EffectivePlatformBillingConfi
     baseUrl: config.baseUrl,
     modelId: config.model,
     pricing: config.pricing,
+    enabled: true,
     configured: true,
     keyPreview: null,
     keyUpdatedAt: null,
@@ -459,8 +477,8 @@ function environmentPlatformProviderStatus(config: EffectivePlatformBillingConfi
 function getPlatformKeyStatus(): BillingPlatformKeyStatus {
   const settings = readPlatformLlmSettingsSync()
   const storedProviders = settings.providers ?? []
-  const activeStoredProvider = getActiveStoredPlatformProvider(settings)
-  const activeStoredConfig = decryptStoredPlatformProvider(activeStoredProvider)
+  const activeStoredProvider = getDefaultStoredPlatformProvider(settings)
+  const activeStoredConfig = decryptEnabledStoredPlatformProvider(activeStoredProvider)
   const environmentConfig = getEnvironmentPlatformProvider()
   const activeConfig = activeStoredConfig ?? environmentConfig
   const activePublicProvider = activeStoredConfig && activeStoredProvider
@@ -710,9 +728,17 @@ async function appendBillingEntry(entry: BillingLedgerEntry): Promise<void> {
   await fsp.appendFile(billingLedgerPath(), `${JSON.stringify(entry)}\n`, "utf8")
 }
 
-export function getPlatformBillingConfig(): EffectivePlatformBillingConfig | null {
+export function getPlatformBillingConfig(providerIdInput?: unknown): EffectivePlatformBillingConfig | null {
   const settings = readPlatformLlmSettingsSync()
-  return decryptStoredPlatformProvider(getActiveStoredPlatformProvider(settings)) ?? getEnvironmentPlatformProvider()
+  const providerId = stringOrEmpty(providerIdInput)
+  const environmentConfig = getEnvironmentPlatformProvider()
+  if (providerId) {
+    const storedProvider = settings.providers?.find((provider) => provider.id === providerId)
+    const storedConfig = decryptEnabledStoredPlatformProvider(storedProvider)
+    if (storedConfig) return storedConfig
+    return environmentConfig?.id === providerId ? environmentConfig : null
+  }
+  return decryptEnabledStoredPlatformProvider(getDefaultStoredPlatformProvider(settings)) ?? environmentConfig
 }
 
 export function getPlatformBillingConfigById(providerIdInput: unknown): EffectivePlatformBillingConfig | null {
@@ -779,6 +805,7 @@ export async function savePlatformBillingProvider(input: PlatformBillingProvider
     const now = new Date().toISOString()
     const id = existing?.id ?? (requestedId || createProviderId())
     const pricing = normalizePricing(input.pricing, existing?.pricing ?? readBillingSettingsSyncRaw().pricing)
+    const enabled = typeof input.enabled === "boolean" ? input.enabled : existing?.enabled ?? true
     const nextProvider: StoredPlatformProvider = {
       id,
       label,
@@ -787,6 +814,7 @@ export async function savePlatformBillingProvider(input: PlatformBillingProvider
       baseUrl,
       modelId,
       pricing,
+      enabled,
       apiKeyEncrypted: apiKey ? encryptSecret(apiKey) : existing?.apiKeyEncrypted,
       keyPreview: apiKey ? maskSecret(apiKey) : existing?.keyPreview,
       keyUpdatedAt: apiKey ? now : existing?.keyUpdatedAt,
@@ -797,9 +825,12 @@ export async function savePlatformBillingProvider(input: PlatformBillingProvider
       ...(existingSettings.providers ?? []).filter((item) => item.id !== id),
       nextProvider,
     ]
-    const shouldSetActive = input.setActive !== false
+    const shouldSetActive = input.setActive === true
+    const fallbackActiveProviderId = existingSettings.activeProviderId && providers.some((item) => item.id === existingSettings.activeProviderId)
+      ? existingSettings.activeProviderId
+      : providers.find(isStoredPlatformProviderEnabled)?.id ?? providers[0]?.id
     const settings: StoredPlatformLlmSettings = {
-      activeProviderId: shouldSetActive ? id : existingSettings.activeProviderId ?? providers[0]?.id,
+      activeProviderId: shouldSetActive ? id : fallbackActiveProviderId,
       providers,
       updatedAt: now,
     }
@@ -818,6 +849,7 @@ export async function savePlatformBillingApiKey(apiKeyInput: string): Promise<Bi
     modelId: defaultPlatformModel(),
     pricing: readBillingSettingsSyncRaw().pricing,
     apiKey: apiKeyInput,
+    enabled: true,
     setActive: true,
   })
 }
@@ -830,10 +862,10 @@ export async function deletePlatformBillingProvider(providerIdInput: unknown): P
     const existing = readPlatformLlmSettingsSync()
     const providers = (existing.providers ?? []).filter((provider) => provider.id !== providerId)
     const activeProviderId = existing.activeProviderId === providerId
-      ? providers[0]?.id
+      ? providers.find(isStoredPlatformProviderEnabled)?.id ?? providers[0]?.id
       : existing.activeProviderId && providers.some((provider) => provider.id === existing.activeProviderId)
         ? existing.activeProviderId
-        : providers[0]?.id
+        : providers.find(isStoredPlatformProviderEnabled)?.id ?? providers[0]?.id
     const settings: StoredPlatformLlmSettings = {
       activeProviderId,
       providers,

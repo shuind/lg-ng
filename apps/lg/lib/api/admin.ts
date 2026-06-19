@@ -142,6 +142,7 @@ export async function saveAdminPlatformKey(input: {
   modelId: string
   pricing: BillingPricing
   apiKey?: string
+  enabled?: boolean
   setActive?: boolean
 }): Promise<BillingPlatformKeyStatus> {
   const res = await fetch("/api/admin/billing/platform-key", {

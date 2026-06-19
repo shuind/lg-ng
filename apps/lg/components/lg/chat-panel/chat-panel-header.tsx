@@ -1,10 +1,12 @@
 "use client"
 
 import { useState } from "react"
-import { Brain } from "lucide-react"
+import { Brain, Plus } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import type { Message, Thread } from "@/lib/types"
 import { MemoryDialog } from "./memory-dialog"
 import { ExportMenu, ThreadMenu } from "./thread-menu"
+import { ModelSelector } from "./model-selector"
 
 export function ChatPanelHeader({
   bookId,
@@ -43,6 +45,7 @@ export function ChatPanelHeader({
         <h1 className="font-serif text-xl tracking-wide text-foreground">{bookTitle}</h1>
       </div>
       <div className="flex items-center gap-2">
+        <ModelSelector />
         <button
           type="button"
           onClick={() => setMemoryOpen(true)}
@@ -59,6 +62,18 @@ export function ChatPanelHeader({
           messages={messages}
           selectedTurnId={selectedTurnId}
         />
+        <Button
+          type="button"
+          variant="outline"
+          size="icon-sm"
+          onClick={onCreateThread}
+          disabled={!bookId}
+          className="rounded-md border-border/60 bg-card/60 text-muted-foreground shadow-sm hover:bg-card hover:text-foreground"
+          title="新建线程"
+          aria-label="新建线程"
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </Button>
         <ThreadMenu
           threads={threads}
           activeThread={activeThread}

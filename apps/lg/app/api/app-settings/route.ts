@@ -18,6 +18,7 @@ async function PATCHHandler(request: Request) {
       provider: body.provider,
       modelId: body.modelId,
       paymentSource: body.paymentSource,
+      platformProviderId: body.platformProviderId,
       providerApiKey: body.providerApiKey,
       providerBaseUrl: body.providerBaseUrl,
       clearProviderApiKey: body.clearProviderApiKey,
@@ -36,6 +37,7 @@ async function PATCHHandler(request: Request) {
       (err.message === "unsupported provider" ||
         err.message === "unsupported model" ||
         err.message === "unsupported payment source" ||
+        err.message === "unsupported platform provider" ||
         err.message === "invalid custom provider")
     const message = badRequest ? "保存的设置无效" : "保存设置失败"
     const status = badRequest ? 400 : 500

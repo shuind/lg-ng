@@ -36,6 +36,24 @@ export interface AppCustomProvider {
   updatedAt: string
 }
 
+export interface AppPlatformOption {
+  id: string
+  label: string
+  provider: string
+  modelId: string
+  enabled: boolean
+  configured: boolean
+  source: "environment" | "admin"
+  default: boolean
+}
+
+export interface AppUserProviderOption {
+  id: AppProviderId
+  label: string
+  configured: boolean
+  custom?: boolean
+}
+
 export const APP_PROVIDER_OPTIONS: AppProviderOption[] = [
   {
     id: "deepseek",
@@ -106,6 +124,7 @@ export interface AppSettings {
   provider: AppProviderId
   modelId: AppModelId
   paymentSource: AppPaymentSource
+  platformProviderId?: string | null
   updatedAt: string
   providerKeyUpdatedAt?: string
   deepSeekKeyUpdatedAt?: string
@@ -118,6 +137,11 @@ export interface AppSettingsPayload extends AppSettings {
   activeModel: string | null
   platformProvider: string | null
   platformModel: string | null
+  platformProviderId: string | null
+  platformOptions: AppPlatformOption[]
+  userProviderOptions: AppUserProviderOption[]
+  canUseBalance: boolean
+  platformEnabled: boolean
   providerConfigured: boolean
   providerKeyPreview: string | null
   providerBaseUrl: string | null
@@ -131,6 +155,7 @@ export type UpdateAppSettingsInput = {
   provider?: unknown
   modelId?: unknown
   paymentSource?: unknown
+  platformProviderId?: unknown
   providerApiKey?: unknown
   providerBaseUrl?: unknown
   clearProviderApiKey?: unknown
