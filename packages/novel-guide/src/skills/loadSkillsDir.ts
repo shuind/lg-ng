@@ -3,9 +3,11 @@ import path from "node:path";
 import matter from "gray-matter";
 import type { PromptCommand } from "../commands/types.js";
 import { WORKSPACE_SKILL_DIRS } from "../workspace/layout.js";
+import { normalizeSkillKind, type SkillKind } from "./kind.js";
 
 export interface SkillDefinition {
   name: string;
+  kind: SkillKind;
   description: string;
   whenToUse?: string;
   argumentHint?: string;
@@ -57,6 +59,7 @@ export async function loadSkillsDir(cwd: string): Promise<SkillDefinition[]> {
           : firstContentLine(parsed.content);
         skills.push({
           name,
+          kind: normalizeSkillKind(parsed.data.kind),
           description,
           whenToUse: typeof parsed.data.when_to_use === "string" ? parsed.data.when_to_use : undefined,
           argumentHint: typeof parsed.data["argument-hint"] === "string" ? parsed.data["argument-hint"] : undefined,
@@ -77,6 +80,7 @@ export function skillToPromptCommand(skill: SkillDefinition): PromptCommand {
   return {
     type: "prompt",
     name: skill.name,
+    kind: skill.kind,
     description: skill.description,
     argumentHint: skill.argumentHint,
     whenToUse: skill.whenToUse,

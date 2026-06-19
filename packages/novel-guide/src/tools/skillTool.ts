@@ -5,7 +5,7 @@ export function createSkillTools(): Tool[] {
   return [
     {
       name: "load_skill",
-      description: "按名称从项目 `.novel-guide/skills/<name>/SKILL.md` 中加载项目 skill 的完整 prompt 内容。若要创建新 skill，请使用 write_file 写入该路径，并包含 name 和 description 的 YAML 头部。",
+      description: "按名称从项目 `.novel-guide/skills/<name>/SKILL.md` 中加载项目 skill 的完整 prompt 内容。若要创建新 skill，请使用 write_file 写入该路径，并包含 name、kind、description 的 YAML 头部；kind 必须是 writing（控制正文怎么生成）、judgment（控制 AI 怎么看问题）或 method（控制任务怎么完成）。",
       readonly: true,
       parameters: {
         type: "object",
@@ -25,7 +25,7 @@ export function createSkillTools(): Tool[] {
         if (!skill) return { ok: false, content: `未找到 skill：${name}` };
         return {
           ok: true,
-          content: `已加载 skill：${skill.name}\n说明：${skill.description}\n\n${skill.content.replace(/\{\{args\}\}/g, args)}`,
+          content: `已加载 skill：${skill.name}\n类型：${skill.kind}\n说明：${skill.description}\n\n${skill.content.replace(/\{\{args\}\}/g, args)}`,
         };
       },
     },

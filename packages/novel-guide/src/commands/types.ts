@@ -2,6 +2,7 @@
 // local commands. Prompt commands may be user-invoked or model-invoked.
 
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import type { SkillKind } from "../skills/kind.js";
 import type { ToolContext, ToolResult } from "../tools/tool.js";
 
 export interface CommandRuntimeEngine {
@@ -18,6 +19,7 @@ export interface CommandContext extends ToolContext {
 export type PromptCommand = {
   type: "prompt";
   name: string;
+  kind?: SkillKind;
   description: string;
   argumentHint?: string;
   whenToUse?: string;

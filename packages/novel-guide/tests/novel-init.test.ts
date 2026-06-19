@@ -38,6 +38,14 @@ describe("novel init", () => {
     expect(novel).not.toContain("project: 第二次");
   });
 
+  it("emits explicit kind frontmatter for built-in skills", () => {
+    const files = templateFiles("测试小说");
+    expect(files[".novel-guide/skills/intake/SKILL.md"]).toContain("kind: judgment");
+    expect(files[".novel-guide/skills/archive/SKILL.md"]).toContain("kind: method");
+    expect(files[".novel-guide/skills/novel-review/SKILL.md"]).toContain("kind: judgment");
+    expect(files[".novel-guide/skills/handoff/SKILL.md"]).toContain("kind: method");
+  });
+
   it("keeps checked-in root agent copies aligned with the authoritative templates", async () => {
     const repoRoot = path.resolve(process.cwd(), "..", "..");
     const rootAgentsDir = path.join(repoRoot, ".novel-guide", "agents");
