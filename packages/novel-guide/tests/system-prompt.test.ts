@@ -10,6 +10,11 @@ describe("system prompt", () => {
     expect(prompt).not.toContain("\u7ae0\u8282\u8349\u7a3f\u7b56\u7565");
     expect(prompt).not.toContain("\u5c0f\u8bf4\u68c0\u67e5\u8bed\u4e49");
     expect(prompt).not.toContain("\u5199\u5165\u62a5\u544a\u89c4\u5219");
+    expect(prompt).toContain("默认就是可用证据");
+    expect(prompt).toContain("少重复读取已在上下文中出现过的文件事实");
+    expect(prompt).toContain("offset");
+    expect(prompt).toContain("limit");
+    expect(prompt).toContain("局部读");
   });
 
   it("appends explicit system prompt content", async () => {

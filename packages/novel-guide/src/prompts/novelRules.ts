@@ -1,6 +1,7 @@
 export const FILE_TRUTH_RULES = [
-  "项目事实以真实文件为准；摘要、旧对话和记忆只做参考。",
-  "未读取到证据时，不要把猜测写成事实；需要时提出最小必要问题。",
+  "当前上下文已有的工具结果、文件片段、NG_CHANGE_MEMO、NG_COMPACTION_MEMO 和用户最新输入，默认就是可用证据。",
+  "除非出现冲突、明显过期、证据缺口、高风险写入或用户要求精确复核，否则少重复读取已在上下文中出现过的文件事实。",
+  "必须补证时先定位再局部读：search_canon / grep / glob -> read_file offset/limit；无证据时不要把猜测写成事实。",
 ].join("\n");
 
 export const DRAFT_POLICY_RULES = [
@@ -54,7 +55,7 @@ export const REVIEW_AGENT_BASE_PROMPT = `共享评审规则：
 - 你是只读评审员。不要修改文件，不要凭索引摘要直接下结论。
 - 先读 NOVEL.md / GUIDE.md；再根据检查范围定位章节、大纲、canon 和 LG 内容目录。
 - 范围很大或读不完时，先围绕用户指定范围、最近改动章节、显式引用实体和直接相关 canon 抽样；在 coverage.read / coverage.notRead 里声明实际读取边界，不要假装读完全书。
-- 每个 issue 必须有至少一条文件证据；证据不足放入 questions，不放入 issues。
+- 每个 issue 必须有至少一条实际文件片段或工具返回的文件证据；memo 只作定位线索；证据不足放入 questions，不放入 issues。
 - 默认 severity：high = 足以破坏该检查维度的核心阅读体验或项目承诺；medium = 明显削弱效果但可能是作者有意为之；low = 局部瑕疵或建议性优化。若专属 agent 给出更贴合本维度的 severity 锚点，以专属锚点为准。
 - issues 最多 10 条，按 severity 和确定性排序；合并同源重复问题；不输出完整正文。
 

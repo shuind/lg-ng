@@ -36,6 +36,29 @@ describe("workspace tools", () => {
     expect(grep.content).toContain("drafts/ch01.md:2");
   });
 
+  it("reads only the requested line range with offset and limit", async () => {
+    const cwd = await tempDir();
+    await mkdir(path.join(cwd, "drafts"), { recursive: true });
+    await writeFile(
+      path.join(cwd, "drafts", "chapter.md"),
+      ["line one", "line two", "line three", "line four"].join("\n"),
+      "utf8",
+    );
+
+    const result = await runTool(
+      ReadFileTool,
+      { path: "drafts/chapter.md", offset: 2, limit: 2 },
+      { cwd },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.content).toContain("行：2-3/4");
+    expect(result.content).toContain("line two\nline three");
+    expect(result.content).not.toContain("line one");
+    expect(result.content).not.toContain("line four");
+    expect(result.metadata?.totalLines).toBe(4);
+  });
+
   it("allows canon writes without file-specific confirmation", async () => {
     const cwd = await tempDir();
     await mkdir(path.join(cwd, "canon", "characters"), { recursive: true });
