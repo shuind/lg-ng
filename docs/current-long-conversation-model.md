@@ -37,7 +37,6 @@
 这三层不是同一个东西：
 
 - 前端看到的是 `thread-messages.jsonl` 对应的 LG UI 消息。
-- Agent 真正带入模型的是 `AgentEngine.messages + projectContext + 当前用户请求 prompt`。
 - Agent session 有自己的压缩机制，但 LG UI thread 没有长期 thread memory。
 
 所以长对话后，用户“视觉上看到的上下文”和 agent“模型实际拥有的上下文”可能不一致。
@@ -85,8 +84,6 @@ AgentEngine.submitMessageEvents()
   │
   ├─ ensureSystemPrompt()
   ├─ compactMessagesIfNeeded()
-  ├─ buildProjectContext()
-  ├─ turnMessages = this.messages + projectContext + current user content
   ├─ queryEvents(...)
   ├─ this.messages = result.messages after strip project context + change memo
   └─ saveSession(...)
@@ -226,7 +223,6 @@ private compaction?: SessionCompactionState;
 ```ts
 constructor(private readonly config: EngineConfig) {
   this.sessionId = config.sessionId ?? createSessionId();
-  this.messages = stripProjectContextMessages(config.initialMessages ?? []);
   this.compaction = config.initialCompaction;
   this.tools = getTools({ readonlyOnly: config.readonlyOnly, proposalOnly: config.proposalOnly });
 }
@@ -235,7 +231,6 @@ constructor(private readonly config: EngineConfig) {
 注意：初始化时会去掉 project context：
 
 ```ts
-this.messages = stripProjectContextMessages(config.initialMessages ?? []);
 ```
 
 这是为了避免 project context 被永久写入 session，导致每轮重复累积。
@@ -246,12 +241,10 @@ this.messages = stripProjectContextMessages(config.initialMessages ?? []);
 await this.ensureSystemPrompt();
 await this.compactMessagesIfNeeded(options.signal);
 
-const projectContext = await this.buildProjectContext();
 const content = options.systemMeta
   ? prompt
   : `用户请求：\n${prompt}`;
 const turnMessages: ChatCompletionMessageParam[] = [
-  ...withProjectContext(this.messages, projectContext),
   { role: "user", content },
 ];
 ```
@@ -269,7 +262,6 @@ const turnMessages: ChatCompletionMessageParam[] = [
 
 ```ts
 this.messages = appendChangeMemo(
-  stripProjectContextMessages(result.messages),
   buildChangeMemo(result.fileChanges, result.proposals),
 );
 ```
@@ -403,7 +395,6 @@ private async summarizeForCompaction(
 2. 一次压缩量可能很大。
 3. 120k 字符压成 1400 tokens，信息损失可能明显。
 4. 旧 compaction memo 不合并，会逐渐累积。
-5. 压缩判断只看 `this.messages`，不看 `projectContext + 当前 prompt` 组成后的真实 `turnMessages`。
 
 ---
 

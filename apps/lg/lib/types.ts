@@ -488,7 +488,6 @@ export type ContextWindowLevel =
 
 export interface MessageContextWindowComponents {
   sessionMessages: number
-  projectContext: number
   currentPrompt: number
   expectedOutputReserve: number
   total: number

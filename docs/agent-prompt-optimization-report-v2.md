@@ -16,14 +16,11 @@
 
 - `packages/novel-guide/src/prompts/systemPrompt.ts`
   - `DEFAULT_SYSTEM_PROMPT`
-  - `NOVEL_PROFILE_PROMPT`
   - `buildEffectiveSystemPrompt()`
 - `apps/lg/lib/server/novel-guide-agent.ts`
   - `LG_LEGACY_PROMPT`
   - `buildPrompt()`
-  - `buildStableProjectContext()`
 - `packages/novel-guide/src/agent/engine.ts`
-  - `buildProjectContext()`
   - `structuredCompactionPrompt()`
   - `runSubAgent()`
 - `packages/novel-guide/src/novel/templates.ts`
@@ -33,7 +30,6 @@
 
 ### 现有事实
 
-- `buildStableProjectContext()` 已经把 `NOVEL.md`、`canon` 索引和 LG 内容目录素材都纳入项目导航。
 - `structuredCompactionPrompt()` 已经是小说项目专用的结构化压缩，不是普通聊天摘要。
 - review 子智能体已经有 JSON-in-markdown 的返回要求，但 schema 还偏薄。
 - `proposalOnly`、`readonlyOnly`、工具 registry 这些约束，和 prompt 不是同一层，不能只靠改文案解决。
@@ -50,7 +46,6 @@
 - `review / 检查` 默认指小说检查
 - LG 内容目录仍是一等材料
 
-这些规则分散在 `NOVEL_PROFILE_PROMPT`、`LG_LEGACY_PROMPT`、`formatChapterDraftPolicy()`、`formatWorkflowAction()`、工具 description 和模板里。问题不是“规则太少”，而是“同义规则太多、来源不统一”，容易漂移。
 
 ### 2. 每轮 prompt 没有显式优先级
 
@@ -77,9 +72,7 @@ const promptThreadMessages = session ? [] : input.threadMessages ?? []
 
 这能避免 session 和 UI thread 重复注入，但也会让已有 session 后续轮次看不到最新用户纠正或 UI 里的显式决定。
 
-### 4. 项目索引还没有按任务裁剪
 
-`buildStableProjectContext()` 已经很实用，但它仍是稳定、宽口径的导航索引。它还没根据任务动态调整权重：
 
 - 聊天问答
 - 续写 / 改稿

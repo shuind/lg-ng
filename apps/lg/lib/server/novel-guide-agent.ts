@@ -63,7 +63,6 @@ function emptyContextWindow(): EngineContextWindowState {
     reserveTokens,
     components: {
       sessionMessages: 0,
-      projectContext: 0,
       currentPrompt: 0,
       expectedOutputReserve: reserveTokens,
       total: reserveTokens,
@@ -567,7 +566,6 @@ export async function runNovelGuideAgent(input: {
     initialMessages: session?.messages,
     initialCompaction: session?.compaction,
     appendSystemPrompt: LG_LEGACY_PROMPT,
-    disableProjectContext: true,
     userMemoryContext: userMemory.context,
     permissionMode: "bypass",
     readonlyOnly: input.readonlyOnly,
@@ -681,7 +679,6 @@ export async function* runNovelGuideAgentStream(input: {
     initialMessages: session?.messages,
     initialCompaction: session?.compaction,
     appendSystemPrompt: LG_LEGACY_PROMPT,
-    disableProjectContext: true,
     userMemoryContext: userMemory.context,
     permissionMode: "bypass",
     readonlyOnly: input.readonlyOnly,
@@ -769,7 +766,6 @@ export async function runNovelGuideReview(input: {
     model: config.model,
     sessionId: input.threadId,
     appendSystemPrompt: LG_LEGACY_PROMPT,
-    disableProjectContext: true,
     permissionMode: "bypass",
     maxLoops: 32,
     onModelUsage: createApiUsageRecorder({

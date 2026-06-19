@@ -1,8 +1,6 @@
-import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import fg from "fast-glob";
 import { createChatCompletion, type ModelUsage } from "../model/deepseek.js";
 import { buildEffectiveSystemPrompt } from "../prompts/systemPrompt.js";
 import { getTools } from "../tools/registry.js";
@@ -17,12 +15,9 @@ import {
   type SessionState,
 } from "./session.js";
 import { findAgent, loadAgentsDir } from "../agents/loadAgentsDir.js";
-import { loadSkillsDir } from "../skills/loadSkillsDir.js";
 import { estimateMessagesTokens, estimateTextTokens } from "./tokenEstimate.js";
-import { WORKSPACE_GUIDE_FILES } from "../workspace/layout.js";
 
 const COMPACTION_PREFIX = "NG_COMPACTION_MEMO:";
-const PROJECT_CONTEXT_PREFIX = "NG_PROJECT_CONTEXT:";
 const USER_MEMORY_PREFIX = "NG_USER_MEMORY:";
 const CHANGE_MEMO_PREFIX = "NG_CHANGE_MEMO:";
 const MICROCOMPACTION_PREFIX = "NG_MICROCOMPACTED_TOOL_RESULT:";
@@ -45,8 +40,6 @@ export interface EngineConfig {
   initialMessages?: ChatCompletionMessageParam[];
   initialCompaction?: SessionCompactionState;
   appendSystemPrompt?: string;
-  projectContext?: string;
-  disableProjectContext?: boolean;
   userMemoryContext?: string;
   askConfirmation?: (question: string) => Promise<boolean>;
   permissionMode?: "bypass" | "confirm";
@@ -79,7 +72,6 @@ export type EngineContextWindowLevel =
 
 export interface EngineContextWindowComponents {
   sessionMessages: number;
-  projectContext: number;
   currentPrompt: number;
   expectedOutputReserve: number;
   total: number;
@@ -98,7 +90,6 @@ export interface EngineContextWindowState {
 }
 
 interface ContextWindowEstimateOptions {
-  projectContext?: string;
   currentPrompt?: string;
   expectedOutputReserveTokens?: number;
 }
@@ -197,18 +188,14 @@ export class AgentEngine {
       ?? this.config.expectedOutputReserveTokens
       ?? DEFAULT_EXPECTED_OUTPUT_RESERVE_TOKENS;
     const sessionMessages = estimateMessagesTokens(messages);
-    const projectContext = options.projectContext?.trim()
-      ? estimateTextTokens(options.projectContext) + 8
-      : 0;
     const currentPrompt = options.currentPrompt?.trim()
       ? estimateTextTokens(options.currentPrompt) + 8
       : 0;
     const components: EngineContextWindowComponents = {
       sessionMessages,
-      projectContext,
       currentPrompt,
       expectedOutputReserve: reserveTokens,
-      total: sessionMessages + projectContext + currentPrompt + reserveTokens,
+      total: sessionMessages + currentPrompt + reserveTokens,
     };
     const estimatedTokens = components.total;
     const ratio = budgetTokens > 0 ? estimatedTokens / budgetTokens : 0;
@@ -223,31 +210,6 @@ export class AgentEngine {
       components,
       lastCompactedAt: this.compaction?.lastCompactedAt,
     };
-  }
-
-  private async buildProjectContext(): Promise<string> {
-    if (this.config.disableProjectContext) return "";
-
-    const [skills, agents, memoryCard] = await Promise.all([
-      loadSkillsDir(this.config.cwd),
-      loadAgentsDir(this.config.cwd),
-      this.config.projectContext?.trim() || buildProjectMemoryCard(this.config.cwd),
-    ]);
-    const skillSummary = skills
-      .filter((skill) => !skill.disableModelInvocation)
-      .map((skill) => `- ${skill.name}: ${skill.description}${skill.whenToUse ? ` -> ${skill.whenToUse}` : ""}`)
-      .join("\n");
-    const agentSummary = agents
-      .map((agent) => `- ${agent.name}: ${agent.description}`)
-      .join("\n");
-    return [
-      PROJECT_CONTEXT_PREFIX,
-      `工作区：${this.config.cwd}`,
-      "下方是运行时导航信息。",
-      memoryCard,
-      skillSummary ? `可用技能：\n${skillSummary}` : "可用技能：无",
-      agentSummary ? `可用子智能体：\n${agentSummary}` : "可用子智能体：无",
-    ].join("\n\n");
   }
 
   private createToolContext(permissionCache: Map<string, boolean>, signal?: AbortSignal): ToolContext {
@@ -277,8 +239,6 @@ export class AgentEngine {
       maxLoops: Math.min(this.config.maxLoops ?? DEFAULT_MAX_LOOPS, DEFAULT_SUBAGENT_MAX_LOOPS),
       readonlyOnly: input.readonly === true,
       appendSystemPrompt: `你正在作为子智能体 ${agent.name} 运行。默认拥有完整工具权限；如果任务要求只读，不要改文件。`,
-      projectContext: this.config.projectContext,
-      disableProjectContext: this.config.disableProjectContext,
       userMemoryContext: this.config.userMemoryContext,
       onModelUsage: this.config.onModelUsage,
     });
@@ -388,18 +348,15 @@ export class AgentEngine {
     if (compactionResult) compactionEvents.push({ type: "compaction_done", ...compactionResult });
     for (const event of compactionEvents) yield event;
 
-    const projectContext = await this.buildProjectContext();
     const userMemoryContext = this.config.userMemoryContext?.trim() || "";
-    const runtimeContextForBudget = [projectContext, userMemoryContext].filter(Boolean).join("\n\n");
     const content = options.systemMeta
       ? prompt
       : `用户请求：\n${prompt}`;
     const turnMessages: ChatCompletionMessageParam[] = [
-      ...withRuntimeContexts(this.messages, projectContext, userMemoryContext),
+      ...withRuntimeContexts(this.messages, userMemoryContext),
       { role: "user", content },
     ];
     const contextWindow = this.getContextWindowState(this.messages, {
-      projectContext: runtimeContextForBudget,
       currentPrompt: content,
     });
 
@@ -473,7 +430,6 @@ export class AgentEngine {
   private async ensureSystemPrompt(): Promise<void> {
     if (isPrimarySystemMessage(this.messages[0])) return;
     const systemPrompt = await buildEffectiveSystemPrompt({
-      cwd: this.config.cwd,
       appendSystemPrompt: this.config.appendSystemPrompt,
     });
     this.messages.unshift({ role: "system", content: systemPrompt });
@@ -703,7 +659,6 @@ function isGeneratedSystemMessage(message: ChatCompletionMessageParam | undefine
   if (!message || message.role !== "system") return false;
   const content = stringifyMessageContent(message.content);
   return (
-    content.startsWith(PROJECT_CONTEXT_PREFIX) ||
     content.startsWith(USER_MEMORY_PREFIX) ||
     content.startsWith(COMPACTION_PREFIX) ||
     content.startsWith(CHANGE_MEMO_PREFIX)
@@ -714,28 +669,20 @@ function isPrimarySystemMessage(message: ChatCompletionMessageParam | undefined)
   return Boolean(message && message.role === "system" && !isGeneratedSystemMessage(message));
 }
 
-function isProjectContextMessage(message: ChatCompletionMessageParam): boolean {
-  return message.role === "system" && stringifyMessageContent(message.content).startsWith(PROJECT_CONTEXT_PREFIX);
-}
-
 function isUserMemoryMessage(message: ChatCompletionMessageParam): boolean {
   return message.role === "system" && stringifyMessageContent(message.content).startsWith(USER_MEMORY_PREFIX);
 }
 
 function stripRuntimeContextMessages(messages: ChatCompletionMessageParam[]): ChatCompletionMessageParam[] {
-  return messages.filter((message) => !isProjectContextMessage(message) && !isUserMemoryMessage(message));
+  return messages.filter((message) => !isUserMemoryMessage(message));
 }
 
 function withRuntimeContexts(
   messages: ChatCompletionMessageParam[],
-  projectContext: string,
   userMemoryContext: string,
 ): ChatCompletionMessageParam[] {
   const cleanMessages = stripRuntimeContextMessages(messages);
   const contextMessages: ChatCompletionMessageParam[] = [];
-  if (projectContext.trim()) {
-    contextMessages.push({ role: "system", content: projectContext });
-  }
   if (userMemoryContext.trim()) {
     contextMessages.push({
       role: "system",
@@ -791,140 +738,6 @@ function appendChangeMemo(
   memo: ChatCompletionMessageParam | null,
 ): ChatCompletionMessageParam[] {
   return memo ? [...messages, memo] : messages;
-}
-
-async function buildProjectMemoryCard(cwd: string): Promise<string> {
-  const [novel, legacyMaterialIndex] = await Promise.all([
-    readWorkspaceFile(cwd, "NOVEL.md"),
-    summarizeLegacyLgMaterials(cwd),
-  ]);
-  if (!novel) return legacyMaterialIndex || "项目记忆：未找到 NOVEL.md。";
-
-  const sections = [
-    extractMarkdownSection(novel, "核心实体清单", 1200),
-    extractMarkdownSection(novel, "当前 open 伏笔", 1200),
-    extractMarkdownSection(novel, "待确认问题", 800),
-  ].filter(Boolean);
-  const canonFacts = await summarizeCanonFacts(cwd);
-  const body = [
-    "项目索引（来自文件，不是 LLM 摘要）：",
-    sections.length > 0 ? sections.join("\n\n") : "NOVEL.md 暂无长期记忆内容。",
-    canonFacts,
-    legacyMaterialIndex,
-  ].filter(Boolean);
-  return body.join("\n\n");
-}
-
-async function readWorkspaceFile(cwd: string, relativePath: string): Promise<string | null> {
-  try {
-    return await readFile(path.join(cwd, relativePath), "utf8");
-  } catch {
-    return null;
-  }
-}
-
-function stripPlaceholderLines(content: string): string {
-  return content
-    .split(/\r?\n/)
-    .filter((line) => {
-      const trimmed = line.trim();
-      if (!trimmed) return true;
-      if (/TODO/i.test(trimmed)) return false;
-      // 去掉模板占位符：空列表项、空 checkbox、只有 ?? 的行
-      const body = trimmed.replace(/^[-*]\s*/, "").replace(/^\[[ xX]\]\s*/, "").trim();
-      if (body === "" || /^[?？]+$/.test(body)) return false;
-      return true;
-    })
-    .join("\n")
-    .trim();
-}
-
-function extractMarkdownSection(markdown: string, heading: string, maxChars: number): string {
-  const lines = markdown.split(/\r?\n/);
-  const start = lines.findIndex((line) => line.trim() === `## ${heading}`);
-  if (start < 0) return "";
-  let end = lines.length;
-  for (let index = start + 1; index < lines.length; index++) {
-    if (/^##\s+/.test(lines[index])) {
-      end = index;
-      break;
-    }
-  }
-  const content = stripPlaceholderLines(lines.slice(start + 1, end).join("\n"));
-  if (!content) return "";
-  return `## ${heading}\n${content.slice(0, maxChars)}`;
-}
-
-async function summarizeCanonFacts(cwd: string): Promise<string> {
-  const files = await fg(["canon/**/*.md"], {
-    cwd,
-    onlyFiles: true,
-    dot: false,
-    ignore: ["**/.gitkeep"],
-  }).catch(() => []);
-  if (files.length === 0) return "";
-
-  const lines: string[] = [];
-  for (const file of files.slice(0, 40)) {
-    const raw = await readWorkspaceFile(cwd, file);
-    if (!raw) continue;
-    const title = raw.match(/^#\s+(.+)$/m)?.[1]?.trim() || file.replace(/^.*\//, "").replace(/\.md$/i, "");
-    const aliases = extractAliases(raw);
-    lines.push(`- ${title}${aliases.length ? `（别名：${aliases.join(", ")}）` : ""} -> ${file}`);
-  }
-  return lines.length ? `正典索引：\n${lines.join("\n")}` : "";
-}
-
-const LEGACY_LG_MATERIAL_PATTERNS = [
-  "剧情设计指南.md",
-  ...WORKSPACE_GUIDE_FILES,
-  "人物设定/**/*.md",
-  "世界观/**/*.md",
-  "卷纲/**/*.md",
-  "章节大纲/**/*.md",
-  "章节正文/**/*.md",
-  "剧情管理/**/*.md",
-  "状态追踪/**/*.md",
-  "读者体验/**/*.md",
-  "写作约束/**/*.md",
-  "章节摘要/**/*.md",
-  "检查报告/**/*.md",
-  "skills/**/*.md",
-  "skills/**/*.json",
-];
-
-async function summarizeLegacyLgMaterials(cwd: string): Promise<string> {
-  const files = await fg(LEGACY_LG_MATERIAL_PATTERNS, {
-    cwd,
-    onlyFiles: true,
-    dot: false,
-    ignore: ["**/.gitkeep"],
-  }).catch(() => []);
-  if (files.length === 0) return "";
-
-  const lines: string[] = [];
-  for (const file of files.sort((a, b) => a.localeCompare(b, "zh-CN")).slice(0, 80)) {
-    const raw = await readWorkspaceFile(cwd, file);
-    if (!raw) continue;
-    const title = extractMaterialTitle(file, raw);
-    lines.push(`- ${title} | path=${file}`);
-  }
-  return lines.length ? `LG 旧素材路径索引：\n${lines.join("\n")}` : "";
-}
-
-function extractMaterialTitle(file: string, content: string): string {
-  return content.match(/^#\s+(.+)$/m)?.[1]?.trim()
-    || file.replace(/^.*[\\/]/, "").replace(/\.[^.]+$/i, "");
-}
-
-function extractAliases(content: string): string[] {
-  const aliases: string[] = [];
-  for (const line of content.split(/\r?\n/)) {
-    const match = line.match(/^\s*(?:aliases?|别名|又名|\*\*(?:aliases?|别名|又名)\*\*)\s*[:：]?\s*(.+)$/i);
-    if (!match?.[1]) continue;
-    aliases.push(...match[1].split(/[、,，;；|/]/).map((item) => item.trim()).filter(Boolean));
-  }
-  return [...new Set(aliases)].slice(0, 8);
 }
 
 function findSafeRecentStart(messages: ChatCompletionMessageParam[], targetStart: number): number {

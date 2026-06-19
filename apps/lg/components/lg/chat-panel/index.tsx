@@ -28,7 +28,6 @@ function estimateThreadContextWindow(messages: Message[]): MessageContextWindow 
     reserveTokens: expectedOutputReserve,
     components: {
       sessionMessages,
-      projectContext: 0,
       currentPrompt: 0,
       expectedOutputReserve,
       total: estimatedTokens,

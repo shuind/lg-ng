@@ -10,7 +10,6 @@
 
 1. **UI 线程与 agent session 分离**
    - LG 前端展示完整 `thread-messages.jsonl`。
-   - Agent 真正吃的是 `AgentEngine.messages + projectContext + 当前 prompt`。
    - 如果 agent session 存在，本轮不会额外带入 LG UI 最近 8 条消息。
 
 2. **压缩只发生在 AgentEngine.messages 层**

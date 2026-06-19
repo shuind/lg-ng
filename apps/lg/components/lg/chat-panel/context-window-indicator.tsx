@@ -22,7 +22,7 @@ export function ContextWindowIndicator({ contextWindow }: { contextWindow?: Mess
     `${levelLabel} · 上下文 ${percent}% · 约 ${formatTokenCount(contextWindow.estimatedTokens)} / ${formatTokenCount(contextWindow.budgetTokens)}`,
     `压缩阈值 ${triggerLabel}`,
     contextWindow.reserveTokens ? `输出预留 ${formatTokenCount(contextWindow.reserveTokens)}` : "",
-    components ? `session ${formatTokenCount(components.sessionMessages)} · project/memory ${formatTokenCount(components.projectContext)} · prompt ${formatTokenCount(components.currentPrompt)} · reserve ${formatTokenCount(components.expectedOutputReserve)}` : "",
+    components ? `session ${formatTokenCount(components.sessionMessages)} / prompt ${formatTokenCount(components.currentPrompt)} / reserve ${formatTokenCount(components.expectedOutputReserve)}` : "",
     contextWindow.lastCompactedAt ? `最近压缩 ${formatCompactedAt(contextWindow.lastCompactedAt)}` : "尚未压缩",
   ].filter(Boolean).join("\n")
 
@@ -58,7 +58,6 @@ export function ContextWindowIndicator({ contextWindow }: { contextWindow?: Mess
         {components ? (
           <div className="mt-1 grid grid-cols-[auto_auto] gap-x-3 text-muted-foreground">
             <span>session</span><span>{formatTokenCount(components.sessionMessages)}</span>
-            <span>project/memory</span><span>{formatTokenCount(components.projectContext)}</span>
             <span>prompt</span><span>{formatTokenCount(components.currentPrompt)}</span>
             <span>reserve</span><span>{formatTokenCount(components.expectedOutputReserve)}</span>
           </div>

@@ -5,7 +5,6 @@
 当前 Novel Guide / LG agent 已经具备工作区读写、小说项目规则、子智能体、长上下文压缩和 LG 书籍索引等能力。优化提示词的目标不是继续堆规则，而是让模型在长对话和复杂小说项目里更稳定地做到：
 
 1. 先读真实文件，再判断、续写或修改。
-2. 明确区分“聊天上下文、项目索引、正典事实、草稿正文、旧 LG 目录”。
 3. 减少重复提示词带来的 token 浪费和规则冲突。
 4. 让子智能体产出更可合并、更可验证的结构化报告。
 5. 让不同工作流（续写、改稿、检查、计划、归档）有更清晰的行为边界。
@@ -16,16 +15,13 @@
 
 - `packages/novel-guide/src/prompts/systemPrompt.ts`
   - `DEFAULT_SYSTEM_PROMPT`：通用 Novel Guide agent 规则。
-  - `NOVEL_PROFILE_PROMPT`：小说工作区规则。
   - `buildEffectiveSystemPrompt()`：拼装 system prompt。
 - `apps/lg/lib/server/novel-guide-agent.ts`
   - `LG_LEGACY_PROMPT`：LG 旧目录兼容规则。
   - `buildPrompt()`：每轮用户请求的 prompt 拼装。
-  - `buildAgentProjectContext()`：稳定项目索引 + 线程记忆。
   - `runNovelGuideReview()`：并发调用四个只读 review 子智能体。
 - `packages/novel-guide/src/agent/engine.ts`
   - `AgentEngine`：system prompt 注入、project context 注入、session 保存、compaction、subagent 执行。
-  - `buildProjectContext()`：插入 `NG_PROJECT_CONTEXT`，列出工作区、索引、可用技能、可用子智能体。
   - `summarizeForCompaction()`：长上下文压缩。
 - `packages/novel-guide/src/novel/templates.ts`
   - 初始化 `NOVEL.md`、skills、output style、review 子智能体 prompt。
@@ -39,14 +35,11 @@
 ```text
 system:
   DEFAULT_SYSTEM_PROMPT
-  + NOVEL_PROFILE_PROMPT（如果工作区是 novel-workspace）
   + LG_LEGACY_PROMPT
 
 system meta:
-  NG_PROJECT_CONTEXT
   - 工作区路径
   - 文件为准声明
-  - LG 稳定项目索引
   - thread memory
   - 可用技能摘要
   - 可用子智能体摘要
@@ -78,7 +71,6 @@ user:
 
 这些规则分布在：
 
-- `NOVEL_PROFILE_PROMPT`
 - `LG_LEGACY_PROMPT`
 - `formatChapterDraftPolicy()`
 - `formatWorkflowAction()`
@@ -95,8 +87,6 @@ user:
 2. 用户选中的引用与工作流动作。
 3. 启用的回复约束和写作技能。
 4. thread memory / 近期对话。
-5. 项目索引。
-6. 默认小说工作区规则。
 
 现在这些信息是按文本顺序出现，模型能大致理解，但没有明确冲突处理规则。例如“回复约束只约束最终回复”已经写了，但“工作流动作 vs 用户请求”“thread memory vs 当前文件事实”“索引摘要 vs 文件正文”还可以更明确。
 
@@ -112,9 +102,7 @@ const promptThreadMessages = session ? [] : input.threadMessages ?? []
 
 建议不要简单恢复完整 threadMessages，而是注入一个“本轮 UI 可见上下文摘要 / recent user corrections”小卡片，最多保留最近 2-4 条用户纠正或显式决定。
 
-### 4. 项目索引和 agent project context 可能重复
 
-LG 侧 `buildStableProjectContext()` 会列出设定卡和工作区文件。engine 侧 `buildProjectContext()` 又会加载 guide files、skills、agents，并把 `projectContext` 放进去。
 
 这本身是合理分层，但目前没有根据任务动态裁剪：
 
@@ -175,7 +163,6 @@ packages/novel-guide/src/prompts/novelRules.ts
 
 ### 调整建议
 
-- `NOVEL_PROFILE_PROMPT` 保留“领域切换 + 通用原则”，不要塞太多 LG 细节。
 - `LG_LEGACY_PROMPT` 只保留旧 LG 目录兼容，不重复通用 drafts 规则。
 - `formatChapterDraftPolicy()` 可以改为更短的每轮强约束，只在写作/改稿相关 workflow 时注入。
 - 工具 description 只写工具自身边界，少承担业务规则；业务规则由 system/workflow prompt 负责。
@@ -257,7 +244,6 @@ LG 本轮可见对话增量：
 
 ## 方案 D：按任务动态裁剪 project context
 
-给 `buildAgentProjectContext()` 增加 task mode：
 
 ```ts
 type PromptTaskMode = "chat" | "continue" | "revise" | "review" | "archive" | "plan" | "diagnose"

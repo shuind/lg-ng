@@ -173,7 +173,7 @@ describe("AgentEngine subagents", () => {
     expect(seenTools).not.toContain("write_file");
   });
 
-  it("inherits parent project context when running subagents", async () => {
+  it("inherits parent user memory when running subagents", async () => {
     const cwd = await tempDir();
     await mkdir(path.join(cwd, ".novel-guide", "agents"), { recursive: true });
     await writeFile(
@@ -207,42 +207,19 @@ describe("AgentEngine subagents", () => {
       client,
       model: "mock",
       sessionId: "main-session",
-      projectContext: "THREAD MEMORY: keep this preference",
+      userMemoryContext: "THREAD MEMORY: keep this preference",
     });
 
     await engine.runSubAgent({ agent: "memory-aware", prompt: "check" });
 
+    expect(JSON.stringify(modelMessages)).toContain("NG_USER_MEMORY");
     expect(JSON.stringify(modelMessages)).toContain("THREAD MEMORY: keep this preference");
   });
 });
 
-describe("AgentEngine project context", () => {
-  it("surfaces project memory as a stable system context, not in the user message", async () => {
+describe("AgentEngine runtime context", () => {
+  it("does not inject project context", async () => {
     const cwd = await tempDir();
-    await mkdir(path.join(cwd, "skills"), { recursive: true });
-    await writeFile(
-      path.join(cwd, "NOVEL.md"),
-      [
-        "---",
-        "project: test",
-        "type: novel-workspace",
-        "---",
-        "",
-        "# Test Novel",
-      ].join("\n"),
-      "utf8",
-    );
-    await writeFile(
-      path.join(cwd, "GUIDE.md"),
-      "# Project Guide\n\nUse the hundred year storm as a recurring omen.",
-      "utf8",
-    );
-    await writeFile(
-      path.join(cwd, "skills", "style.md"),
-      "# Style\n\nKeep chapter endings sharp and unresolved.",
-      "utf8",
-    );
-
     let modelMessages: { role?: string; content?: unknown }[] = [];
     const client = {
       chat: {
@@ -261,27 +238,15 @@ describe("AgentEngine project context", () => {
       cwd,
       client,
       model: "mock",
-      sessionId: "legacy-memory",
+      sessionId: "no-project-context",
       permissionMode: "bypass",
     });
 
     await engine.submitMessage("write chapter one", { save: false });
-
-    const projectContext = modelMessages.find((message) =>
-      message.role === "system" &&
-      typeof message.content === "string" &&
-      message.content.startsWith("NG_PROJECT_CONTEXT:")
-    )?.content;
-    const lastUser = modelMessages.at(-1)?.content;
-    expect(projectContext).toContain("LG 旧素材路径索引");
-    expect(projectContext).toContain("GUIDE.md");
-    expect(projectContext).not.toContain("hundred year storm");
-    expect(projectContext).toContain("skills/style.md");
-    expect(projectContext).not.toContain("chapter endings");
-    expect(lastUser).toBe("用户请求：\nwrite chapter one");
+    expect(String(modelMessages.at(-1)?.content)).toContain("write chapter one");
   });
 
-  it("uses configured project context and does not persist it into session history", async () => {
+  it("records change memo without project context", async () => {
     const cwd = await tempDir();
     let calls = 0;
     const client = {
@@ -300,7 +265,7 @@ describe("AgentEngine project context", () => {
                       type: "function",
                       function: {
                         name: "write_file",
-                        arguments: "{\"path\":\"notes.md\",\"content\":\"new notes\"}",
+                        arguments: JSON.stringify({ path: "notes.md", content: "new notes" }),
                       },
                     }],
                   },
@@ -321,7 +286,6 @@ describe("AgentEngine project context", () => {
       client,
       model: "mock",
       sessionId: "change-memo",
-      projectContext: "Stable index:\n- Notes | path=notes.md",
       permissionMode: "bypass",
     });
 
@@ -329,13 +293,12 @@ describe("AgentEngine project context", () => {
     const rendered = JSON.stringify(result.messages);
 
     expect(calls).toBe(2);
-    expect(rendered).not.toContain("NG_PROJECT_CONTEXT");
     expect(rendered).toContain("NG_CHANGE_MEMO");
     expect(rendered).toContain("write notes.md");
-    expect(rendered).toContain("用户请求：\\nwrite notes");
+    expect(rendered).toContain("write notes");
   });
 
-  it("reports current turn context with prompt, project context, and output reserve components", async () => {
+  it("reports current turn context with prompt and output reserve components", async () => {
     const cwd = await tempDir();
     const client = {
       chat: {
@@ -352,16 +315,14 @@ describe("AgentEngine project context", () => {
       client,
       model: "mock",
       sessionId: "turn-budget",
-      projectContext: "THREAD MEMORY:\n- User prefers short replies.",
       contextBudgetTokens: 8000,
       expectedOutputReserveTokens: 2000,
     });
 
-    const result = await engine.submitMessage(`current prompt ${"x".repeat(1000)}`, { save: false });
+    const result = await engine.submitMessage("current prompt " + "x".repeat(1000), { save: false });
 
     expect(result.contextWindow.reserveTokens).toBe(2000);
     expect(result.contextWindow.components.sessionMessages).toBeGreaterThan(0);
-    expect(result.contextWindow.components.projectContext).toBeGreaterThan(0);
     expect(result.contextWindow.components.currentPrompt).toBeGreaterThan(0);
     expect(result.contextWindow.components.expectedOutputReserve).toBe(2000);
     expect(result.contextWindow.estimatedTokens).toBe(result.contextWindow.components.total);
@@ -390,18 +351,15 @@ describe("AgentEngine project context", () => {
       model: "mock",
       sessionId: "missing-system",
       initialMessages: [{ role: "user", content: "previous request" }],
-      projectContext: "Stable index",
     });
 
     const result = await engine.submitMessage("new request");
 
     expect(modelMessages[0]?.role).toBe("system");
-    expect(modelMessages[1]?.content).toContain("NG_PROJECT_CONTEXT");
     expect(result.messages[0]?.role).toBe("system");
-    expect(JSON.stringify(result.messages)).not.toContain("NG_PROJECT_CONTEXT");
   });
 
-  it("injects user memory after project context and does not persist it into session history", async () => {
+  it("injects user memory and does not persist it into session history", async () => {
     const cwd = await tempDir();
     let modelMessages: { role?: string; content?: unknown }[] = [];
     const client = {
@@ -422,15 +380,13 @@ describe("AgentEngine project context", () => {
       client,
       model: "mock",
       sessionId: "user-memory-context",
-      projectContext: "Stable index",
-      userMemoryContext: "NG_USER_MEMORY:\n- 用户偏好先给结论。",
+      userMemoryContext: "NG_USER_MEMORY:\n- prefer conclusion first",
     });
 
     const result = await engine.submitMessage("new request");
 
-    expect(String(modelMessages[1]?.content)).toContain("NG_PROJECT_CONTEXT");
-    expect(String(modelMessages[2]?.content)).toContain("NG_USER_MEMORY");
-    expect(String(modelMessages[2]?.content)).toContain("先给结论");
+    expect(String(modelMessages[1]?.content)).toContain("NG_USER_MEMORY");
+    expect(String(modelMessages[1]?.content)).toContain("prefer conclusion first");
     expect(JSON.stringify(result.messages)).not.toContain("NG_USER_MEMORY");
   });
 });
@@ -536,7 +492,6 @@ describe("AgentEngine compaction", () => {
     expect(rendered).not.toContain("old-0");
     expect(rendered).not.toContain("previous memo");
     expect(rendered).not.toContain("NG_CHANGE_MEMO");
-    expect(rendered).not.toContain("NG_PROJECT_CONTEXT");
     expect(rendered.match(/NG_COMPACTION_MEMO/g)).toHaveLength(1);
 
     const saved = await readSavedSession(cwd, result.sessionId);

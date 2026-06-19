@@ -16,9 +16,7 @@
 ```text
 Stable Prefix
   system prompt
-  小说工作区规则
   LG legacy 规则
-  稳定工具、技能、项目索引骨架
 
 Dynamic User Preference
   用户明确保存的轻量 memory
@@ -185,7 +183,6 @@ interface CompactionBoundary {
 删除或弃用方向：
 
 - 不再每轮调用 `mergeThreadMemoryAfterTurn()`。
-- 不再把 `thread-memory.json` 注入 `NG_PROJECT_CONTEXT`。
 - 不再以 thread 为单位维护隐藏长期记忆。
 
 ## 4. User Memory
@@ -354,7 +351,6 @@ Current Turn
 第一阶段：
 
 1. 移除或禁用每轮自动 `Thread Memory` 更新。
-2. 不再把 `thread-memory.json` 注入 `NG_PROJECT_CONTEXT`。
 3. 调整 compaction：旧 memo 和旧消息合并成单个新 memo。
 4. 保留 recent raw message window。
 
