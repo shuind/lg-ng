@@ -167,8 +167,8 @@ describe("AgentEngine subagents", () => {
 
     expect(text).toContain("ok");
     expect(seenTools).toContain("read_file");
-    expect(seenTools).toContain("git_status");
-    expect(seenTools).toContain("git_diff");
+    expect(seenTools).not.toContain("git_status");
+    expect(seenTools).not.toContain("git_diff");
     expect(seenTools).not.toContain("git_init");
     expect(seenTools).not.toContain("write_file");
   });

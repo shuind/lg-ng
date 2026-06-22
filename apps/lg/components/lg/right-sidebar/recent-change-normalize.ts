@@ -115,7 +115,14 @@ function classifyPathRegion(filePath: string): RecentChangeRegion {
   if (normalized.startsWith("章节正文/")) return { key: "body", label: "正文", count: 1 }
   if (normalized.startsWith("drafts/") || normalized.startsWith("草稿")) return { key: "draft", label: "草稿", count: 1 }
   if (normalized.startsWith("状态追踪/")) return { key: "status", label: "状态追踪", count: 1 }
-  if (normalized.startsWith("卷纲/") || normalized.startsWith("大纲/")) return { key: "outline", label: "大纲", count: 1 }
+  if (
+    normalized.startsWith("卷纲/") ||
+    normalized.startsWith("章节大纲/") ||
+    normalized.startsWith("章纲/") ||
+    normalized.startsWith("大纲/")
+  ) {
+    return { key: "outline", label: "大纲", count: 1 }
+  }
   if (
     normalized.startsWith("人物设定/") ||
     normalized.startsWith("世界观/") ||

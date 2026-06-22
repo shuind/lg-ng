@@ -18,6 +18,8 @@ api-calls/
 .novel-guide/*
 !.novel-guide/agents/
 !.novel-guide/agents/*.md
+!.novel-guide/skills/
+!.novel-guide/skills/**
 .playwright-mcp/
 data/
 plan/

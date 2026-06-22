@@ -1,7 +1,8 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { Tool } from "./tool.js";
-import { DRAFT_POLICY_TOOL_HINT } from "../prompts/novelRules.js";
+import { FILE_WRITE_TOOL_HINT } from "../prompts/novelRules.js";
+import { validateChapterOutlineFile } from "../novel/chapterOutline.js";
 import { normalizeSlashPath, relativeTo, resolveInside } from "../utils/paths.js";
 
 function stringInput(value: unknown, fallback = ""): string {
@@ -42,7 +43,7 @@ export const ReadFileTool: Tool = {
 
 export const WriteFileTool: Tool = {
   name: "write_file",
-  description: `写 UTF-8 文本文件并创建父目录。${DRAFT_POLICY_TOOL_HINT}`,
+  description: `写 UTF-8 文本文件并创建父目录。${FILE_WRITE_TOOL_HINT}`,
   readonly: false,
   parameters: {
     type: "object",
@@ -58,6 +59,8 @@ export const WriteFileTool: Tool = {
   async execute(input, context) {
     const rel = stringInput(input.path);
     const content = stringInput(input.content);
+    const outlineValidation = validateChapterOutlineFile(rel, content);
+    if (!outlineValidation.ok) return { ok: false, content: outlineValidation.message };
     const abs = resolveInside(context.cwd, rel);
     const workspacePath = relativeTo(context.cwd, abs);
     let beforeContent: string | null = null;
@@ -89,7 +92,7 @@ export const WriteFileTool: Tool = {
 
 export const EditFileTool: Tool = {
   name: "edit_file",
-  description: `精确替换文本来编辑 UTF-8 文件。${DRAFT_POLICY_TOOL_HINT}`,
+  description: `精确替换文本来编辑 UTF-8 文件。${FILE_WRITE_TOOL_HINT}`,
   readonly: false,
   parameters: {
     type: "object",
@@ -120,6 +123,8 @@ export const EditFileTool: Tool = {
       return { ok: false, content: `${rel} 有 ${occurrences} 处匹配；请设 replace_all=true 或提供更具体 old_text。` };
     }
     const next = replaceAll ? raw.split(oldText).join(newText) : raw.replace(oldText, newText);
+    const outlineValidation = validateChapterOutlineFile(rel, next);
+    if (!outlineValidation.ok) return { ok: false, content: outlineValidation.message };
     await writeFile(abs, next, "utf8");
     return {
       ok: true,
@@ -140,7 +145,7 @@ export const EditFileTool: Tool = {
 
 export const ProposeFileChangeTool: Tool = {
   name: "propose_file_change",
-  description: `创建可审阅文件变更提案，不改目标文件。用于 /续写、/改稿。${DRAFT_POLICY_TOOL_HINT}`,
+  description: `创建可审阅文件变更提案，不改目标文件。用于 /续写、/改稿。${FILE_WRITE_TOOL_HINT}`,
   readonly: false,
   parameters: {
     type: "object",
@@ -158,6 +163,8 @@ export const ProposeFileChangeTool: Tool = {
   async execute(input, context) {
     const rel = stringInput(input.path);
     const afterContent = stringInput(input.after_content);
+    const outlineValidation = validateChapterOutlineFile(rel, afterContent);
+    if (!outlineValidation.ok) return { ok: false, content: outlineValidation.message };
     const summary = stringInput(input.summary) || `${rel} 的改动提案`;
     const source = input.source === "draft" || input.source === "workflow" ? input.source : "chat";
     const abs = resolveInside(context.cwd, rel);

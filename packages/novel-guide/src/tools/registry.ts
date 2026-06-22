@@ -13,15 +13,17 @@ import { createAgentTools } from "./agentTool.js";
 export interface RegistryOptions {
   readonlyOnly?: boolean;
   proposalOnly?: boolean;
+  includeGit?: boolean;
+  includeShell?: boolean;
 }
 
 export function getTools(options: RegistryOptions = {}): Tools {
   const base: Tools = [
     ...allFileTools(),
     ...allSearchTools(),
-    ...allGitTools(),
+    ...(options.includeGit ? allGitTools() : []),
     ...allAskUserTools(),
-    ...allShellTools(),
+    ...(options.includeShell ? allShellTools() : []),
     ...createSkillTools(),
     ...createAgentTools(),
   ];

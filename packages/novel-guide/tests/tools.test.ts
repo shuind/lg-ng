@@ -8,6 +8,7 @@ import { ShellTool } from "../src/tools/shell.js";
 import { getTools } from "../src/tools/registry.js";
 import { GitInitTool, GitStatusTool } from "../src/tools/git.js";
 import { runTool } from "../src/tools/tool.js";
+import { splitChapterOutlineDocument } from "../src/novel/chapterOutline.js";
 
 async function tempDir(): Promise<string> {
   return await mkdtemp(path.join(os.tmpdir(), "novel-guide-tools-"));
@@ -99,6 +100,54 @@ describe("workspace tools", () => {
     await expect(readFile(path.join(cwd, "canon/direct.md"), "utf8")).resolves.toBe("direct");
   });
 
+  it("rejects multi-chapter content in one chapter outline file", async () => {
+    const cwd = await tempDir();
+    const content = [
+      "# 第一卷章节大纲",
+      "",
+      "## 第1章：药园里的避雷竹",
+      "本章功能。",
+      "",
+      "## 第2章：五灵根的许师兄",
+      "本章功能。",
+    ].join("\n");
+
+    const result = await runTool(
+      WriteFileTool,
+      { path: "章节大纲/第一卷.md", content },
+      { cwd },
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.content).toContain("多章章纲不能写入单个章节大纲文件");
+    await expect(readFile(path.join(cwd, "章节大纲", "第一卷.md"), "utf8")).rejects.toThrow();
+  });
+
+  it("allows single chapter outlines and volume outlines", async () => {
+    const cwd = await tempDir();
+    const singleChapter = await runTool(
+      WriteFileTool,
+      {
+        path: "章节大纲/第1章 · 药园里的避雷竹.md",
+        content: "# 第1章 · 药园里的避雷竹\n\n## 本章功能\n建立开篇。",
+      },
+      { cwd },
+    );
+    const volume = await runTool(
+      WriteFileTool,
+      {
+        path: "卷纲/第一卷.md",
+        content: "# 第一卷\n\n## 第1章\n## 第2章",
+      },
+      { cwd },
+    );
+
+    expect(singleChapter.ok).toBe(true);
+    expect(volume.ok).toBe(true);
+    await expect(readFile(path.join(cwd, "章节大纲", "第1章 · 药园里的避雷竹.md"), "utf8")).resolves.toContain("建立开篇");
+    await expect(readFile(path.join(cwd, "卷纲", "第一卷.md"), "utf8")).resolves.toContain("第2章");
+  });
+
   it("reports edit metadata with before and after snapshots", async () => {
     const cwd = await tempDir();
     await mkdir(path.join(cwd, "drafts"), { recursive: true });
@@ -176,6 +225,33 @@ describe("workspace tools", () => {
     expect(result.ok).toBe(true);
     expect(result.content).toContain("卷纲/第一卷.md");
     expect(result.content).toContain("雷云开始聚");
+  });
+
+  it("splits a volume-level chapter outline into volume and per-chapter files", () => {
+    const content = [
+      "# 第一卷《青岚夜雷》章节大纲",
+      "",
+      "## 卷核心",
+      "卷级内容。",
+      "",
+      ...Array.from({ length: 10 }, (_, index) => [
+        `## 第${index + 1}章：章节标题${index + 1}`,
+        "",
+        "### 本章功能",
+        `第${index + 1}章功能。`,
+      ].join("\n\n")),
+    ].join("\n\n---\n\n");
+
+    const result = splitChapterOutlineDocument(content, "第一卷-青岚夜雷");
+
+    expect(result.volume?.fileName).toBe("第一卷 · 青岚夜雷.md");
+    expect(result.volume?.content).toContain("卷级内容");
+    expect(result.chapters).toHaveLength(10);
+    expect(result.chapters[0]).toMatchObject({
+      title: "第1章 · 章节标题1",
+      fileName: "第1章 · 章节标题1.md",
+    });
+    expect(result.chapters[9].content).toContain("# 第10章 · 章节标题10");
   });
 
   it("requires confirmation for dangerous shell commands even in bypass mode", async () => {

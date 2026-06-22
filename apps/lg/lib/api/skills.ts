@@ -15,20 +15,21 @@ import type {
 } from "../types"
 import { delay } from "./common"
 
-function fallbackPlotDesignSkill(bookId: string): Skill {
+function fallbackWorkspaceSkill(bookId: string): Skill {
   return {
-    id: `skill-plot-design-${bookId}`,
-    type: "plot_design",
+    id: "workspace-skill-plot-design",
+    type: "workspace_skill",
     kind: "method",
-    name: "剧情设计指南",
-    description: "剧情主线、关卡、冲突、悬念和切入点的压缩层",
+    name: "plot-design",
+    description: "剧情主线、关卡、冲突、悬念和切入点的设计方法。",
     scope: "book",
     bookId,
-    sourceFile: "剧情设计指南.md",
+    sourceFile: ".novel-guide/skills/plot-design/SKILL.md",
     summaryTokenCount: 0,
     lastSourceModified: "",
     lastSummaryGenerated: "",
     dirty: false,
+    source: "workspace_skill",
   }
 }
 
@@ -41,7 +42,7 @@ export async function listSkills(bookId: string): Promise<Skill[]> {
     return data
   } catch {
     await delay()
-    return [fallbackPlotDesignSkill(bookId)]
+    return [fallbackWorkspaceSkill(bookId)]
   }
 }
 

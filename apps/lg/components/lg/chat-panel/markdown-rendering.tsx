@@ -73,11 +73,13 @@ export function renderMarkdownBlock(block: MarkdownBlock, key: number) {
 
 function renderInlineWithBreaks(text: string) {
   return text.split("\n").flatMap((line, index) => (
-    index === 0 ? renderInline(line) : [<br key={`br-${index}`} />, ...renderInline(line)]
+    index === 0
+      ? renderInline(line, `line-${index}`)
+      : [<br key={`br-${index}`} />, ...renderInline(line, `line-${index}`)]
   ))
 }
 
-function renderInline(text: string) {
+function renderInline(text: string, keyPrefix = "inline") {
   const nodes: ReactNode[] = []
   const pattern = /(`[^`]+`|\*\*[^*]+\*\*)/g
   let lastIndex = 0
@@ -88,12 +90,12 @@ function renderInline(text: string) {
     const token = match[0]
     if (token.startsWith("`")) {
       nodes.push(
-        <code key={`${match.index}-code`} className="rounded bg-muted/70 px-1 py-0.5 font-mono text-[0.88em]">
+        <code key={`${keyPrefix}-${match.index}-code`} className="rounded bg-muted/70 px-1 py-0.5 font-mono text-[0.88em]">
           {token.slice(1, -1)}
         </code>,
       )
     } else {
-      nodes.push(<strong key={`${match.index}-strong`} className="font-semibold">{token.slice(2, -2)}</strong>)
+      nodes.push(<strong key={`${keyPrefix}-${match.index}-strong`} className="font-semibold">{token.slice(2, -2)}</strong>)
     }
     lastIndex = match.index + token.length
   }

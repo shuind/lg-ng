@@ -25,8 +25,17 @@ async function main() {
     updatedAt: now,
   }, null, 2) + "\n")
 
-  // 剧情设计指南.md
-  await write(path.join(bookDir, "剧情设计指南.md"), `# 剧情设计指南
+  // .novel-guide/skills/plot-design/SKILL.md
+  await write(path.join(bookDir, ".novel-guide", "skills", "plot-design", "SKILL.md"), `---
+name: plot-design
+title: 剧情设计指南
+kind: method
+description: 剧情主线、关卡、冲突、悬念和切入点的设计方法。
+when_to_use: 当用户需要从零构思故事、设计剧情结构、升级难题、检查情节因果或寻找开头切入点时使用。
+argument-hint: "[故事/章节/问题范围]"
+---
+
+# 剧情设计指南
 
 ## 一句话故事
 
@@ -284,7 +293,7 @@ async function main() {
   console.log("")
   console.log("Files created:")
   console.log("  book.json")
-  console.log("  剧情设计指南.md（剧情设计指南）")
+  console.log("  .novel-guide/skills/plot-design/SKILL.md（剧情设计指南 Skill）")
   console.log("  关系图谱.json")
   console.log("  人物设定/林晓.md")
   console.log("  人物设定/陈磊.md")

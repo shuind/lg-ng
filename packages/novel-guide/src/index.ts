@@ -10,14 +10,25 @@ export {
   DRAFT_POLICY_RULES,
   DRAFT_POLICY_TOOL_HINT,
   FILE_TRUTH_RULES,
+  FILE_WRITE_TOOL_HINT,
   LG_CONTENT_DIRECTORY_RULES,
   LG_LEGACY_DIRECTORY_RULES,
+  OUTLINE_POLICY_RULES,
+  OUTLINE_POLICY_TOOL_HINT,
   REVIEW_AGENT_BASE_PROMPT,
   REVIEW_AGENT_JSON_SCHEMA,
   REVIEW_SEMANTICS_RULES,
   SEARCH_CANON_TOOL_HINT,
   WRITE_REPORTING_RULES,
 } from "./prompts/novelRules.js";
+export {
+  countChapterOutlineHeadings,
+  isChapterOutlinePath,
+  splitChapterOutlineDocument,
+  validateChapterOutlineFile,
+  type ChapterOutlineSplitChapter,
+  type ChapterOutlineSplitResult,
+} from "./novel/chapterOutline.js";
 export {
   loadSession,
   saveSession,

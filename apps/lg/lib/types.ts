@@ -136,7 +136,7 @@ export interface Skill {
   lastSourceModified: string
   lastSummaryGenerated: string
   dirty: boolean
-  source?: "plot_design" | "workspace_skill" | "manual"
+  source?: "workspace_skill" | "manual"
   stage?: SkillLabStage
   originObservationId?: string
   originExperimentId?: string

@@ -7,6 +7,7 @@ import { withBookMutationQueue } from "@/lib/server/book-mutation-queue"
 import { getBookDir, getBooksRoot, getIndexRoot } from "@/lib/server/paths"
 import { resolveInsideBook } from "@/lib/server/safe-paths"
 import { getBookTreeFromIndex, listOutlineFilesFromIndex, rebuildBookIndexes, removeIndexedFile, updateIndexedFile } from "@/lib/server/book-index"
+import { WORKSPACE_SKILLS_DIR } from "@/lib/workspace-layout"
 
 function slugify(title: string): string {
   return title
@@ -47,6 +48,22 @@ function resolveDirectChild(root: string, child: string): string | null {
 
   if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) return null
   return resolvedChild
+}
+
+function defaultPlotDesignSkillMd(): string {
+  return [
+    "---",
+    "name: plot-design",
+    "title: 剧情设计指南",
+    "kind: method",
+    "description: 剧情主线、关卡、冲突、悬念和切入点的设计方法。",
+    "when_to_use: 当用户需要从零构思故事、设计剧情结构、升级难题、检查情节因果或寻找开头切入点时使用。",
+    'argument-hint: "[故事/章节/问题范围]"',
+    "---",
+    "",
+    "# 剧情设计指南",
+    "",
+  ].join("\n")
 }
 
 export type WriteBookFileOptions = {
@@ -115,7 +132,7 @@ export async function createBook(title: string): Promise<Book> {
   await ensureDir(path.join(bookDir, "卷纲"))
   await ensureDir(path.join(bookDir, "章节大纲"))
   await ensureDir(path.join(bookDir, "章节正文"))
-  await ensureDir(path.join(bookDir, "skills"))
+  await ensureDir(path.join(bookDir, WORKSPACE_SKILLS_DIR, "plot-design"))
   // new system directories
   await ensureDir(path.join(bookDir, "剧情管理"))
   await ensureDir(path.join(bookDir, "状态追踪"))
@@ -132,7 +149,11 @@ export async function createBook(title: string): Promise<Book> {
     updatedAt: now,
   }
   await fs.writeFile(path.join(bookDir, "book.json"), JSON.stringify(bookMeta, null, 2), "utf-8")
-  await fs.writeFile(path.join(bookDir, "剧情设计指南.md"), "# 剧情设计指南\n", "utf-8")
+  await fs.writeFile(
+    path.join(bookDir, WORKSPACE_SKILLS_DIR, "plot-design", "SKILL.md"),
+    defaultPlotDesignSkillMd(),
+    "utf-8",
+  )
   await fs.writeFile(path.join(bookDir, "关系图谱.json"), "{}\n", "utf-8")
   await fs.writeFile(path.join(bookDir, "ledger.jsonl"), "", "utf-8")
   await fs.writeFile(path.join(bookDir, "messages.jsonl"), "", "utf-8")

@@ -11,6 +11,13 @@ export const DRAFT_POLICY_RULES = [
   "除非用户明确要求更新状态追踪，否则不要因为起草正文顺手修改 状态追踪/。",
 ].join("\n");
 
+export const OUTLINE_POLICY_RULES = [
+  "卷级规划只写入 卷纲/。",
+  "章纲/章节大纲必须一章一文件：每个 章节大纲/*.md 或 章纲/*.md 只描述一个章节。",
+  "需要设计多章或整卷时，把卷核心、主题、总走向写入 卷纲/；把每章功能、场景和钩子拆成多个 章节大纲/第N章 · 标题.md。",
+  "不要把多个“第N章”标题写进同一个 章节大纲/ 或 章纲/ 文件。",
+].join("\n");
+
 export const LG_CONTENT_DIRECTORY_RULES = `书籍工作区常见文件树：
 /
 ├── NOVEL.md                         # 书籍元信息、长期状态、核心入口
@@ -22,8 +29,8 @@ export const LG_CONTENT_DIRECTORY_RULES = `书籍工作区常见文件树：
 ├── 章节正文/                        # 正式或导入的章节正文
 ├── 人物设定/                        # 人物卡、关系、动机、状态
 ├── 世界观/                          # 世界、规则、地点、势力、机制
-├── 卷纲/                            # 分卷规划
-├── 章节大纲/                        # 章节规划
+├── 卷纲/                            # 分卷规划；只放卷级总览
+├── 章节大纲/                        # 章节规划；一章一文件
 ├── 章节摘要/                        # 已写章节摘要
 ├── 剧情管理/                        # 伏笔、线索、事件因果、推进表
 ├── 状态追踪/                        # 时间线、角色状态、物品状态、冲突
@@ -48,6 +55,10 @@ export const WRITE_REPORTING_RULES = [
 ].join("\n");
 
 export const DRAFT_POLICY_TOOL_HINT = "小说工作区生成章节正文默认使用 drafts/；用户明确要求直存正文时才用 章节正文/。";
+
+export const OUTLINE_POLICY_TOOL_HINT = "章纲必须一章一文件：多章规划请将卷级内容写入 卷纲/，每章内容分别写入 章节大纲/第N章 · 标题.md。";
+
+export const FILE_WRITE_TOOL_HINT = `${DRAFT_POLICY_TOOL_HINT} ${OUTLINE_POLICY_TOOL_HINT}`;
 
 export const SEARCH_CANON_TOOL_HINT = "查人物、设定、伏笔、长文连续性时优先于 grep；默认覆盖 canon、drafts、章节正文和 LG 内容目录。";
 

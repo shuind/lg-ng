@@ -162,8 +162,8 @@ export const SearchCanonTool: Tool = {
     const scope = str(input.scope);
     const patterns = scope ? [scope] : [
       "NOVEL.md",
-      "剧情设计指南.md",
       ...WORKSPACE_GUIDE_FILES,
+      ".novel-guide/skills/**/*.md",
       "canon/**/*.md",
       "drafts/**/*.md",
       "章节正文/**/*.md",
@@ -183,8 +183,8 @@ export const SearchCanonTool: Tool = {
     const files = await fg(patterns, {
       cwd: context.cwd,
       onlyFiles: true,
-      dot: false,
-      ignore: ["node_modules/**", ".git/**", ".next/**", ".novel-guide/**", ".lg-checkpoints/**"],
+      dot: true,
+      ignore: ["node_modules/**", ".git/**", ".next/**", ".novel-guide/agents/**", ".lg-checkpoints/**"],
     });
     const queryText = query.toLowerCase();
     const queryTerms = extractTerms(query);

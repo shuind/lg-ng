@@ -600,22 +600,22 @@ export async function ensureBookIndexes(
 }
 
 async function readFilesIndex(bookId: string): Promise<IndexedBookFile[]> {
-  await ensureBookIndexes(bookId)
+  await ensureBookIndexes(bookId, { validateMtimes: true })
   return (await readEnvelope<IndexedBookFile[]>(fileIndexPath(bookId)))?.items ?? []
 }
 
 async function readChapterIndex(bookId: string): Promise<Chapter[]> {
-  await ensureBookIndexes(bookId)
+  await ensureBookIndexes(bookId, { validateMtimes: true })
   return (await readEnvelope<Chapter[]>(chapterIndexPath(bookId)))?.items ?? []
 }
 
 async function readSettingCardIndex(bookId: string): Promise<SettingCard[]> {
-  await ensureBookIndexes(bookId)
+  await ensureBookIndexes(bookId, { validateMtimes: true })
   return (await readEnvelope<SettingCard[]>(settingCardIndexPath(bookId)))?.items ?? []
 }
 
 async function readTermIndex(bookId: string): Promise<TermIndex> {
-  await ensureBookIndexes(bookId)
+  await ensureBookIndexes(bookId, { validateMtimes: true })
   return (await readEnvelope<TermIndex>(termIndexPath(bookId)))?.items ?? {}
 }
 

@@ -14,7 +14,7 @@ import type {
   SkillUsageStats,
   UpdateSkillRequest,
 } from "@/lib/types"
-import { readBookFile, getBookFileMtime } from "@/lib/server/book-store"
+import { readBookFile } from "@/lib/server/book-store"
 import { listLedgerEntries } from "@/lib/server/ledger"
 import { getBookDir } from "@/lib/server/paths"
 import { rebuildBookIndexes } from "@/lib/server/book-index"
@@ -22,7 +22,6 @@ import {
   LEGACY_WORKSPACE_SKILLS_DIR,
   WORKSPACE_SKILLS_DIR,
   WORKSPACE_SKILL_SOURCE,
-  isWorkspaceSkillSource,
 } from "@/lib/workspace-layout"
 import {
   RESOURCE_ROOTS,
@@ -44,17 +43,16 @@ export {
   validateSkillDraft,
 } from "@/lib/server/skill-validation"
 
-const SOURCE_FILE = "剧情设计指南.md"
-const META_FILE = "skills/plot_design.skill.json"
+const LEGACY_PLOT_DESIGN_FILE = "剧情设计指南.md"
+const LEGACY_PLOT_DESIGN_META_FILE = "skills/plot_design.skill.json"
+const PLOT_DESIGN_SKILL_NAME = "plot-design"
+const PLOT_DESIGN_SKILL_TITLE = "剧情设计指南"
+const PLOT_DESIGN_SKILL_SOURCE_FILE = ".novel-guide/skills/plot-design/SKILL.md"
 const SKILL_LAB_FILE = "skill-lab.json"
 
 const USAGE_LEDGER_SCAN_LIMIT = 1000
 
 // ─── Paths ────────────────────────────────────────────────────
-
-function metaPath(bookId: string): string {
-  return path.join(getBookDir(bookId), META_FILE)
-}
 
 function skillLabPath(bookId: string): string {
   return path.join(getBookDir(bookId), SKILL_LAB_FILE)
@@ -274,6 +272,45 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
+function buildPlotDesignSkillMd(content: string): string {
+  const body = content.trimEnd() || `# ${PLOT_DESIGN_SKILL_TITLE}\n`
+  return [
+    "---",
+    `name: ${PLOT_DESIGN_SKILL_NAME}`,
+    `title: ${PLOT_DESIGN_SKILL_TITLE}`,
+    "kind: method",
+    "description: 剧情主线、关卡、冲突、悬念和切入点的设计方法。",
+    "when_to_use: 当用户需要从零构思故事、设计剧情结构、升级难题、检查情节因果或寻找开头切入点时使用。",
+    'argument-hint: "[故事/章节/问题范围]"',
+    "---",
+    "",
+    body,
+    "",
+  ].join("\n")
+}
+
+async function ensurePlotDesignWorkspaceSkill(bookId: string): Promise<void> {
+  const bookDir = getBookDir(bookId)
+  const targetPath = path.join(bookDir, PLOT_DESIGN_SKILL_SOURCE_FILE)
+  const legacyPath = path.join(bookDir, LEGACY_PLOT_DESIGN_FILE)
+  const legacyMetaPath = path.join(bookDir, LEGACY_PLOT_DESIGN_META_FILE)
+
+  if (await fileExists(targetPath)) {
+    await fs.rm(legacyMetaPath, { force: true }).catch(() => {})
+    return
+  }
+
+  const legacyContent = await fileExists(legacyPath)
+    ? await fs.readFile(legacyPath, "utf-8")
+    : ""
+  await fs.mkdir(path.dirname(targetPath), { recursive: true })
+  await fs.writeFile(targetPath, buildPlotDesignSkillMd(legacyContent), "utf-8")
+  await fs.rm(legacyPath, { force: true }).catch(() => {})
+  await fs.rm(legacyMetaPath, { force: true }).catch(() => {})
+  await fs.rmdir(path.dirname(legacyMetaPath)).catch(() => {})
+  await rebuildBookIndexes(bookId).catch(() => {})
+}
+
 async function dirExists(dirPath: string): Promise<boolean> {
   try {
     const stat = await fs.stat(dirPath)
@@ -316,7 +353,7 @@ function toWorkspaceSkillRecord(
     id: `workspace-skill-${directoryName}`,
     type: "workspace_skill",
     kind: normalizeSkillKind(meta.kind),
-    name: meta.name || directoryName,
+    name: meta.title || (directoryName === PLOT_DESIGN_SKILL_NAME ? PLOT_DESIGN_SKILL_TITLE : meta.name || directoryName),
     description: meta.description || meta.when_to_use || "",
     scope: "book",
     bookId,
@@ -551,38 +588,6 @@ export async function deleteWorkspaceSkill(bookId: string, rawName: string): Pro
   await rebuildBookIndexes(bookId).catch(() => {})
 }
 
-function normalizePlotDesignSkill(bookId: string, skill: Skill, dirty: boolean): Skill {
-  return {
-    ...skill,
-    id: `skill-plot-design-${bookId}`,
-    type: "plot_design",
-    kind: normalizeSkillKind(skill.kind),
-    name: skill.name || "剧情设计指南",
-    description: skill.description || "剧情主线、关卡、冲突、悬念和切入点的压缩层",
-    scope: "book",
-    bookId,
-    sourceFile: SOURCE_FILE,
-    source: "plot_design",
-    dirty,
-  }
-}
-
-// ─── Metadata I/O ─────────────────────────────────────────────
-
-async function readMeta(bookId: string): Promise<Skill | null> {
-  try {
-    const raw = await fs.readFile(metaPath(bookId), "utf-8")
-    return JSON.parse(raw)
-  } catch {
-    return null
-  }
-}
-
-async function writeMeta(skill: Skill): Promise<void> {
-  await fs.mkdir(path.dirname(metaPath(skill.bookId!)), { recursive: true })
-  await fs.writeFile(metaPath(skill.bookId!), JSON.stringify(skill, null, 2), "utf-8")
-}
-
 async function collectUsageLedgerEntries(bookId: string): Promise<LedgerEntry[]> {
   const entries: LedgerEntry[] = []
   let cursor: string | undefined
@@ -651,37 +656,9 @@ export async function collectSkillUsageStats(bookId: string): Promise<Map<string
 
 // ─── Public API ───────────────────────────────────────────────
 
-export async function getPlotDesignSkill(bookId: string): Promise<Skill> {
-  let skill = await readMeta(bookId)
-
-  // check if source file is newer
-  const sourceMtime = await getBookFileMtime(bookId, SOURCE_FILE)
-  const dirty = !skill || sourceMtime > skill.lastSourceModified
-
-  if (!skill) {
-    skill = {
-      id: `skill-plot-design-${bookId}`,
-      type: "plot_design",
-      kind: "method",
-      name: "剧情设计指南",
-      description: "剧情主线、关卡、冲突、悬念和切入点的压缩层",
-      scope: "book",
-      bookId,
-      sourceFile: SOURCE_FILE,
-      summaryTokenCount: 0,
-      lastSourceModified: sourceMtime,
-      lastSummaryGenerated: "",
-      dirty,
-      source: "plot_design",
-    }
-  } else {
-    skill = normalizePlotDesignSkill(bookId, skill, dirty)
-  }
-
-  return skill
-}
-
 async function listWorkspaceSkills(bookId: string): Promise<Skill[]> {
+  await ensurePlotDesignWorkspaceSkill(bookId).catch(() => {})
+
   const bookDir = getBookDir(bookId)
   const [metaMap, usageMap] = await Promise.all([
     readSkillLabMetaMap(bookId).catch(() => ({} as Record<string, SkillLabMeta>)),
@@ -736,9 +713,7 @@ function skillDisplaySortKey(skill: Skill): string {
 }
 
 export async function listSkills(bookId: string): Promise<Skill[]> {
-  const skill = await getPlotDesignSkill(bookId)
-  const workspaceSkills = await listWorkspaceSkills(bookId)
-  return [skill, ...workspaceSkills]
+  return listWorkspaceSkills(bookId)
 }
 
 export async function promoteSkill(bookId: string, rawName: string): Promise<Skill> {
