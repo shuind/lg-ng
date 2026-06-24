@@ -58,13 +58,13 @@
 
 .dark {
   /* 深色:深夜月光下窗边桌面 - 深蓝灰 + 月光冷调 */
-  --background: oklch(0.18 0.012 250);
+  --background: oklch(0.17 0.012 250);
   --foreground: oklch(0.88 0.008 230);
 
-  --card: oklch(0.22 0.014 248);
+  --card: oklch(0.245 0.016 248);
   --card-foreground: oklch(0.88 0.008 230);
 
-  --popover: oklch(0.22 0.014 248);
+  --popover: oklch(0.245 0.016 248);
   --popover-foreground: oklch(0.88 0.008 230);
 
   --primary: oklch(0.85 0.02 230);
@@ -82,9 +82,9 @@
   --destructive: oklch(0.6 0.18 25);
   --destructive-foreground: oklch(0.95 0.008 230);
 
-  --border: oklch(0.3 0.016 248);
-  --input: oklch(0.28 0.016 248);
-  --ring: oklch(0.55 0.04 235);
+  --border: oklch(0.34 0.018 248);
+  --input: oklch(0.3 0.016 248);
+  --ring: oklch(0.6 0.05 235);
 
   --chart-1: oklch(0.65 0.14 235);
   --chart-2: oklch(0.7 0.1 200);
@@ -197,6 +197,28 @@
 
   .hairline {
     border-color: oklch(from var(--border) l c h / 0.52);
+  }
+
+  /* 选中条:列表项被选中时左侧的强调标记 */
+  .selected-bar {
+    position: relative;
+  }
+  .selected-bar::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    height: 1.1rem;
+    width: 3px;
+    transform: translateY(-50%);
+    border-radius: 999px;
+    background: var(--accent);
+  }
+
+  /* 小型操作芯片:用于纲/文等次级按钮 */
+  .chip-quiet {
+    background: oklch(from var(--muted) l c h / 0.5);
+    border: 1px solid oklch(from var(--border) l c h / 0.5);
   }
 
   /* 呼吸动画 */

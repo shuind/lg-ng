@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { Clock3 } from "lucide-react"
 import type { LedgerEntry } from "@/lib/types"
 import { buildRecentChangeGroups } from "./recent-changes"
 import { RecentChangeGroupSection } from "./recent-change-group-section"
@@ -44,8 +45,16 @@ export function RecentChangesView({
 
   if (entries.length === 0) {
     return (
-      <div className="mt-14 text-center text-[12px] leading-relaxed text-muted-foreground/65">
-        暂无改动记录。
+      <div className="mt-16 flex flex-col items-center gap-3 px-6 text-center">
+        <div className="surface-2 flex h-11 w-11 items-center justify-center rounded-xl border">
+          <Clock3 className="h-5 w-5 text-muted-foreground/70" />
+        </div>
+        <div className="space-y-1">
+          <p className="text-[13px] font-medium text-foreground/80">暂无改动记录</p>
+          <p className="text-[12px] leading-relaxed text-muted-foreground/65">
+            当 Agent 修改项目文件后，改动会按时间出现在这里，并可随时回滚。
+          </p>
+        </div>
       </div>
     )
   }

@@ -50,7 +50,7 @@ export function SidebarSection({
           <button
             type="button"
             onClick={toggleOpen}
-            className="-ml-3 flex min-w-0 items-center gap-1 rounded-md py-0.5 pl-0.5 pr-1 text-left text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground/80 transition hover:bg-sidebar-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/45"
+            className="-ml-3 flex min-w-0 items-center gap-1 rounded-md py-0.5 pl-0.5 pr-1 text-left text-[10.5px] font-semibold uppercase tracking-[0.16em] text-foreground/65 transition hover:bg-sidebar-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/45"
             aria-expanded={open}
             aria-controls={contentId}
           >
@@ -58,7 +58,7 @@ export function SidebarSection({
             <span className="truncate">{title}</span>
           </button>
         ) : (
-          <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground/80">
+          <span className="text-[10.5px] font-semibold uppercase tracking-[0.16em] text-foreground/65">
             {title}
           </span>
         )}

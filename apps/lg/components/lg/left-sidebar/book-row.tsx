@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useEffect, useRef, type RefObject } from "react"
 import { Pencil, Trash2 } from "lucide-react"
@@ -57,8 +57,8 @@ export function BookRow({
       className={cn(
         "group flex items-center gap-1 rounded-lg pr-1 transition",
         active
-          ? "bg-sidebar-accent text-foreground"
-          : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
+          ? "selected-bar bg-sidebar-accent font-medium text-foreground shadow-sm ring-1 ring-border/50"
+          : "text-muted-foreground hover:bg-sidebar-accent/55 hover:text-foreground",
       )}
     >
       {isEditing ? (

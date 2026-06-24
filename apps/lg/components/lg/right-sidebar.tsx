@@ -42,8 +42,8 @@ export function RightSidebar({
 
   return (
     <aside className="relative flex h-full min-h-0 w-full flex-col bg-sidebar/70 paper-soft">
-      <div className="shrink-0 px-4 pb-2 pt-5">
-        <div className="flex min-w-0 items-center gap-1">
+      <div className="shrink-0 px-4 pb-3 pt-5">
+        <div className="flex min-w-0 items-center gap-1 border-b border-border/50 pb-3">
           <TabBtn active={tab === "recent"} onClick={() => setTab("recent")} icon={<Clock3 className="h-3.5 w-3.5" />}>
             最近改动
           </TabBtn>
@@ -101,7 +101,9 @@ function TabBtn({
       onClick={onClick}
       className={cn(
         "flex h-7 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-[12px] transition",
-        active ? "bg-sidebar-accent/70 text-foreground shadow-sm" : "text-muted-foreground/80 hover:bg-sidebar-accent/30 hover:text-foreground",
+        active
+          ? "bg-sidebar-accent font-medium text-foreground shadow-sm ring-1 ring-border/50"
+          : "text-muted-foreground/80 hover:bg-sidebar-accent/30 hover:text-foreground",
       )}
     >
       {icon}

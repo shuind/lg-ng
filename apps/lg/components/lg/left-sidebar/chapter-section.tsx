@@ -68,8 +68,8 @@ export function ChapterSection({
                   className={cn(
                     "group flex w-full items-center rounded-md text-[12.5px] transition",
                     active
-                      ? "bg-sidebar-accent text-foreground ring-1 ring-border/60"
-                      : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
+                      ? "selected-bar bg-sidebar-accent font-medium text-foreground ring-1 ring-border/60"
+                      : "text-muted-foreground hover:bg-sidebar-accent/55 hover:text-foreground",
                   )}
                 >
                   <button
@@ -103,8 +103,8 @@ export function ChapterSection({
                       className={cn(
                         "inline-flex h-5 min-w-5 items-center justify-center rounded px-1 font-mono text-[10px] transition focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/45",
                         outline
-                          ? "text-muted-foreground hover:bg-background/45 hover:text-foreground"
-                          : "cursor-default text-muted-foreground/25",
+                          ? "chip-quiet text-muted-foreground hover:bg-background/60 hover:text-foreground"
+                          : "cursor-default text-muted-foreground/20",
                       )}
                       aria-label={outline ? `打开章纲 ${entry.title}` : `${entry.title} 暂无章纲`}
                       title={outline ? "打开章纲" : "暂无章纲"}
@@ -121,8 +121,8 @@ export function ChapterSection({
                       className={cn(
                         "inline-flex h-5 min-w-5 items-center justify-center rounded px-1 font-mono text-[10px] transition focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/45",
                         chapter
-                          ? "text-muted-foreground hover:bg-background/45 hover:text-foreground"
-                          : "cursor-default text-muted-foreground/25",
+                          ? "chip-quiet text-muted-foreground hover:bg-background/60 hover:text-foreground"
+                          : "cursor-default text-muted-foreground/20",
                       )}
                       aria-label={chapter ? `打开正文 ${entry.title}` : `${entry.title} 暂无正文`}
                       title={chapter ? "打开正文" : "暂无正文"}

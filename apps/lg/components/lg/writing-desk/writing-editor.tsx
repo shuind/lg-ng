@@ -8,12 +8,12 @@ export function WritingEditor({
   onContentChange: (content: string) => void
 }) {
   return (
-    <div className="paper relative min-h-0 flex-1 overflow-hidden rounded-lg border border-border/70 bg-card/80 backdrop-blur">
+    <div className="paper relative min-h-0 flex-1 overflow-y-auto rounded-xl border border-border bg-card/85 shadow-sm backdrop-blur scrollbar-thin">
       <textarea
         value={content}
         onChange={(event) => onContentChange(event.target.value)}
         placeholder="正文..."
-        className="h-full w-full resize-none overflow-y-auto bg-transparent px-10 py-8 font-serif text-[16px] leading-[1.9] text-foreground scrollbar-thin placeholder:text-muted-foreground/60 focus:outline-none"
+        className="mx-auto block h-full w-full max-w-[44rem] resize-none bg-transparent px-8 py-10 font-serif text-[16.5px] leading-[1.95] text-foreground placeholder:text-muted-foreground/60 focus:outline-none sm:px-6"
       />
     </div>
   )
