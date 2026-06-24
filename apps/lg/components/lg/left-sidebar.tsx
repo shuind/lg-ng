@@ -6,7 +6,6 @@ import { ChapterSection } from "./left-sidebar/chapter-section"
 import { CollapsedSidebar } from "./left-sidebar/collapsed-sidebar"
 import { SidebarFooter } from "./left-sidebar/footer"
 import { SidebarHeader } from "./left-sidebar/header"
-import { OutlineSection } from "./left-sidebar/outline-section"
 
 interface LeftSidebarProps {
   books: Book[]
@@ -78,12 +77,10 @@ export function LeftSidebar({
         />
 
         <div className="mt-4">
-          <OutlineSection outlines={outlines} />
-        </div>
-
-        <div className="mt-4">
           <ChapterSection
+            bookId={activeBookId}
             chapters={chapters}
+            outlines={outlines}
             activeChapterId={activeChapterId}
             mode={mode}
             onNewChapter={onNewChapter}
