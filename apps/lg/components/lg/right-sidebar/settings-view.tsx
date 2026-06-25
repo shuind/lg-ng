@@ -1,10 +1,12 @@
 "use client"
 
 import { useState } from "react"
+import { Library, SearchX } from "lucide-react"
 import type { SettingCard } from "@/lib/types"
 import { SettingCardGroup } from "./setting-card-group"
 import { SETTING_CATEGORY_ORDER, settingCardSearchText } from "./settings-meta"
 import { SettingsSearch } from "./settings-search"
+import { PanelEmpty } from "./panel-empty"
 
 export function SettingsView({ cards, onCite }: { cards: SettingCard[]; onCite: (c: SettingCard) => void }) {
   const [query, setQuery] = useState("")
@@ -62,7 +64,13 @@ export function SettingsView({ cards, onCite }: { cards: SettingCard[]; onCite: 
   }
 
   if (cards.length === 0) {
-    return <div className="mt-12 text-center text-[12px] text-muted-foreground/70">暂无设定卡。</div>
+    return (
+      <PanelEmpty
+        icon={Library}
+        title="暂无设定卡"
+        description="人物、地点与世界规则会在这里汇成可检索的设定索引，随时引用到对话。"
+      />
+    )
   }
 
   return (
@@ -75,9 +83,11 @@ export function SettingsView({ cards, onCite }: { cards: SettingCard[]; onCite: 
       />
 
       {groupedCards.length === 0 && (
-        <div className="mt-10 text-center text-[12px] leading-relaxed text-muted-foreground/65">
-          没有匹配的设定卡。
-        </div>
+        <PanelEmpty
+          icon={SearchX}
+          title="没有匹配的设定卡"
+          description="换个关键词试试，或清空搜索查看全部设定。"
+        />
       )}
 
       {groupedCards.map((group) => (

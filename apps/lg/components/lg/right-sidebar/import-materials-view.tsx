@@ -137,8 +137,8 @@ export function ImportMaterialsView({
             ))}
           </div>
         ) : (
-          <div className="rounded-lg border border-dashed border-border/70 px-3 py-8 text-center text-[12px] text-muted-foreground">
-            收件箱里还没有导入材料。
+          <div className="rounded-lg border border-dashed border-border/60 bg-card/25 px-3 py-7 text-center text-[12px] leading-relaxed text-muted-foreground/70">
+            收件箱里还没有导入材料，拖入文件即可在这里检索与引用。
           </div>
         )}
       </section>

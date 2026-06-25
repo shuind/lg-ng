@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useEffect, useMemo, useState } from "react"
 import { BookOpenCheck, FileText, Loader2 } from "lucide-react"
@@ -95,7 +95,7 @@ export function BookStatusView({
       </section>
 
       {sources.length === 0 ? (
-        <div className="mt-10 rounded-lg border border-dashed border-border/70 px-3 py-6 text-center text-[12px] leading-relaxed text-muted-foreground">
+        <div className="rounded-lg border border-dashed border-border/60 bg-card/25 px-3 py-7 text-center text-[12px] leading-relaxed text-muted-foreground/70">
           还没有可汇总的状态追踪文件。打开工作台后可在“状态追踪”里维护当前冲突、角色位置和章节状态。
         </div>
       ) : (
