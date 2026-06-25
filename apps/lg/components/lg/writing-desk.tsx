@@ -139,7 +139,7 @@ export function WritingDesk({ bookId, chapterId }: WritingDeskProps) {
       <WritingDeskHeader title={title} wordCount={wordCount} savedAt={savedAt} />
       <WritingToolbar />
 
-      <div className="flex-1 overflow-hidden px-10 pt-3 pb-6">
+      <div className="flex-1 overflow-hidden px-8 pt-3 pb-6">
         <div className="flex h-full flex-col gap-3">
           <WritingEditor content={content} onContentChange={setContent} />
           <DraftSandbox

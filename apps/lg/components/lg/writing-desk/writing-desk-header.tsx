@@ -12,12 +12,12 @@ export function WritingDeskHeader({
   savedAt: string | null
 }) {
   return (
-    <header className="flex items-center justify-between px-10 pt-6 pb-3">
-      <div>
+    <header className="flex items-center justify-between gap-4 border-b border-border/50 px-8 pt-5 pb-3">
+      <div className="min-w-0">
         <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">写作台</div>
-        <h1 className="font-serif text-xl tracking-wide text-foreground">{title}</h1>
+        <h1 className="truncate font-serif text-xl tracking-wide text-foreground">{title}</h1>
       </div>
-      <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+      <div className="flex shrink-0 items-center gap-3 text-[11px] text-muted-foreground">
         <span className="tabular-nums">{wordCount.toLocaleString()} 字</span>
         {savedAt && (
           <span className="flex items-center gap-1">

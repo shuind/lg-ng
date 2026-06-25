@@ -4,7 +4,7 @@ import { Bold, Heading1, Heading2, Italic, Link as LinkIcon, Quote } from "lucid
 
 export function WritingToolbar() {
   return (
-    <div className="mx-10 flex items-center gap-0.5 rounded-lg border border-border/60 bg-card/50 px-1.5 py-1 backdrop-blur">
+    <div className="mx-8 mt-3 flex items-center gap-0.5 rounded-lg border border-border/60 bg-card/50 px-1.5 py-1 backdrop-blur">
       <ToolButton icon={<Bold className="h-3.5 w-3.5" />} />
       <ToolButton icon={<Italic className="h-3.5 w-3.5" />} />
       <Separator />

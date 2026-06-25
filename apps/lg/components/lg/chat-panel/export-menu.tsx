@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useState } from "react"
 import { Download } from "lucide-react"
@@ -51,7 +51,7 @@ export function ExportMenu({
         type="button"
         disabled={disabled}
         onClick={() => setOpen((value) => !value)}
-        className="flex h-8 w-8 items-center justify-center rounded-full bg-card/60 text-muted-foreground ring-1 ring-border/60 backdrop-blur transition hover:bg-card hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+        className="flex h-8 w-8 items-center justify-center rounded-md border border-border/60 bg-card/60 text-muted-foreground shadow-sm backdrop-blur transition hover:bg-card hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
         title={disabled ? "暂无可导出的对话" : "导出对话"}
         aria-label="导出对话"
       >

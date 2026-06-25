@@ -39,12 +39,12 @@ export function ChatPanelHeader({
   )?.usedMemory ?? []
 
   return (
-    <header className="flex items-center justify-between px-8 pt-5 pb-3">
-      <div>
+    <header className="flex items-center justify-between gap-4 border-b border-border/50 px-8 pt-5 pb-3">
+      <div className="min-w-0">
         <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">当前书籍</div>
-        <h1 className="font-serif text-xl tracking-wide text-foreground">{bookTitle}</h1>
+        <h1 className="truncate font-serif text-xl tracking-wide text-foreground">{bookTitle}</h1>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
         <ModelSelector />
         <button
           type="button"
@@ -56,6 +56,7 @@ export function ChatPanelHeader({
           <Brain className="h-3.5 w-3.5" />
           Memory
         </button>
+        <span className="mx-1 h-5 w-px shrink-0 bg-border/60" aria-hidden="true" />
         <ExportMenu
           bookTitle={bookTitle}
           threadTitle={activeThread?.title ?? "任务线程"}
