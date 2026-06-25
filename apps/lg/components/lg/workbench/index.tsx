@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useEffect, useMemo, useState } from "react"
 import type { WorkbenchGroup } from "@/lib/types"
@@ -86,7 +86,7 @@ export function Workbench({ book, onClose, initialPath, initialLine, initialTab,
   const filteredTree = useMemo(() => filterWorkbenchTree(tree, query), [tree, query])
 
   return (
-    <div className="absolute inset-0 z-30 flex flex-col bg-background/98 animate-in fade-in duration-200">
+    <div className="absolute inset-0 z-30 flex flex-col bg-background animate-in fade-in duration-200">
       <WorkbenchHeader
         bookTitle={book.title}
         tab={tab}

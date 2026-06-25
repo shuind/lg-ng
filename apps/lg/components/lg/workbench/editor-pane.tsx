@@ -1,8 +1,9 @@
-﻿"use client"
+"use client"
 
 import { useEffect, useRef } from "react"
 import { ChevronRight } from "lucide-react"
 import type { WorkbenchFile } from "@/lib/types"
+import { cn } from "@/lib/utils"
 
 export function EditorPane({
   file,
@@ -41,16 +42,23 @@ export function EditorPane({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* 面包屑 */}
-      <div className="flex shrink-0 items-center gap-2 px-10 pt-6 pb-3 text-[11px] text-muted-foreground">
+      <div className="mx-auto flex w-full max-w-3xl shrink-0 items-center gap-2 px-8 pt-6 pb-3 text-[11px] text-muted-foreground">
         {file && (
           <>
-            <span>{file.path.split("/").slice(0, -1).join(" / ")}</span>
-            <ChevronRight className="h-3 w-3" />
-            <span className="font-mono text-foreground/80">{file.name}</span>
-            <span className="ml-2 rounded-full border border-border/60 bg-card/60 px-2 py-0.5 text-[10px]">
+            <span className="min-w-0 truncate">{file.path.split("/").slice(0, -1).join(" / ")}</span>
+            <ChevronRight className="h-3 w-3 shrink-0" />
+            <span className="shrink-0 font-mono text-[12px] text-foreground/85">{file.name}</span>
+            <span
+              className={cn(
+                "ml-2 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1",
+                dirty
+                  ? "bg-accent/15 text-accent-foreground ring-accent/30"
+                  : "bg-card/60 text-muted-foreground ring-border/60",
+              )}
+            >
               {dirty ? "未保存" : "已保存"}
             </span>
-            <span className="ml-1 rounded-full bg-muted/50 px-2 py-0.5 font-mono text-[10px] text-muted-foreground/80">
+            <span className="ml-auto shrink-0 font-mono text-[10px] text-muted-foreground/70">
               {savedAt} 修改
             </span>
           </>
@@ -58,8 +66,8 @@ export function EditorPane({
       </div>
 
       {/* 编辑区 */}
-      <div className="min-h-0 flex-1 overflow-hidden px-10 pb-12">
-        <div className="paper mx-auto flex h-full max-w-3xl flex-col rounded-lg border border-border/60 bg-card/60 p-8 shadow-sm backdrop-blur">
+      <div className="min-h-0 flex-1 overflow-hidden px-8 pb-12">
+        <div className="paper mx-auto flex h-full max-w-3xl flex-col rounded-xl border border-border bg-card/85 p-8 shadow-sm backdrop-blur">
           <textarea
             ref={textareaRef}
             value={content}

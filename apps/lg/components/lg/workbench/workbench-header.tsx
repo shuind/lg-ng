@@ -102,8 +102,8 @@ function TopTab({
       className={cn(
         "flex items-center gap-1.5 rounded-md px-3 py-1 text-[12px] transition",
         active
-          ? "bg-foreground text-background shadow-sm"
-          : "text-muted-foreground hover:text-foreground",
+          ? "bg-foreground font-medium text-background shadow-sm"
+          : "text-muted-foreground hover:bg-secondary/70 hover:text-foreground",
       )}
     >
       {icon}

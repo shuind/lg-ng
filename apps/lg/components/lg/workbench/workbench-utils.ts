@@ -1,4 +1,4 @@
-﻿import type { WorkbenchFile, WorkbenchGroup } from "@/lib/types"
+import type { WorkbenchFile, WorkbenchGroup } from "@/lib/types"
 
 export function findFirstWorkbenchFile(groups: WorkbenchGroup[]): string {
   for (const group of groups) {
@@ -35,7 +35,9 @@ export function countWorkbenchFiles(groups: WorkbenchGroup[]): number {
 }
 
 export function formatWorkbenchTimestamp(updatedAt: string): string {
-  return new Date(updatedAt).toLocaleString("zh-CN", {
+  const date = new Date(updatedAt)
+  if (Number.isNaN(date.getTime())) return ""
+  return date.toLocaleString("zh-CN", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

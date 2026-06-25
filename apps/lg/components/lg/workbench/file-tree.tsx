@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useEffect, useState } from "react"
 import { ChevronRight, FileText } from "lucide-react"
@@ -81,7 +81,7 @@ function FileItem({
       className={cn(
         "group flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[12px] transition",
         active
-          ? "bg-card text-foreground ring-1 ring-border/60 shadow-sm"
+          ? "selected-bar bg-card font-medium text-foreground ring-1 ring-border/60 shadow-sm"
           : "text-muted-foreground hover:bg-sidebar-accent/40 hover:text-foreground",
       )}
     >

@@ -3,7 +3,9 @@ import type { LedgerEntry } from "@/lib/types"
 export { canDirectRollback } from "@/lib/ledger-entry-utils"
 
 export function formatLedgerTimestamp(timestamp: string): string {
-  return new Date(timestamp).toLocaleString("zh-CN", {
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) return "时间未知"
+  return date.toLocaleString("zh-CN", {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
