@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { AlertTriangle, CheckCircle2, ChevronDown, FileText, ListChecks, Wrench } from "lucide-react"
 import type { AgentEvent, Message } from "@/lib/types"
@@ -35,9 +35,9 @@ export function RunDetailsCard({
   if (!hasDetails) return null
 
   return (
-    <details className="surface-2 group mt-1 rounded-lg border border-l-2 border-l-border text-[12px] text-muted-foreground">
-      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 [&::-webkit-details-marker]:hidden">
-        <ListChecks className="h-3.5 w-3.5 shrink-0" />
+    <details className="surface-2 group mt-1 overflow-hidden rounded-lg border border-l-2 border-l-border text-[12px] text-muted-foreground">
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 transition hover:bg-secondary/50 [&::-webkit-details-marker]:hidden">
+        <ListChecks className={cn("h-3.5 w-3.5 shrink-0", failures.length > 0 && "text-destructive")} />
         <span className="font-medium text-foreground/80">处理细节</span>
         <span className="min-w-0 flex-1 truncate">{failures.length > 0 ? `${failures.length} 个问题` : toolSummary}</span>
         <ChevronDown className="h-3.5 w-3.5 shrink-0 transition group-open:rotate-180" />
@@ -69,8 +69,8 @@ export function RunDetailsCard({
             {toolRuns.map((run) => {
               const evidenceLinks = extractEvidenceLinks(run)
               return (
-                <details key={run.id} className="surface-3 group/tool rounded-md border">
-                  <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1.5 [&::-webkit-details-marker]:hidden">
+                <details key={run.id} className="surface-3 group/tool overflow-hidden rounded-md border">
+                  <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1.5 transition hover:bg-secondary/40 [&::-webkit-details-marker]:hidden">
                     {run.ok === false ? (
                       <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-destructive" />
                     ) : run.resultPreview || run.durationMs ? (

@@ -110,11 +110,12 @@ export function AssistantMessageBubble({
         </div>
       )}
       {message.thought && (
-        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-          <Sparkles className="h-3 w-3 opacity-60" />
-          <span className="italic">
-            Thought for {message.thoughtSeconds}s · {message.thought}
-          </span>
+        <div className="surface-2 inline-flex max-w-full items-center gap-1.5 self-start rounded-full border px-2.5 py-1 text-[11px] text-muted-foreground">
+          <Sparkles className="h-3 w-3 shrink-0 opacity-60" />
+          {typeof message.thoughtSeconds === "number" && (
+            <span className="shrink-0 font-medium text-foreground/65">思考 {message.thoughtSeconds}s</span>
+          )}
+          <span className="min-w-0 truncate">{message.thought}</span>
         </div>
       )}
       {activeCompactionEvent && <CompactionStatus event={activeCompactionEvent} />}
@@ -261,12 +262,12 @@ function ReasoningTrace({ text, streaming = false }: { text: string; streaming?:
     <details
       open={streaming}
       className={cn(
-        "surface-2 group rounded-lg border border-l-2 text-[12px] text-muted-foreground transition",
-        streaming ? "border-l-accent" : "border-l-border",
+        "surface-2 group overflow-hidden rounded-lg border border-l-2 text-[12px] text-muted-foreground transition",
+        streaming ? "border-l-accent bg-accent/[0.04]" : "border-l-border",
       )}
       onClick={(event) => event.stopPropagation()}
     >
-      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 [&::-webkit-details-marker]:hidden">
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 transition hover:bg-secondary/50 [&::-webkit-details-marker]:hidden">
         <Sparkles className={cn("h-3.5 w-3.5 shrink-0", streaming ? "animate-pulse text-accent-foreground" : "opacity-70")} />
         <span className="font-medium text-foreground/80">{streaming ? "正在思考" : "思考流"}</span>
         <span className="min-w-0 flex-1 truncate">{summarizeReasoning(text)}</span>
