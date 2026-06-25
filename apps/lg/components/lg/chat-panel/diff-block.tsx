@@ -26,6 +26,7 @@ export function DiffBlock({
   variant?: DiffVariant
 }) {
   const lines = patch ? displayDiffLines(patch) : []
+  const stat = patch ? countDiffStat(lines) : null
 
   return (
     <section className={cn("surface-1 overflow-hidden rounded-lg border text-[12px]", className)}>
@@ -36,6 +37,12 @@ export function DiffBlock({
             {title && <div className="truncate font-mono text-[11px] text-foreground/85">{title}</div>}
             {subtitle && <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{subtitle}</div>}
           </div>
+          {stat && (stat.additions > 0 || stat.deletions > 0) && (
+            <div className="flex shrink-0 items-center gap-1.5 font-mono text-[10.5px]">
+              {stat.additions > 0 && <span className="text-emerald-700 dark:text-emerald-300">+{stat.additions}</span>}
+              {stat.deletions > 0 && <span className="text-red-700 dark:text-red-300">-{stat.deletions}</span>}
+            </div>
+          )}
           {action}
         </div>
       )}
@@ -188,6 +195,16 @@ function lineClass(line: string): string {
     return "text-muted-foreground"
   }
   return "text-foreground/82"
+}
+
+function countDiffStat(lines: string[]): { additions: number; deletions: number } {
+  let additions = 0
+  let deletions = 0
+  for (const line of lines) {
+    if (line.startsWith("+") && !line.startsWith("+++")) additions += 1
+    else if (line.startsWith("-") && !line.startsWith("---")) deletions += 1
+  }
+  return { additions, deletions }
 }
 
 function displayDiffLines(patch: string): string[] {

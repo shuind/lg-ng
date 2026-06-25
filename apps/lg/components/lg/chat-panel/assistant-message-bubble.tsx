@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Check, CheckCheck, ChevronDown, Copy, ExternalLink, GitBranch, MessageCircleQuestionMark, Sparkles, Trash2, Undo2 } from "lucide-react"
+import { Check, CheckCheck, ChevronDown, Copy, ExternalLink, FileDiff, GitBranch, MessageCircleQuestionMark, Sparkles, Trash2, Undo2 } from "lucide-react"
 import { useWorkbenchOpen } from "@/components/lg/workbench-open-context"
 import { toast } from "@/hooks/use-toast"
 import type { AgentEvent, Message } from "@/lib/types"
@@ -413,10 +413,11 @@ function ProposalCard({
   return (
     <details open className="surface-1 rounded-lg border text-[12px]" onClick={(event) => event.stopPropagation()}>
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 [&::-webkit-details-marker]:hidden">
+        <FileDiff className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground/85">
           {proposal.targetPath}
         </span>
-        <span className="rounded bg-background/70 px-1.5 py-0.5 text-[10.5px] text-muted-foreground">
+        <span className={cn("rounded-full px-2 py-0.5 text-[10.5px] font-medium ring-1", proposalStatusClass(proposal.status))}>
           {formatProposalStatus(proposal.status)}
         </span>
       </summary>
@@ -484,4 +485,17 @@ function formatProposalStatus(status: ProposalSummary["status"]): string {
   if (status === "partially_applied") return "部分采纳"
   if (status === "discarded") return "已丢弃"
   return status
+}
+
+function proposalStatusClass(status: ProposalSummary["status"]): string {
+  if (status === "applied") {
+    return "bg-emerald-500/12 text-emerald-700 ring-emerald-500/25 dark:text-emerald-300"
+  }
+  if (status === "partially_applied") {
+    return "bg-amber-500/12 text-amber-700 ring-amber-500/25 dark:text-amber-300"
+  }
+  if (status === "discarded") {
+    return "bg-muted/40 text-muted-foreground ring-border/50"
+  }
+  return "bg-accent/15 text-accent-foreground ring-accent/30"
 }
