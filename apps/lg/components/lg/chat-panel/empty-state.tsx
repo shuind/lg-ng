@@ -1,12 +1,12 @@
 "use client"
 
-import { Sparkles } from "lucide-react"
+import { LgMark } from "@/components/lg/brand/lg-mark"
 
 export function EmptyState() {
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 text-center">
       <div className="surface-2 relative h-16 w-16 rounded-lg border animate-breathe">
-        <Sparkles className="absolute inset-0 m-auto h-6 w-6 text-accent-foreground/70" />
+        <LgMark className="absolute inset-0 m-auto h-7 w-7 text-accent-foreground/70" />
       </div>
       <div className="space-y-1.5">
         <h2 className="font-serif text-2xl tracking-wide text-foreground">系统 Agent 已就绪</h2>

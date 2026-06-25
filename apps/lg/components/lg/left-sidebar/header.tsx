@@ -1,7 +1,8 @@
 "use client"
 
-import { PanelLeftClose, Sparkles } from "lucide-react"
+import { PanelLeftClose } from "lucide-react"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { LgMark } from "@/components/lg/brand/lg-mark"
 
 export function SidebarHeader({ onToggleCollapsed }: { onToggleCollapsed: () => void }) {
   return (
@@ -9,7 +10,7 @@ export function SidebarHeader({ onToggleCollapsed }: { onToggleCollapsed: () => 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="surface-2 relative h-7 w-7 rounded-lg border border-border/60">
-            <Sparkles className="absolute inset-0 m-auto h-3.5 w-3.5 text-accent-foreground/80" />
+            <LgMark className="absolute inset-0 m-auto h-4 w-4 text-accent-foreground/80" />
           </div>
           <div className="leading-tight">
             <div className="font-serif text-[15px] font-medium tracking-wide text-foreground">LG</div>
