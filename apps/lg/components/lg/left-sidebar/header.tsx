@@ -20,7 +20,7 @@ export function SidebarHeader({ onToggleCollapsed }: { onToggleCollapsed: () => 
           <ThemeToggle />
           <button
             onClick={onToggleCollapsed}
-            className="rounded-md p-1.5 text-muted-foreground transition hover:bg-sidebar-accent hover:text-foreground"
+            className="hidden rounded-md p-1.5 text-muted-foreground transition hover:bg-sidebar-accent hover:text-foreground md:block"
             aria-label="折叠侧栏"
             title="折叠侧栏"
           >

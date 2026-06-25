@@ -48,7 +48,7 @@ export function LeftSidebarColumn({
     <div className="relative min-h-0 border-r border-border/60">
       <button
         onClick={onToggleCollapsed}
-        className="group absolute -right-3 top-1/2 z-20 flex h-12 w-6 -translate-y-1/2 items-center justify-center rounded-r-md bg-card/0 text-muted-foreground/40 transition hover:bg-card/80 hover:text-foreground hover:shadow-sm"
+        className="group absolute -right-3 top-1/2 z-20 hidden h-12 w-6 -translate-y-1/2 items-center justify-center rounded-r-md bg-card/0 text-muted-foreground/40 transition hover:bg-card/80 hover:text-foreground hover:shadow-sm md:flex"
         aria-label={collapsed ? "展开侧栏" : "折叠侧栏"}
         title={collapsed ? "展开侧栏" : "折叠侧栏"}
       >

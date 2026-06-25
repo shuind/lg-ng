@@ -39,12 +39,12 @@ export function ChatPanelHeader({
   )?.usedMemory ?? []
 
   return (
-    <header className="flex items-center justify-between gap-4 border-b border-border/50 px-8 pt-5 pb-3">
-      <div className="min-w-0">
+    <header className="flex items-center justify-between gap-4 border-b border-border/50 px-4 pb-3 pt-4 md:px-8 md:pt-5">
+      <div className="hidden min-w-0 md:block">
         <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">当前书籍</div>
         <h1 className="truncate font-serif text-xl tracking-wide text-foreground">{bookTitle}</h1>
       </div>
-      <div className="flex items-center gap-1.5">
+      <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto scrollbar-none [&>*]:shrink-0 md:overflow-visible">
         <ModelSelector />
         <button
           type="button"
