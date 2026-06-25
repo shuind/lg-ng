@@ -101,6 +101,14 @@ export function AssistantMessageBubble({
           </button>
         </div>
       )}
+      {isAssistant && (
+        <div className="flex items-center gap-2">
+          <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent/15 ring-1 ring-accent/25">
+            <Sparkles className="h-3.5 w-3.5 text-accent-foreground/80" />
+          </span>
+          <span className="text-[12px] font-medium tracking-wide text-foreground/70">系统 Agent</span>
+        </div>
+      )}
       {message.thought && (
         <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
           <Sparkles className="h-3 w-3 opacity-60" />

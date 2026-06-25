@@ -127,12 +127,12 @@ export function UserMessageBubble({
         ) : (
           <div
             className={cn(
-              "paper max-w-full whitespace-pre-wrap rounded-lg rounded-br-md bg-secondary/80 px-4 py-2.5 text-[14px] leading-relaxed text-secondary-foreground ring-1 transition",
+              "paper max-w-full whitespace-pre-wrap rounded-2xl rounded-br-md bg-secondary/90 px-4 py-2.5 text-[14px] leading-relaxed text-secondary-foreground shadow-sm ring-1 transition",
               highlightedUser
                 ? "bg-primary/10 ring-2 ring-primary/70 shadow-sm"
                 : selected
                   ? "ring-primary/50"
-                  : "ring-border/60",
+                  : "ring-border/60 hover:ring-border",
             )}
             onClick={() => onSelectTurn(message.turnId)}
           >
